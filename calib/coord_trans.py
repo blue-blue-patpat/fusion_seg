@@ -18,10 +18,17 @@ import plotly.graph_objs as go
 
 np.set_printoptions(suppress=True)
 
+_d_u = 50
+_d_v = 200
+_d_w = 190
+_r_ball = 3
+
 
 def read_static_ts(path: str) -> np.ndarray:
     """
     Read NOKOV raw data of triangle markers on radar from .ts file.
+    
+    See also set_params().
 
     :param path: file path
     :return: triangle coordinates
@@ -52,7 +59,7 @@ def normal_vector(x: np.ndarray, y: np.ndarray) -> np.ndarray:
     return np.array([x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0]])
 
 
-def axis_u(coords: list) -> np.ndarray:
+def axis_u(coords: np.ndarray) -> np.ndarray:
     """
     Compute unit vector of axis u, according to axis v and axis w(raw).
 
@@ -66,7 +73,7 @@ def axis_u(coords: list) -> np.ndarray:
     return u
 
 
-def axis_v(coords: list) -> np.ndarray:
+def axis_v(coords: np.ndarray) -> np.ndarray:
     """
     Compute unit vector of axis v, according to point 0 and point 1.
 
@@ -78,7 +85,7 @@ def axis_v(coords: list) -> np.ndarray:
     return v
 
 
-def _axis_raw_w(coords: list) -> np.ndarray:
+def _axis_raw_w(coords: np.ndarray) -> np.ndarray:
     """
     Compute raw unit vector of axis w, according to point 0 and point 2.
 
@@ -92,7 +99,7 @@ def _axis_raw_w(coords: list) -> np.ndarray:
     return w
 
 
-def axis_w(coords: list) -> np.ndarray:
+def axis_w(coords: np.ndarray) -> np.ndarray:
     """
     Compute unit vector of axis w, according to axis u and axis v.
 
@@ -106,7 +113,7 @@ def axis_w(coords: list) -> np.ndarray:
     return w
 
 
-def axis_uvw(coords: list) -> dict:
+def axis_uvw(coords: np.ndarray) -> dict:
     """
     For visualization use.
 
@@ -129,15 +136,20 @@ def axis_uvw(coords: list) -> dict:
     }
 
 
-def axis_center(coords: list) -> np.ndarray:
+def axis_center(coords: np.ndarray, **kwargs) -> np.ndarray:
     """
     compute uvw axis center
     100 = plate_x/2; 95 = plate_y/2; 50 = plate_radar_distance; 3 = ball_radius
 
     :param coords: list(np.ndarray), 3 points' raw coordinates
+    :param kwargs: d_u, d_v, d_w, r_ball
     :return: center ndarray
     """
-    return coords[0] + 100 * axis_v(coords) - 95 * axis_w(coords) + (50 - 3) * axis_u(coords)
+    d_u = kwargs.get('d_u', _d_u)
+    d_v = kwargs.get('d_v', _d_v)
+    d_w = kwargs.get('d_u', _d_w)
+    r_ball = kwargs.get('r_ball', _r_ball)
+    return coords[0] + d_v * axis_v(coords) - d_w * axis_w(coords) + (d_u - r_ball) * axis_u(coords)
 
 
 def r_x(theta: float) -> np.ndarray:
@@ -221,6 +233,31 @@ def r_zyx(**kwargs):
     return r
 
 
+def set_params(**kwargs) -> tuple:
+    """
+    Set params d_u, d_v, d_w, r_ball
+
+    ·coord1---d_v---·coord2
+       ┆
+       ┆
+       ┆
+      d_w      ↘
+       ┆         d_u
+       ┆          ┌---------┐
+       ┆          |  RADAR  |
+    ·coord3       └---------┘
+    
+    :param kwargs: d_u, d_v, d_w, r_ball
+    :return: None
+    """
+    global _d_u, _d_v, _d_w, _r_ball
+    _d_u = kwargs.get('d_u', _d_u)
+    _d_v = kwargs.get('d_v', _d_v)
+    _d_w = kwargs.get('d_u', _d_w)
+    _r_ball = kwargs.get('r_ball', _r_ball)
+    return _d_u, _d_v, _d_w, _r_ball
+
+
 def solve_r(uvw, f=r_zyx, use_angle=False) -> np.ndarray:
     """
     Solve rotate angle.
@@ -237,7 +274,7 @@ def solve_r(uvw, f=r_zyx, use_angle=False) -> np.ndarray:
         return result.x
 
 
-def solve_t(coords: list) -> np.ndarray:
+def solve_t(coords: np.ndarray) -> np.ndarray:
     """
     Solve transfer matrix.
 
@@ -247,7 +284,7 @@ def solve_t(coords: list) -> np.ndarray:
     return -axis_center(coords)
 
 
-def trans_matrix(calibrate_coords: list) -> tuple:
+def trans_matrix(calibrate_coords: np.ndarray) -> tuple:
     """
     Return transform matrix R, t.(z-y-x)
 

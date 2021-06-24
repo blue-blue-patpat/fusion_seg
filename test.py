@@ -11,6 +11,8 @@ def data_aling_test():
 def coord_trans_test():
     from calib import coord_trans
     coords = coord_trans.read_static_ts('./calib/__test__/radar1.ts')
+    # set or view board params here
+    print(coord_trans.set_params())
 
     # compute transform matrix, print T, R param
     R, t = coord_trans.trans_matrix(coords)
