@@ -2,7 +2,7 @@ import rosbag
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs import point_cloud2
 
-bag_file = "arbe-rosbag_2021-06-14-17-18-14.bag"
+bag_file = "2021-06-17-10-25-29.bag"
 bag = rosbag.Bag(bag_file, "r")
 info = bag.get_type_and_topic_info()
 bag_data = bag.read_messages()
@@ -24,8 +24,9 @@ for topic,msg,t in bag_data:
     # print(data)
     gen = point_cloud2.read_points(msg)
     print(type(gen))
-    print(gen[0], gen[1])
-    # for p in gen:
-        # print(p)
+    # print(gen[0], gen[1])
+    for p in gen:
+        print(p)
+    print(t)
     print("--------------------------")
     # print(data)
