@@ -87,7 +87,7 @@ class MultiSubClient:
         :param block: spin if True, default False. WARNING: this will block the thread.
         :return: None
         """
-        for name, sub in self.subscribers.values():
+        for name, sub in self.subscribers.items():
             self.start_sub(name)
         if block:
             rospy.spin()
@@ -98,5 +98,5 @@ class MultiSubClient:
 
         :return: None
         """
-        for name, sub in self.subscribers.values():
+        for name, sub in self.subscribers.items():
             self.start_sub(name)
