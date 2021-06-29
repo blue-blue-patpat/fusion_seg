@@ -57,7 +57,7 @@ class MultiSubClient:
         :param name: sub topic name, sub identifier
         :return: current sub
         """
-        if name in self.subscribers.keys() and self.subscribers["name"]["subscriber"] is None:
+        if name in self.subscribers.keys():
             self.subscribers[name]["subscriber"] = rospy.Subscriber(name, self.subscribers[name]["topic_type"],
                                                                     callback=self.subscribers[name]["callback"],
                                                                     callback_args=self.params)
