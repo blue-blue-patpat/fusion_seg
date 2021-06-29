@@ -25,8 +25,12 @@ for topic,msg,t in bag_data:
     gen = point_cloud2.read_points(msg)
     print(type(gen))
     # print(gen[0], gen[1])
+    i = 0
     for p in gen:
         print(p)
+        i += 1
+        if(i == 5):
+            break
     print(t)
     print("--------------------------")
     # print(data)
