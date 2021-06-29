@@ -99,4 +99,4 @@ class MultiSubClient:
         :return: None
         """
         for name, sub in self.subscribers.items():
-            self.start_sub(name)
+            self.stop_sub(name)
