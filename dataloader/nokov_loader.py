@@ -34,6 +34,7 @@ def to_dataframe_callback(data, args):
     # TODO: check df reference; check data structure
     df.loc[len(df)] = [data.header.frame_id, data.header.stamp, data.pose.position.x, data.pose.position.y,
                        data.pose.position.z]
+    print("nokov frame{} saved.".format(data.header.frame_id))
 
 
 class NOKOVLoader:
@@ -76,7 +77,8 @@ class NOKOVLoader:
             self.client = MultiSubClient()
         else:
             self.client = client
-        self.client.add_sub(msg_name, PoseStamped, callback)
+        self.name = msg_name
+        self.client.add_sub(self.name, PoseStamped, callback)
         self.client.update_params({
             'nokov_df': self.df
         })
