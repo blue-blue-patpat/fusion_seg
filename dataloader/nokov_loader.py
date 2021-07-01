@@ -12,9 +12,10 @@
 import pandas as pd
 # import lib
 from geometry_msgs.msg import PoseStamped
-from tf.transformations import *
+# from tf.transformations import *
 
-from ros_client import MultiSubClient
+from dataloader.ros_client import MultiSubClient
+
 
 """
 Use NOKOV Seeker to save offline data.
@@ -30,11 +31,14 @@ def to_dataframe_callback(data, args):
     :return: None
     """
     # print(data, args)
-    df = args.get('nokov_df', pd.DataFrame())
+    df = args.get('df', pd.DataFrame())
+    topic, msg, t = data
+    if df.empty:
+        df[["global_ts"]+[item.name for item in msg.fields]] = None
     # TODO: check df reference; check data structure
-    df.loc[len(df)] = [data.header.frame_id, data.header.stamp, data.pose.position.x, data.pose.position.y,
-                       data.pose.position.z]
-    print("nokov frame{} saved.".format(data.header.frame_id))
+    df.loc[len(df)] = [msg.header.stamp, msg.pose.position.x, msg.pose.position.y,
+                       msg.pose.position.z]
+    print("nokov frame{} saved.".format(msg.header.frame_id))
 
 
 class NOKOVLoader:
@@ -43,26 +47,13 @@ class NOKOVLoader:
 
     work flow:
 
-    init -> init_dataframe -> init_client
-    -> start_sub -> stop_sub -> get_dataframe
+    -> init_client -> start_sub -> stop_sub -> get_dataframe
     """
 
     def __init__(self):
         self.name = ''
         self.client = None
         self.df = pd.DataFrame()
-
-    def init_dataframe(self, columns=None) -> pd.DataFrame:
-        """
-        Init dataframe
-
-        :param columns:
-        :return:
-        """
-        if columns is None:
-            columns = ["idx", "global_ts", "x", "y", "z"]
-        self.df = pd.DataFrame(columns=columns)
-        return self.df
 
     def init_client(self, msg_name: str, client=None, callback=to_dataframe_callback) -> MultiSubClient:
         """
@@ -80,18 +71,18 @@ class NOKOVLoader:
         self.name = msg_name
         self.client.add_sub(self.name, PoseStamped, callback)
         self.client.update_params({
-            'nokov_df': self.df
+            'df': self.df,
         })
         return self.client
 
-    def update_params(self, params: dict) -> dict:
+    def update_args(self, args: dict) -> dict:
         """
-        Update client params
+        Update client args
 
-        :param params:
-        :return: client params
+        :args:
+        :return: client args
         """
-        return self.client.update_params(params)
+        return self.client.update_args(self.name, args)
 
     def start_sub(self, auto_clear=True) -> dict:
         """

@@ -23,18 +23,20 @@ class MultiSubClient:
         Init client obj, init ros node
         """
         rospy.init_node(node_name)
+        # {name: {args, topic_type, callback, args, subscriber}}
         self.subscribers = {}
-        self.params = {}
 
-    def update_params(self, params):
+    def update_args(self, name, args):
         """
         Update client params, which will be passed to callbacks as args
 
-        :param params: param dict
-        :return: params
+        :name: subscriber name
+        :args: args dict
+        :return: dict
         """
-        self.params.update(params)
-        return self.params
+        if name in self.subscribers.keys():
+            self.subscribers["name"]["args"].update(args)
+        return self.subscribers["name"]
 
     def add_sub(self, name: str, topic_type, callback) -> dict:
         """
@@ -46,7 +48,7 @@ class MultiSubClient:
         :return: self.subscribers, dict
         """
         self.subscribers[name] = dict(
-            name=name, topic_type=topic_type, callback=callback, subscriber=None
+            name=name, topic_type=topic_type, callback=callback, args={}, subscriber=None
         )
         return self.subscribers
 
@@ -60,7 +62,7 @@ class MultiSubClient:
         if name in self.subscribers.keys():
             self.subscribers[name]["subscriber"] = rospy.Subscriber(name, self.subscribers[name]["topic_type"],
                                                                     callback=self.subscribers[name]["callback"],
-                                                                    callback_args=self.params)
+                                                                    callback_args=self.subscribers[name]["args"])
         return self.subscribers.get(name, None)
 
     def stop_sub(self, name: str) -> dict:

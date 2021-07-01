@@ -28,7 +28,7 @@ def arbe_loader_offline_test():
     df = arbe_loader_offline("2021-06-17-10-25-29.bag")
     print(df.head(10))
     # please delete test file after test
-    df.to_csv('./dataloader/__test__/arbe_test.csv')
+    df.to_csv('./dataloader/__test__/arbe_test.csv', index=False)
 
 
 def nokov_loader_test():
@@ -49,4 +49,4 @@ def nokov_loader_test():
 
 
 if __name__ == '__main__':
-    coord_trans_test()
+    arbe_loader_offline_test()

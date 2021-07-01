@@ -4,20 +4,20 @@
 
 ### features
 
-- [x] subscriber manager 2021/06/29
+- [x] subscriber manager 2021/06/29 xiangyu
 
 ## dataloader/arbe_loader.py
 
 ### features
 
-- [ ] offline loader
+- [x] offline loader 2021/07/01 xiangyu
 - [ ] online loader
 
 ### function: arbe_loader_offline
 
-- [ ] check clm datatype
-- [ ] check p datatype
-- [ ] reformat file, remove print
+- [x] check clm datatype 2021/07/01 xiangyu
+- [x] check p datatype 2021/07/01 xiangyu
+- [x] reformat file, remove print 2021/07/01 xiangyu
 
 ## dataloader/nokov_loader.py
 
@@ -27,5 +27,5 @@
 
 ### function: to_dataframe_callback
 
-- [ ] check df reference
+- [x] check df reference 2021/07/01 xiangyu
 - [ ] check data structure
