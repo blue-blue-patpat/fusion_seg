@@ -1,3 +1,4 @@
+from dataloader.arbe_loader import arbe_loader_callback
 import numpy as np
 
 
@@ -48,5 +49,24 @@ def nokov_loader_test():
     df.to_csv('./dataloader/__test__/nokov_test.csv')
 
 
+def arbe_loader_online_test():
+    import rospy
+    import pandas as pd
+    from dataloader import MultiSubClient
+    from sensor_msgs import point_cloud2
+    name = '/arbe/rviz/pointcloud'
+    client = MultiSubClient()
+    
+    client.add_sub(name, point_cloud2.PointCloud2, arbe_loader_callback)
+    client.update_args(name, dict(dataframe=pd.DataFrame(), frame_id=0))
+    client.start_sub(name)
+    i = 0
+    while not rospy.is_shutdown() and client.subscribers[name]['args']['frame_id']<5:
+        pass
+    client.stop_all_subs()
+    print(client.subscribers[name]['args']['dataframe'])
+
+
 if __name__ == '__main__':
-    arbe_loader_offline_test()
+    arbe_loader_online_test()
+    # arbe_loader_offline_test()

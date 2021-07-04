@@ -13,6 +13,7 @@
 from __future__ import generators
 import pandas as pd
 import rosbag
+import rospy
 from sensor_msgs import point_cloud2
 
 
@@ -54,3 +55,26 @@ def arbe_loader_offline(filepath: str) -> pd.DataFrame:
 
         print("arbe loader: {} frames saved.")
     return df
+
+
+def arbe_loader_callback(msg, args):
+    """
+    ros data to dataframe
+
+    :param data: vrpn message
+    :param args: dict(frame_id, dataframe, name)
+    :return: None
+    """
+    # print(data, args)
+    ts = rospy.get_time()
+    df = args.get('dataframe', pd.DataFrame())
+    if df.empty:
+        df[["frame_id", "global_ts"]+[item.name for item in msg.fields]] = None
+        args['frame_id'] = 0
+    else:
+        args['frame_id'] += 1
+    # TODO: check df reference; check data structure
+    gen = point_cloud2.read_points(msg)
+    for p in gen:
+        df.loc[len(df)] = [args['frame_id'], ts] + list(p)
+    print("{} frame saved, total {}.".format(args.get('name', 'Anomaly'), len(df)))

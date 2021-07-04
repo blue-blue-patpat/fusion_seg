@@ -35,8 +35,8 @@ class MultiSubClient:
         :return: dict
         """
         if name in self.subscribers.keys():
-            self.subscribers["name"]["args"].update(args)
-        return self.subscribers["name"]
+            self.subscribers[name]["args"].update(args)
+        return self.subscribers[name]
 
     def add_sub(self, name: str, topic_type, callback) -> dict:
         """
@@ -50,6 +50,7 @@ class MultiSubClient:
         self.subscribers[name] = dict(
             name=name, topic_type=topic_type, callback=callback, args={}, subscriber=None
         )
+        self.update_args(name, dict(name=name))
         return self.subscribers
 
     def start_sub(self, name: str) -> dict:
@@ -72,7 +73,7 @@ class MultiSubClient:
         :param name: sub topic name, sub identifier
         :return: current sub
         """
-        if name in self.subscribers.keys() and self.subscribers["name"]["subscriber"] is not None:
+        if name in self.subscribers.keys() and self.subscribers[name]["subscriber"] is not None:
             self.subscribers[name]["subscriber"].unregister()
         return self.subscribers.get(name, None)
 
