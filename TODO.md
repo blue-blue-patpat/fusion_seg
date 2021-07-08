@@ -11,7 +11,7 @@
 ### features
 
 - [x] offline loader 2021/07/01 xiangyu
-- [ ] online loader
+- [x] online loader 2021/07/05 xiangyu
 
 ### function: arbe_loader_offline
 

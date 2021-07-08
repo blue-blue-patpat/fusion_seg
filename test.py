@@ -1,4 +1,4 @@
-from dataloader.arbe_loader import arbe_loader_callback
+from dataloader.nokov_loader import nokov_loader_before_start, nokov_loader_callback
 import numpy as np
 
 
@@ -34,37 +34,42 @@ def arbe_loader_offline_test():
 
 def nokov_loader_test():
     import rospy
-    from dataloader import MultiSubClient, NOKOVLoader
+    from dataloader import MultiSubClient
+    from geometry_msgs.msg import PoseStamped
+    name = "/vrpn_client_node/tb3_0/pose"
     client = MultiSubClient()
-    nokov_loader = NOKOVLoader()
-    nokov_loader.init_dataframe()
-    nokov_loader.init_client("/vrpn_client_node/tb3_0/pose", client=client)
-    nokov_loader.start_sub()
+
+    client.add_sub(name, PoseStamped, nokov_loader_callback,
+                    before_start=nokov_loader_before_start)
     while not rospy.is_shutdown():
-        if len(nokov_loader.get_dataframe()) > 20:
-            nokov_loader.stop_sub()
-            break
-    df = nokov_loader.get_dataframe()
-    print(df.head(10))
-    df.to_csv('./dataloader/__test__/nokov_test.csv')
+        pass
+    #     if len(nokov_loader.get_dataframe()) > 20:
+    #         nokov_loader.stop_sub()
+    #         break
+    # df = nokov_loader.get_dataframe()
+    # print(df.head(10))
+    # df.to_csv('./dataloader/__test__/nokov_test.csv')
 
 
 def arbe_loader_online_test():
     import rospy
     import pandas as pd
     from dataloader import MultiSubClient
+    from dataloader.arbe_loader import arbe_loader_before_start, arbe_loader_after_stop, arbe_loader_callback
     from sensor_msgs import point_cloud2
     name = '/arbe/rviz/pointcloud'
     client = MultiSubClient()
     
-    client.add_sub(name, point_cloud2.PointCloud2, arbe_loader_callback)
-    client.update_args(name, dict(dataframe=pd.DataFrame(), frame_id=0))
+    client.add_sub(name, point_cloud2.PointCloud2, arbe_loader_callback,
+                    before_start=arbe_loader_before_start, 
+                    after_stop=arbe_loader_after_stop)
     client.start_sub(name)
     i = 0
-    while not rospy.is_shutdown() and client.subscribers[name]['args']['frame_id']<5:
+    while not rospy.is_shutdown():
         pass
     client.stop_all_subs()
     print(client.subscribers[name]['args']['dataframe'])
+    client.subscribers[name]['args']['dataframe'].to_csv('./dataloader/__test__/arbe_test.csv')
 
 
 if __name__ == '__main__':
