@@ -1,4 +1,3 @@
-from dataloader.nokov_loader import nokov_loader_before_start, nokov_loader_callback
 import numpy as np
 
 
@@ -36,6 +35,8 @@ def nokov_loader_test():
     import rospy
     from dataloader import MultiSubClient
     from geometry_msgs.msg import PoseStamped
+    from dataloader.nokov_loader import nokov_loader_before_start, nokov_loader_callback
+
     name = "/vrpn_client_node/tb3_0/pose"
     client = MultiSubClient()
 
@@ -52,10 +53,12 @@ def nokov_loader_test():
 
 
 def arbe_loader_online_test():
+    import os
+    import shutil
     import rospy
     import pandas as pd
     from dataloader import MultiSubClient
-    from dataloader.arbe_loader import arbe_loader_before_start, arbe_loader_after_stop, arbe_loader_callback
+    from dataloader.arbe_loader import arbe_loader_callback, arbe_loader_before_start, arbe_loader_after_stop
     from sensor_msgs import point_cloud2
     name = '/arbe/rviz/pointcloud'
     client = MultiSubClient()
@@ -68,8 +71,12 @@ def arbe_loader_online_test():
     while not rospy.is_shutdown():
         pass
     client.stop_all_subs()
-    print(client.subscribers[name]['args']['dataframe'])
-    client.subscribers[name]['args']['dataframe'].to_csv('./dataloader/__test__/arbe_test.csv')
+    print(list(client.subscribers[name]['args']['dataframe'].values())[0])
+    shutil.rmtree('./dataloader/__test__/arbe_output')
+    os.mkdir('./dataloader/__test__/arbe_output')
+    for ts, df in client.subscribers[name]['args']['dataframe'].items():
+        df.to_csv('./dataloader/__test__/arbe_output/{}.csv'.format(ts))
+    # client.subscribers[name]['args']['dataframe'].to_csv('./dataloader/__test__/arbe_test.csv')
 
 
 if __name__ == '__main__':
