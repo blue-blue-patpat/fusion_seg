@@ -66,16 +66,19 @@ def arbe_loader_online_test():
     client.add_sub(name, point_cloud2.PointCloud2, arbe_loader_callback,
                     before_start=arbe_loader_before_start, 
                     after_stop=arbe_loader_after_stop)
+    client.update_args(name, dict(force_realtime=True))
     client.start_sub(name)
-    i = 0
+
     while not rospy.is_shutdown():
         pass
     client.stop_all_subs()
     print(list(client.subscribers[name]['args']['dataframe'].values())[0])
-    shutil.rmtree('./dataloader/__test__/arbe_output')
-    os.mkdir('./dataloader/__test__/arbe_output')
+    if not os.path.exists('./__test__/arbe_output/'):
+        os.mkdir('./__test__/arbe_output/')
+    shutil.rmtree('./__test__/arbe_output/')
+    os.mkdir('./__test__/arbe_output/')
     for ts, df in client.subscribers[name]['args']['dataframe'].items():
-        df.to_csv('./dataloader/__test__/arbe_output/{}.csv'.format(ts))
+        df.to_csv('./__test__/arbe_output/{}.csv'.format(ts))
     # client.subscribers[name]['args']['dataframe'].to_csv('./dataloader/__test__/arbe_test.csv')
 
 

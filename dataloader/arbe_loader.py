@@ -68,7 +68,7 @@ def arbe_loader_before_start(sub: dict):
 
     :param sub: current subscriber
     """
-    sub["args"].update(dict(name=sub["name"], dataframe={}, wait_={}))
+    sub["args"].update(dict(name=sub["name"], dataframe={}, wait_queue={}))
 
 
 def arbe_loader_callback(msg, args):
@@ -76,7 +76,7 @@ def arbe_loader_callback(msg, args):
     ros data stream to dataframe
 
     :param data: vrpn message
-    :param args: dict(dataframe, name, msg_list)
+    :param args: dict(dataframe, name, wait_queue)
     :return: None
     """
     ts = rospy.get_time()
@@ -84,8 +84,8 @@ def arbe_loader_callback(msg, args):
     if args.get('force_realtime', True):
         args["dataframe"][ts] = _msg_to_dataframe(msg)
     else:
-        args["msg_list"][ts] = msg
-    print("{} frame saved at {}, total {}.".format(args.get('name', 'Anomaly'), ts, len(args['msg_list'])))
+        args["wait_queue"][ts] = msg
+    print("{} frame saved at {}, total {}.".format(args.get('name', 'Anomaly'), ts, len(args['wait_queue'])))
 
 
 # def arbe_loader_after_stop_abandoned(sub: dict):
