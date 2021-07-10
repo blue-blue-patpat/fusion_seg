@@ -20,6 +20,7 @@ from sensor_msgs import point_cloud2
 def arbe_readfile_offline(filepath: str, ):
     """
     Load arbe offline data from bag file
+
     :param filepath: .bag file path
     :return: data generator: (topic, msg, ts)
     """
@@ -34,45 +35,26 @@ def arbe_readfile_offline(filepath: str, ):
 def arbe_loader_offline(filepath: str) -> pd.DataFrame:
     """
     Load arbe offline data from bag file to pandas.DataFrame
+    WARNING: need test.
+
     :param filepath: .bag file path
     :return: [idx, global_ts, other_fields] pandas.DataFrame, same idx for same frame.
     """
     bag_data = arbe_readfile_offline(filepath)
 
-    clm = None
-    df = pd.DataFrame()
-    frame_idx = 0
+    dataframes = {}
     for topic, msg, t in bag_data:
-        if clm is None:
-            clm = ["frame_idx", "global_ts"] + [item.name for item in msg.fields]
-            df = pd.DataFrame(columns=clm)
-        gen = point_cloud2.read_points(msg)
-        for p in gen:
-            df.loc[len(df)] = [frame_idx, t] + list(p)
-        frame_idx += 1
+        dataframes[t] =  _msg_to_dataframe(msg)
+        # if clm is None:
+        #     clm = ["frame_idx", "global_ts"] + [item.name for item in msg.fields]
+        #     df = pd.DataFrame(columns=clm)
+        # gen = point_cloud2.read_points(msg)
+        # for p in gen:
+        #     df.loc[len(df)] = [frame_idx, t] + list(p)
+        # frame_idx += 1
 
         print("arbe loader: {} frames saved.")
-    return df
-
-
-def arbe_loader_callback(msg, args):
-    """
-    ros data to dataframe
-
-    :param data: vrpn message
-    :param args: dict(frame_id, dataframe, name)
-    :return: None
-    """
-    ts = rospy.get_time()
-    df = args.get('dataframe', {})
-    # if not df:
-    #     args["column"] = [item.name for item in msg.fields]
-    
-    if args.get('force_realtime', True):
-        args["dataframe"][ts] = _msg_to_dataframe(msg)
-    else:
-        args["msg_list"][ts] = msg
-    print("{} frame saved at {}, total {}.".format(args.get('name', 'Anomaly'), ts, len(args['msg_list'])))
+    return dataframes
 
 
 # def arbe_loader_before_start_abandoned(sub: dict):
@@ -80,7 +62,30 @@ def arbe_loader_callback(msg, args):
 
 
 def arbe_loader_before_start(sub: dict):
-    sub["args"].update(dict(name=sub["name"], dataframe={}, msg_list={}))
+    """
+    MultiSubClient before subscriber start trigger
+    Init args
+
+    :param sub: current subscriber
+    """
+    sub["args"].update(dict(name=sub["name"], dataframe={}, wait_={}))
+
+
+def arbe_loader_callback(msg, args):
+    """
+    ros data stream to dataframe
+
+    :param data: vrpn message
+    :param args: dict(dataframe, name, msg_list)
+    :return: None
+    """
+    ts = rospy.get_time()
+    
+    if args.get('force_realtime', True):
+        args["dataframe"][ts] = _msg_to_dataframe(msg)
+    else:
+        args["msg_list"][ts] = msg
+    print("{} frame saved at {}, total {}.".format(args.get('name', 'Anomaly'), ts, len(args['msg_list'])))
 
 
 # def arbe_loader_after_stop_abandoned(sub: dict):
@@ -105,11 +110,23 @@ def arbe_loader_before_start(sub: dict):
 
 
 def arbe_loader_after_stop(sub: dict):
-    for ts, msg in sub["args"]['msg_list'].items():
+    """
+    MultiSubClient after subscriber stop trigger
+    Convert data in args["wait_queue"]
+
+    :param sub: current subscriber
+    """
+    for ts, msg in sub["args"]['wait_queue'].items():
         sub["args"]["dataframe"][ts] = _msg_to_dataframe(msg)
         
 
-def _msg_to_dataframe(msg):
+def _msg_to_dataframe(msg) -> pd.DataFrame:
+    """
+    Convert ros message to pandas DataFrame
+
+    :param msg: ros messgae
+    :return: DataFrame
+    """
     start_t = time.time()
     df = pd.DataFrame(_point_cloud_loader(msg), columns=[item.name for item in msg.fields])
     end_t = time.time()
@@ -118,6 +135,12 @@ def _msg_to_dataframe(msg):
 
 
 def _point_cloud_loader(cloud):
+    """
+    Implementation of point_cloud2.read_points
+    Return list directly, rather than Generator to speed up stream read.
+
+    :param sub: current subscriber
+    """
     import struct
     fmt = point_cloud2._get_struct_fmt(cloud.is_bigendian, cloud.fields, None)
     width, height, point_step, row_step, data = cloud.width, cloud.height, cloud.point_step, cloud.row_step, cloud.data
