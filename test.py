@@ -1,4 +1,7 @@
-import numpy as np
+
+
+from dataloader.nokov_loader import nokov_loader_after_stop
+from dataloader import utils
 
 
 def data_aling_test():
@@ -8,6 +11,7 @@ def data_aling_test():
 
 
 def coord_trans_test():
+    import numpy as np
     from calib import coord_trans
     coords = coord_trans.read_static_ts('./calib/__test__/radar1.ts')
     # set or view board params here
@@ -41,7 +45,8 @@ def nokov_loader_test():
     client = MultiSubClient()
 
     client.add_sub(name, PoseStamped, nokov_loader_callback,
-                    before_start=nokov_loader_before_start)
+                    before_start=nokov_loader_before_start,
+                    after_stop=nokov_loader_after_stop)
     while not rospy.is_shutdown():
         pass
     #     if len(nokov_loader.get_dataframe()) > 20:
@@ -53,11 +58,9 @@ def nokov_loader_test():
 
 
 def arbe_loader_online_test():
-    import os
-    import shutil
     import rospy
-    import pandas as pd
-    from dataloader import MultiSubClient
+    import os
+    from dataloader.utils import MultiSubClient, clean_dir
     from dataloader.arbe_loader import arbe_loader_callback, arbe_loader_before_start, arbe_loader_after_stop
     from sensor_msgs import point_cloud2
     name = '/arbe/rviz/pointcloud'
@@ -73,12 +76,11 @@ def arbe_loader_online_test():
         pass
     client.stop_all_subs()
     print(list(client.subscribers[name]['args']['dataframe'].values())[0])
-    if not os.path.exists('./__test__/arbe_output/'):
-        os.mkdir('./__test__/arbe_output/')
-    shutil.rmtree('./__test__/arbe_output/')
-    os.mkdir('./__test__/arbe_output/')
+    
+    dir = './__test__/arbe_output/'
+    clean_dir(dir)
     for ts, df in client.subscribers[name]['args']['dataframe'].items():
-        df.to_csv('./__test__/arbe_output/{}.csv'.format(ts))
+        df.to_csv(os.path.join(dir, '{}.csv'.format(ts)))
     # client.subscribers[name]['args']['dataframe'].to_csv('./dataloader/__test__/arbe_test.csv')
 
 

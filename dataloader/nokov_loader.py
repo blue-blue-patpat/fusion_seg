@@ -8,12 +8,11 @@
 2021/6/28 23:21    wxy        1.0         NOKOV dataloader
 """
 
-import pandas as pd
 # import lib
+import pandas as pd
+import rospy
 from geometry_msgs.msg import PoseStamped
 # from tf.transformations import *
-
-from dataloader.ros_client import MultiSubClient
 
 
 """
@@ -21,23 +20,49 @@ Use NOKOV Seeker to save offline data.
 """
 
 
-def nokov_loader_callback(data, args):
+def nokov_loader_before_start(sub: dict):
+    """
+    MultiSubClient before subscriber start trigger
+    Init args
+
+    :param sub: current subscriber
+    """
+    sub["args"].update(dict(name=sub["name"], dataframe={}, task_queue={}))
+
+
+def nokov_loader_callback(msg, args):
     """
     NOKOV vrpn data to dataframe
     :param data: vrpn data
-    :param args:
+    :param args: subscriber["args"]
     :return: None
     """
-    # print(data, args)
-    df = args.get('df', pd.DataFrame())
-    topic, msg, t = data
-    if df.empty:
-        df[["global_ts"]+[item.name for item in msg.fields]] = None
-    # TODO: check df reference; check data structure
-    df.loc[len(df)] = [msg.header.stamp, msg.pose.position.x, msg.pose.position.y,
-                       msg.pose.position.z]
-    print("nokov frame{} saved.".format(msg.header.frame_id))
+    ts = rospy.get_time()
+
+    if args.get('force_realtime', True):
+        args["dataframe"][ts] = _msg_to_dataframe(msg)
+    else:
+        args["task_queue"][ts] = msg
+    print("[{}] {} frames saved, {} frames waiting: {}".format(
+        args['name'], len(args["dataframe"]), len(args['task_queue']), ts))
 
 
-def nokov_loader_before_start(sub: dict) -> dict:
-    return dict(name=sub["name"], dataframe=pd.DataFrame())
+def nokov_loader_after_stop(sub: dict):
+    """
+    MultiSubClient after subscriber stop trigger
+    Convert data in args["task_queue"]
+
+    :param sub: current subscriber
+    """
+    for ts, msg in sub["args"]['task_queue'].items():
+        sub["args"]["dataframe"][ts] = _msg_to_dataframe(msg)
+
+
+def _msg_to_dataframe(msg):
+    """
+    Convert ros message to pandas DataFrame
+
+    :param msg: ros messgae
+    :return: DataFrame
+    """
+    pass

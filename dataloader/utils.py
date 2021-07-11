@@ -1,15 +1,17 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 """
-@File       :   ros_client.py    
+@File       :   utils.py    
 @Contact    :   wyzlshx@foxmail.com
 @Modify Time      @Author    @Version    @Description
 ------------      -------    --------    -----------
-2021/6/29 10:03    wxy        1.0         A simple implementation for ros multi subscriber client
+2021/6/29 10:03    wxy        1.0         dataloader utils
 """
 
 # import lib
 import rospy
+import os
+import shutil
 
 
 class MultiSubClient:
@@ -99,3 +101,9 @@ class MultiSubClient:
         """
         for name, sub in self.subscribers.items():
             self.stop_sub(name)
+
+
+def clean_dir(dir):
+    if os.path.exists(dir):
+        shutil.rmtree(dir)
+    os.mkdir(dir)

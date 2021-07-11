@@ -68,7 +68,7 @@ def arbe_loader_before_start(sub: dict):
 
     :param sub: current subscriber
     """
-    sub["args"].update(dict(name=sub["name"], dataframe={}, wait_queue={}))
+    sub["args"].update(dict(name=sub["name"], dataframe={}, task_queue={}))
 
 
 def arbe_loader_callback(msg, args):
@@ -76,7 +76,7 @@ def arbe_loader_callback(msg, args):
     ros data stream to dataframe
 
     :param data: vrpn message
-    :param args: dict(dataframe, name, wait_queue)
+    :param args: dict(dataframe, name, task_queue)
     :return: None
     """
     ts = rospy.get_time()
@@ -84,8 +84,9 @@ def arbe_loader_callback(msg, args):
     if args.get('force_realtime', True):
         args["dataframe"][ts] = _msg_to_dataframe(msg)
     else:
-        args["wait_queue"][ts] = msg
-    print("{} frame saved at {}, total {}.".format(args.get('name', 'Anomaly'), ts, len(args['wait_queue'])))
+        args["task_queue"][ts] = msg
+    print("[{}] {} frames saved, {} frames waiting: {}".format(
+        args['name'], len(args["dataframe"]), len(args['task_queue']), ts))
 
 
 # def arbe_loader_after_stop_abandoned(sub: dict):
@@ -112,11 +113,11 @@ def arbe_loader_callback(msg, args):
 def arbe_loader_after_stop(sub: dict):
     """
     MultiSubClient after subscriber stop trigger
-    Convert data in args["wait_queue"]
+    Convert data in args["task_queue"]
 
     :param sub: current subscriber
     """
-    for ts, msg in sub["args"]['wait_queue'].items():
+    for ts, msg in sub["args"]['task_queue'].items():
         sub["args"]["dataframe"][ts] = _msg_to_dataframe(msg)
         
 
