@@ -38,7 +38,7 @@ class MultiSubClient:
             self.subscribers[name]["args"].update(args)
         return self.subscribers[name]
 
-    def add_sub(self, name: str, topic_type, callback, **kwargs) -> dict:
+    def add_sub(self, name: str, topic_type=object, callback=None, **kwargs) -> dict:
         """
         Add subscriber
         :param name: sub topic name, sub identifier
@@ -47,7 +47,8 @@ class MultiSubClient:
         :return: self.subscribers, dict
         """
         self.subscribers[name] = dict(
-            name=name, topic_type=topic_type, callback=callback, args={}, subscriber=None
+            name=name, topic_type=topic_type, callback=callback, args={},
+            subscriber=None, sub_type=kwargs.get("sub_type", rospy.Subscriber)
         )
         self.update_args(name, kwargs)
         return self.subscribers
@@ -59,14 +60,13 @@ class MultiSubClient:
         :return: current sub
         """
         if name in self.subscribers.keys():
+            sub = self.subscribers[name]
             # init args
-            if "before_start" in self.subscribers[name]["args"].keys() and self.subscribers[name]["args"]["before_start"] is not None:
-                self.subscribers[name]["args"]["before_start"](self.subscribers[name])
+            if "before_start" in sub["args"].keys() and sub["args"]["before_start"] is not None:
+                sub["args"]["before_start"](sub)
             # subscribe topic
-            self.subscribers[name]["subscriber"] = rospy.Subscriber(name, self.subscribers[name]["topic_type"],
-                                                                    callback=self.subscribers[name]["callback"],
-                                                                    callback_args=self.subscribers[name]["args"])
-        return self.subscribers.get(name, None)
+            sub["subscriber"] = sub["args"]["sub_type"](name, sub["topic_type"], callback=sub["callback"], callback_args=sub["args"])
+        return sub
 
     def stop_sub(self, name: str) -> dict:
         """
@@ -75,10 +75,11 @@ class MultiSubClient:
         :return: current sub
         """
         if name in self.subscribers.keys() and self.subscribers[name]["subscriber"] is not None:
-            self.subscribers[name]["subscriber"].unregister()
-            if "after_stop" in self.subscribers[name]["args"].keys() and self.subscribers[name]["args"]["after_stop"] is not None:
-                    self.subscribers[name]["args"]["after_stop"](self.subscribers[name])
-        return self.subscribers.get(name, None)
+            sub = self.subscribers[name]
+            sub["subscriber"].unregister()
+            if "after_stop" in sub["args"].keys() and sub["args"]["after_stop"] is not None:
+                    sub["args"]["after_stop"](sub)
+        return sub
 
     def start_all_subs(self, block=False):
         """
@@ -104,6 +105,11 @@ class MultiSubClient:
 
 
 def clean_dir(dir):
+    """
+    Remove EVERYTHING under dir
+
+    :param dir: target directory
+    """
     if os.path.exists(dir):
         shutil.rmtree(dir)
     os.mkdir(dir)

@@ -35,14 +35,15 @@ def arbe_loader_offline_test():
     df.to_csv('./dataloader/__test__/arbe_test.csv', index=False)
 
 
-def nokov_loader_test():
+def nokov_loader_test(client=None):
     import rospy
-    from dataloader import MultiSubClient
+    from dataloader.utils import MultiSubClient
     from geometry_msgs.msg import PoseStamped
     from dataloader.nokov_loader import nokov_loader_before_start, nokov_loader_callback
 
     name = "/vrpn_client_node/tb3_0/pose"
-    client = MultiSubClient()
+    if client is None:
+        client = MultiSubClient()
 
     client.add_sub(name, PoseStamped, nokov_loader_callback,
                     before_start=nokov_loader_before_start,
@@ -57,19 +58,22 @@ def nokov_loader_test():
     # df.to_csv('./dataloader/__test__/nokov_test.csv')
 
 
-def arbe_loader_online_test():
+def arbe_loader_online_test(client=None):
     import rospy
     import os
     from dataloader.utils import MultiSubClient, clean_dir
     from dataloader.arbe_loader import arbe_loader_callback, arbe_loader_before_start, arbe_loader_after_stop
     from sensor_msgs import point_cloud2
+
     name = '/arbe/rviz/pointcloud'
-    client = MultiSubClient()
+    if client is None:
+        client = MultiSubClient()
     
     client.add_sub(name, point_cloud2.PointCloud2, arbe_loader_callback,
                     before_start=arbe_loader_before_start, 
-                    after_stop=arbe_loader_after_stop)
-    client.update_args(name, dict(force_realtime=True))
+                    after_stop=arbe_loader_after_stop,
+                    force_realtime=True)
+
     client.start_sub(name)
 
     while not rospy.is_shutdown():
@@ -84,6 +88,26 @@ def arbe_loader_online_test():
     # client.subscribers[name]['args']['dataframe'].to_csv('./dataloader/__test__/arbe_test.csv')
 
 
+def realsense_loader_test(client=None):
+    from dataloader.realsense_loader import RealSenseSubscriber
+    from dataloader.utils import MultiSubClient
+
+    name = "RealSense"
+
+    if client is None:
+        client = MultiSubClient()
+
+    client.add_sub(name, sub_type=RealSenseSubscriber, save_path="./__test__/realsense_output")
+
+    client.start_sub(name)
+    try:
+        while True:
+            pass
+    except KeyboardInterrupt:
+        client.stop_sub(name)
+
+
 if __name__ == '__main__':
-    arbe_loader_online_test()
+    realsense_loader_test()
+    # arbe_loader_online_test()
     # arbe_loader_offline_test()

@@ -1,7 +1,7 @@
 import pyrealsense2 as rs
 import numpy as np
 import cv2 as cv
-from realsense_device_manager import Device
+from realsense.realsense_device_manager import Device
 import os
 
 
