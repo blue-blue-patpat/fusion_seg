@@ -2,6 +2,7 @@ import pyrealsense2 as rs
 import numpy as np
 import cv2 as cv
 from realsense.realsense_device_manager import Device
+# from realsense_device_manager import Device
 import os
 
 
@@ -91,7 +92,7 @@ if __name__ == '__main__':
     '''
 
     # Designating image saving paths
-    path_frame = "Frames/"
+    path_frame = "./__test__/realsense_output/"
 
     # Set parameters
     frame_rate = 30

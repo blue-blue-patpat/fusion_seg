@@ -1,5 +1,8 @@
 
 
+from functools import cmp_to_key
+from time import sleep
+import dataloader
 from dataloader.nokov_loader import nokov_loader_after_stop
 from dataloader import utils
 
@@ -41,15 +44,18 @@ def nokov_loader_test(client=None):
     from geometry_msgs.msg import PoseStamped
     from dataloader.nokov_loader import nokov_loader_before_start, nokov_loader_callback
 
-    name = "/vrpn_client_node/tb3_0/pose"
+    name = "/vrpn_client_node/HelenHayes/pose"
     if client is None:
         client = MultiSubClient()
 
     client.add_sub(name, PoseStamped, nokov_loader_callback,
+                    # sub_type=rospy.Subscriber,
                     before_start=nokov_loader_before_start,
                     after_stop=nokov_loader_after_stop)
+    client.start_sub(name)
     while not rospy.is_shutdown():
         pass
+    client.stop_all_subs()
     #     if len(nokov_loader.get_dataframe()) > 20:
     #         nokov_loader.stop_sub()
     #         break
@@ -58,14 +64,11 @@ def nokov_loader_test(client=None):
     # df.to_csv('./dataloader/__test__/nokov_test.csv')
 
 
-def arbe_loader_online_test(client=None):
-    import rospy
-    import os
-    from dataloader.utils import MultiSubClient, clean_dir
+def arbe_loader(client=None, name = '/arbe/rviz/pointcloud'):
+    from dataloader.utils import MultiSubClient
     from dataloader.arbe_loader import arbe_loader_callback, arbe_loader_before_start, arbe_loader_after_stop
     from sensor_msgs import point_cloud2
 
-    name = '/arbe/rviz/pointcloud'
     if client is None:
         client = MultiSubClient()
     
@@ -76,23 +79,21 @@ def arbe_loader_online_test(client=None):
 
     client.start_sub(name)
 
-    while not rospy.is_shutdown():
-        pass
-    client.stop_all_subs()
-    print(list(client.subscribers[name]['args']['dataframe'].values())[0])
-    
-    dir = './__test__/arbe_output/'
-    clean_dir(dir)
-    for ts, df in client.subscribers[name]['args']['dataframe'].items():
-        df.to_csv(os.path.join(dir, '{}.csv'.format(ts)))
-    # client.subscribers[name]['args']['dataframe'].to_csv('./dataloader/__test__/arbe_test.csv')
+
+def arbe_loader_post_processing(sub: dict, **kwargs):
+    import os
+    from dataloader.utils import clean_dir
+
+    save_path = kwargs.get('path', './__test__/arbe_output/')
+    clean_dir(save_path)
+    for ts, df in sub['args']['dataframe'].items():
+        df.to_csv(os.path.join(save_path, '{}.csv'.format(ts)))
 
 
-def realsense_loader_test(client=None):
+def realsense_loader(client=None, name = "RealSense"):
+    import os
     from dataloader.realsense_loader import RealSenseSubscriber
     from dataloader.utils import MultiSubClient
-
-    name = "RealSense"
 
     if client is None:
         client = MultiSubClient()
@@ -100,14 +101,53 @@ def realsense_loader_test(client=None):
     client.add_sub(name, sub_type=RealSenseSubscriber, save_path="./__test__/realsense_output")
 
     client.start_sub(name)
-    try:
-        while True:
-            pass
-    except KeyboardInterrupt:
-        client.stop_sub(name)
 
 
 if __name__ == '__main__':
-    realsense_loader_test()
-    # arbe_loader_online_test()
-    # arbe_loader_offline_test()
+    from dataloader.utils import MultiSubClient, TaskFinishException
+    print("DataLoader Test")
+    cmd_dict = dict(
+        arbe=dict(
+            key="a",
+            name = '/arbe/rviz/pointcloud',
+            func=arbe_loader,
+            post_func=arbe_loader_post_processing,
+        ),
+        realsense=dict(
+            key="r",
+            name = "/RealSense",
+            func=realsense_loader,
+            post_func=None
+        ),
+        quit=dict(
+            key="q",
+            name="/QuitMainProcess",
+            func=exit,
+            post_func=None
+        ),
+        # nokov=dict(
+        #     key="n",
+        #     func=nokov_loader,
+        #     post_func=nokov_loader_post_processing
+        # ),
+    )
+    while True:
+        print("Press key to continue...")
+        client = MultiSubClient()
+
+        for k, v in cmd_dict.items():
+            print("{} for {}".format(v["key"], k))
+        cmd = input()
+        for k, v in cmd_dict.items():
+            if v["key"] in cmd:
+                v["func"](client)
+
+        try:
+            while True:
+                pass
+        except TaskFinishException as e:
+            print(e)
+
+        for k, v in cmd_dict.items():
+            if v["key"] in cmd and v["post_func"] is not None:
+                v["post_func"](client.subscribers[v["name"]])

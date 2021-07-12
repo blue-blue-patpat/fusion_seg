@@ -9,9 +9,16 @@
 """
 
 # import lib
-import rospy
 import os
+import psutil
+import signal
+import rospy
 import shutil
+
+
+class TaskFinishException(BaseException):
+    def __init__(self, *args: object) -> None:
+        super().__init__(*args)
 
 
 class MultiSubClient:
@@ -26,6 +33,8 @@ class MultiSubClient:
         rospy.init_node(node_name)
         # {name: {args, topic_type, callback, args, subscriber}}
         self.subscribers = {}
+        self.parent_id = os.getpid()
+        self.worker_init()
 
     def update_args(self, name, args):
         """
@@ -51,6 +60,7 @@ class MultiSubClient:
             subscriber=None, sub_type=kwargs.get("sub_type", rospy.Subscriber)
         )
         self.update_args(name, kwargs)
+        print("DataLoader task {} added.".format(name))
         return self.subscribers
 
     def start_sub(self, name: str) -> dict:
@@ -65,7 +75,8 @@ class MultiSubClient:
             if "before_start" in sub["args"].keys() and sub["args"]["before_start"] is not None:
                 sub["args"]["before_start"](sub)
             # subscribe topic
-            sub["subscriber"] = sub["args"]["sub_type"](name, sub["topic_type"], callback=sub["callback"], callback_args=sub["args"])
+            sub["subscriber"] = sub["sub_type"](name, sub["topic_type"], callback=sub["callback"], callback_args=sub["args"])
+            print("DataLoader task {} started.".format(name))
         return sub
 
     def stop_sub(self, name: str) -> dict:
@@ -77,6 +88,7 @@ class MultiSubClient:
         if name in self.subscribers.keys() and self.subscribers[name]["subscriber"] is not None:
             sub = self.subscribers[name]
             sub["subscriber"].unregister()
+            print("DataLoader task {} stopped.".format(name))
             if "after_stop" in sub["args"].keys() and sub["args"]["after_stop"] is not None:
                     sub["args"]["after_stop"](sub)
         return sub
@@ -102,6 +114,22 @@ class MultiSubClient:
         """
         for name, sub in self.subscribers.items():
             self.stop_sub(name)
+
+    def worker_init(self):
+        def sig_int(signal_num, frame):
+            print('signal: %s' % signal_num)
+            self.stop_all_subs()
+            raise TaskFinishException
+            # parent = psutil.Process(self.parent_id)
+            # for child in parent.children():
+            #     if child.pid != os.getpid():
+            #         print("killing child: %s" % child.pid)
+            #         child.kill()
+            # print("killing parent: %s" % parent_id)
+            # parent.kill()
+            # print("suicide: %s" % os.getpid())
+            # psutil.Process(os.getpid()).kill()
+        signal.signal(signal.SIGINT, sig_int)
 
 
 def clean_dir(dir):
