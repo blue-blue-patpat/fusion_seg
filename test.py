@@ -1,12 +1,4 @@
 
-
-from functools import cmp_to_key
-from time import sleep
-import dataloader
-from dataloader.nokov_loader import nokov_loader_after_stop
-from dataloader import utils
-
-
 def data_aling_test():
     from dataloader import align
     df = align('./dataloader/__test__/gt', './dataloader/__test__/camera', './dataloader/__test__/radar', './dataloader/__test__/output/test.csv', abspath=False)
@@ -42,7 +34,7 @@ def nokov_loader_test(client=None):
     import rospy
     from dataloader.utils import MultiSubClient
     from geometry_msgs.msg import PoseStamped
-    from dataloader.nokov_loader import nokov_loader_before_start, nokov_loader_callback
+    from dataloader.nokov_loader import nokov_loader_before_start, nokov_loader_callback, nokov_loader_after_stop
 
     name = "/vrpn_client_node/HelenHayes/pose"
     if client is None:
@@ -103,6 +95,34 @@ def realsense_loader(client=None, name = "RealSense"):
     client.start_sub(name)
 
 
+def kinect_loader_rgb(client=None, name="/rgb/image_raw"):
+    from dataloader.kinect_loader import kinect_loader_before_start, kinect_loader_callback
+    from sensor_msgs.msg import Image
+
+    if client is None:
+        client = MultiSubClient()
+    
+    client.add_sub(name, Image, kinect_loader_callback,
+                    before_start=kinect_loader_before_start,
+                    save_path="./__test__/kinect_output/rgb")
+
+    client.start_sub(name)
+
+
+def kinect_loader_depth(client=None, name="/depth/image_raw"):
+    from dataloader.kinect_loader import kinect_loader_before_start, kinect_loader_callback
+    from sensor_msgs.msg import Image
+
+    if client is None:
+        client = MultiSubClient()
+    
+    client.add_sub(name, Image, kinect_loader_callback,
+                    before_start=kinect_loader_before_start,
+                    save_path="./__test__/kinect_output/depth")
+
+    client.start_sub(name)
+
+
 if __name__ == '__main__':
     from dataloader.utils import MultiSubClient, TaskFinishException
     print("DataLoader Test")
@@ -119,6 +139,18 @@ if __name__ == '__main__':
             func=realsense_loader,
             post_func=None
         ),
+        kinect_rgb=dict(
+            key="k0",
+            name = "/rgb/image_raw",
+            func=kinect_loader_rgb,
+            post_func=None
+        ),
+        kinect_depth=dict(
+            key="k1",
+            name = "/depth/image_raw",
+            func=kinect_loader_depth,
+            post_func=None
+        ),
         quit=dict(
             key="q",
             name="/QuitMainProcess",
@@ -132,7 +164,7 @@ if __name__ == '__main__':
         # ),
     )
     while True:
-        print("Press key to continue...")
+        print("Eneter command to continue...")
         client = MultiSubClient()
 
         for k, v in cmd_dict.items():
