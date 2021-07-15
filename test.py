@@ -76,7 +76,7 @@ def arbe_loader_post_processing(sub: dict, **kwargs):
     import os
     from dataloader.utils import clean_dir
 
-    save_path = kwargs.get('path', './__test__/arbe_output/')
+    save_path = sub["args"].get('path', './__test__/arbe_output/')
     clean_dir(save_path)
     for ts, df in sub['args']['dataframe'].items():
         df.to_csv(os.path.join(save_path, '{}.csv'.format(ts)))

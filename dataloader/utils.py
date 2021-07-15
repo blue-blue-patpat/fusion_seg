@@ -14,6 +14,7 @@ import psutil
 import signal
 import rospy
 import shutil
+import time
 
 
 class TaskFinishException(BaseException):
@@ -60,7 +61,7 @@ class MultiSubClient:
             subscriber=None, sub_type=kwargs.get("sub_type", rospy.Subscriber)
         )
         self.update_args(name, kwargs)
-        print("DataLoader task {} added.".format(name))
+        print("DataLoader task {} added: {}".format(name, time.time()))
         return self.subscribers
 
     def start_sub(self, name: str) -> dict:
@@ -76,7 +77,7 @@ class MultiSubClient:
                 sub["args"]["before_start"](sub)
             # subscribe topic
             sub["subscriber"] = sub["sub_type"](name, sub["topic_type"], callback=sub["callback"], callback_args=sub["args"])
-            print("DataLoader task {} started.".format(name))
+            print("DataLoader task {} started: {}".format(name, time.time()))
         return sub
 
     def stop_sub(self, name: str) -> dict:
@@ -88,7 +89,7 @@ class MultiSubClient:
         if name in self.subscribers.keys() and self.subscribers[name]["subscriber"] is not None:
             sub = self.subscribers[name]
             sub["subscriber"].unregister()
-            print("DataLoader task {} stopped.".format(name))
+            print("DataLoader task {} stopped: {}".format(name, time.time()))
             if "after_stop" in sub["args"].keys() and sub["args"]["after_stop"] is not None:
                     sub["args"]["after_stop"](sub)
         return sub
