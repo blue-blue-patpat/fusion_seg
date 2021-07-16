@@ -10,14 +10,18 @@
 
 # import lib
 import os
-import psutil
-import signal
-import rospy
 import shutil
+import signal
 import time
+
+import rospy
 
 
 class TaskFinishException(BaseException):
+    """
+    Triggered by SIGINT
+    """
+
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
 
@@ -117,8 +121,15 @@ class MultiSubClient:
             self.stop_sub(name)
 
     def worker_init(self):
+        """
+        Init worker signal callback, enable interrupt only in main process
+
+        :return:
+        """
+
         def sig_int(signal_num, frame):
             print('signal: %s' % signal_num)
+            # stop subscribers
             self.stop_all_subs()
             raise TaskFinishException
             # parent = psutil.Process(self.parent_id)

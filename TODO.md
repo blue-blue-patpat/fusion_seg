@@ -1,10 +1,11 @@
 # 3DSVC Radar TODO
 
-## dataloader/ros_client.py
+## dataloader/utils.py
 
 ### features
 
 - [x] subscriber manager 2021/06/29 xiangyu
+- [x] add comments 2021/07/05 xiangyu
 
 ## dataloader/arbe_loader.py
 
@@ -12,12 +13,8 @@
 
 - [x] offline loader 2021/07/01 xiangyu
 - [x] online loader 2021/07/05 xiangyu
-
-### function: arbe_loader_offline
-
-- [x] check clm datatype 2021/07/01 xiangyu
-- [x] check p datatype 2021/07/01 xiangyu
-- [x] reformat file, remove print 2021/07/01 xiangyu
+- [x] pass test 2021/07/10 xiangyu
+- [x] add comments 2021/07/10 xiangyu
 
 ## dataloader/nokov_loader.py
 
@@ -25,7 +22,22 @@
 
 - [ ] online loader
 
-### function: to_dataframe_callback
+## dataloader/realsense_loader.py
 
-- [x] check df reference 2021/07/01 xiangyu
-- [ ] check data structure
+### features
+
+- [x] multi process 2021/07/11 xiangyu
+- [x] pass test 2021/07/12 xiangyu
+- [x] add point cloud support 2021/07/15 xiangyu
+- [x] pass test 2021/07/15 xiangyu
+- [x] add comments 2021/07/16 xiangyu
+
+## dataloader/kinect_loader.py
+
+### features
+
+- [x] single kinect 2021/07/12 xiangyu
+- [x] pass test 2021/07/13 xiangyu
+- [x] add comments 2021/07/16 xiangyu
+- [ ] multi kinect
+- [ ] pass test
