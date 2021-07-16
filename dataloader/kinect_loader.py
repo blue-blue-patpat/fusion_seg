@@ -10,11 +10,11 @@
 
 # import lib
 import os
-import pandas as pd
+
+import cv2
 import rospy
 from cv_bridge import CvBridge
-import cv2
-import numpy as np
+
 from dataloader.utils import clean_dir
 
 
@@ -32,7 +32,8 @@ def kinect_loader_before_start(sub: dict):
 def kinect_loader_callback(msg, args):
     """
     Kinect ros data to dataframe
-    :param data: vrpn data
+
+    :param msg: ros message
     :param args: subscriber["args"]
     :return: None
     """
@@ -55,6 +56,12 @@ def kinect_loader_callback(msg, args):
 
 
 def _encoding_to_dtype_with_channels(encoding):
+    """
+    Image encoding mapper, to avoid using cv_bridge
+
+    :param encoding: img encoding str
+    :return: numpy datatype, number of channels
+    """
     if encoding == "bgra8":
         encoding = "8UC4"
     if "U" in encoding:
@@ -71,9 +78,10 @@ def _encoding_to_dtype_with_channels(encoding):
     return dtype, channel
 
 
-def _imgmsg_to_cv2(img_msg, desired_encoding = "passthrough"):
+def _imgmsg_to_cv2(img_msg, desired_encoding="passthrough"):
     """
     Convert a sensor_msgs::Image message to an OpenCV :cpp:type:`cv::Mat`.
+    MOdified based on cv_bridge, only support passthrough mode
 
     :param img_msg:   A :cpp:type:`sensor_msgs::Image` message
     :param desired_encoding:  The encoding of the image data, one of the following strings:
@@ -92,7 +100,6 @@ def _imgmsg_to_cv2(img_msg, desired_encoding = "passthrough"):
     If the image only has one channel, the shape has size 2 (width and height)
     """
     import sys
-    import cv2
     import numpy as np
     dtype, n_channels = _encoding_to_dtype_with_channels(img_msg.encoding)
     dtype = np.dtype(dtype)
