@@ -18,6 +18,11 @@ from cv_bridge import CvBridge
 from dataloader.utils import clean_dir
 
 
+"""
+Use Kinect with ROS
+"""
+
+
 def kinect_loader_before_start(sub: dict):
     """
     MultiSubClient before subscriber start trigger
@@ -126,3 +131,10 @@ def _imgmsg_to_cv2(img_msg, desired_encoding="passthrough"):
     #     raise RuntimeError(e)
 
     # return res
+
+
+"""
+Use kinect with SDK
+"""
+
+from kinect.kinect_loader import KinectSubscriber

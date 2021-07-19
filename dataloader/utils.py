@@ -65,7 +65,7 @@ class MultiSubClient:
             subscriber=None, sub_type=kwargs.get("sub_type", rospy.Subscriber)
         )
         self.update_args(name, kwargs)
-        print("DataLoader task {} added: {}".format(name, time.time()))
+        print("[DataLoader] task {} added: {}".format(name, time.time()))
         return self.subscribers
 
     def start_sub(self, name: str) -> dict:
@@ -80,8 +80,11 @@ class MultiSubClient:
             if "before_start" in sub["args"].keys() and sub["args"]["before_start"] is not None:
                 sub["args"]["before_start"](sub)
             # subscribe topic
-            sub["subscriber"] = sub["sub_type"](name, sub["topic_type"], callback=sub["callback"], callback_args=sub["args"])
-            print("DataLoader task {} started: {}".format(name, time.time()))
+            if sub["subscriber"] is None:
+                sub["subscriber"] = sub["sub_type"](name, sub["topic_type"], callback=sub["callback"], callback_args=sub["args"])
+                print("[DataLoader] task {} started: {}".format(name, time.time()))
+            else:
+                print("[DataLoader] task {} already started: {}".format(name, time.time()))
         return sub
 
     def stop_sub(self, name: str) -> dict:
@@ -93,7 +96,8 @@ class MultiSubClient:
         if name in self.subscribers.keys() and self.subscribers[name]["subscriber"] is not None:
             sub = self.subscribers[name]
             sub["subscriber"].unregister()
-            print("DataLoader task {} stopped: {}".format(name, time.time()))
+            sub["subscriber"] = None
+            print("[DataLoader] task {} stopped: {}".format(name, time.time()))
             if "after_stop" in sub["args"].keys() and sub["args"]["after_stop"] is not None:
                     sub["args"]["after_stop"](sub)
         return sub
@@ -152,4 +156,4 @@ def clean_dir(dir):
     """
     if os.path.exists(dir):
         shutil.rmtree(dir)
-    os.mkdir(dir)
+    os.makedirs(dir)

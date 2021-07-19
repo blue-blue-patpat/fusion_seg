@@ -39,5 +39,5 @@
 - [x] single kinect 2021/07/12 xiangyu
 - [x] pass test 2021/07/13 xiangyu
 - [x] add comments 2021/07/16 xiangyu
-- [ ] multi kinect
-- [ ] pass test
+- [x] multi kinect 2021/07/19 anjun
+- [x] pass test 2021/07/20 anjun

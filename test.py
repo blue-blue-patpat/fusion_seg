@@ -69,8 +69,6 @@ def arbe_loader(client=None, name = '/arbe/rviz/pointcloud'):
                     after_stop=arbe_loader_after_stop,
                     force_realtime=True)
 
-    client.start_sub(name)
-
 
 def arbe_loader_post_processing(sub: dict, **kwargs):
     import os
@@ -92,8 +90,6 @@ def realsense_loader(client=None, name = "RealSense"):
 
     client.add_sub(name, sub_type=RealSenseSubscriber, save_path="./__test__/realsense_output")
 
-    client.start_sub(name)
-
 
 def kinect_loader_rgb(client=None, name="/rgb/image_raw"):
     from dataloader.kinect_loader import kinect_loader_before_start, kinect_loader_callback
@@ -105,8 +101,6 @@ def kinect_loader_rgb(client=None, name="/rgb/image_raw"):
     client.add_sub(name, Image, kinect_loader_callback,
                     before_start=kinect_loader_before_start,
                     save_path="./__test__/kinect_output/rgb")
-
-    client.start_sub(name)
 
 
 def kinect_loader_depth(client=None, name="/depth/image_raw"):
@@ -120,7 +114,34 @@ def kinect_loader_depth(client=None, name="/depth/image_raw"):
                     before_start=kinect_loader_before_start,
                     save_path="./__test__/kinect_output/depth")
 
-    client.start_sub(name)
+
+def kinect_loader_multi(client=None, name="KinectSDK"):
+    from dataloader.kinect_loader import KinectSubscriber
+    from kinect.kinect_loader import _get_device_ids, _get_config
+    from multiprocessing import Value
+
+    if client is None:
+        client = MultiSubClient()
+
+    id_dict = _get_device_ids()
+    print("[{}] {} devices found.".format(name, len(id_dict)))
+
+    # kinect_master_release_flag = 
+
+    client.add_sub("KinectSub2", sub_type=KinectSubscriber, config=_get_config("sub"),
+                                device_id=id_dict["000176712112"],
+                                save_path="./__test__/kinect_output/sub2")
+    client.start_sub("KinectSub2")
+
+    client.add_sub("KinectSub1", sub_type=KinectSubscriber, config=_get_config("sub"), 
+                                device_id=id_dict["000053612112"], 
+                                save_path="./__test__/kinect_output/sub1")
+    client.start_sub("KinectSub1")
+
+    client.add_sub("KinectMaster", sub_type=KinectSubscriber, config=_get_config("mas"),
+                                device_id=id_dict["000326312112"],
+                                save_path="./__test__/kinect_output/master")
+    client.start_sub("KinectMaster")
 
 
 if __name__ == '__main__':
@@ -139,14 +160,20 @@ if __name__ == '__main__':
             func=realsense_loader,
             post_func=None
         ),
-        kinect_rgb=dict(
+        kinect_multi=dict(
             key="k0",
+            name = "/KinectSDK",
+            func=kinect_loader_multi,
+            post_func=None
+        ),
+        kinect_single_rgb=dict(
+            key="k1",
             name = "/rgb/image_raw",
             func=kinect_loader_rgb,
             post_func=None
         ),
-        kinect_depth=dict(
-            key="k1",
+        kinect_singel_depth=dict(
+            key="k2",
             name = "/depth/image_raw",
             func=kinect_loader_depth,
             post_func=None
@@ -173,6 +200,8 @@ if __name__ == '__main__':
         for k, v in cmd_dict.items():
             if v["key"] in cmd:
                 v["func"](client)
+
+        # client.start_all_subs()
 
         try:
             while True:

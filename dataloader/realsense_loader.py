@@ -8,9 +8,10 @@
 2021/7/11 10:38    wxy        1.0         RealSense dataloader
 """
 
-import gc
+
 # import lib
 import os
+import gc
 from multiprocessing import Process, Manager
 from time import time
 
@@ -24,20 +25,22 @@ from dataloader.utils import clean_dir
 
 
 class RealSenseSubscriber(Process):
-    def __init__(self, name="RealSenseSub", topic_type=None, callback=None, **kwargs) -> None:
+    def __init__(self, name="RealSenseSub", topic_type=None, callback=None, callback_args={}) -> None:
         """
         RealsenseSubscriber init
 
         :param name: implements rospy.Subscriber.topic_name
         :param topic_type: Not used, implements rospy.Subscriber.topic_type
         :param callback: Not used, implements rospy.Subscriber.callback
-        :param kwargs: implements rospy.Subscriber.kwargs
+        :param callback_args: implements rospy.Subscriber.kwargs
         """
         super().__init__(daemon=True)
         # Designating image saving paths
-        self.save_path = self.args.get("save_path", "./__test__/realsense_output")
         self.name = name
-        self.args = kwargs.get("callback_args", {})
+        if not self.args:
+            self.args = {}
+        self.args.update(callback_args)
+        self.save_path = self.args.get("save_path", "./__test__/realsense_output")
         # unregister flag: True if main process decides to unregister
         self.unreg_flag = Manager().Value(bool, False)
         # release flag: True if sub process is ready to be released
