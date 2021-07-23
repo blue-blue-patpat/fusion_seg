@@ -10,65 +10,75 @@
 
 # import lib
 from __future__ import generators
+from multiprocessing import Value
+from threading import Timer
+import ctypes
 import time
+import os
 import pandas as pd
-import rosbag
+import numpy as np
+from multiprocessing.dummy import Pool
 import rospy
 from sensor_msgs import point_cloud2
+from dataloader.utils import clean_dir, print_log
+import matplotlib
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 
-def arbe_readfile_offline(filepath: str, ):
+class ArbeSubscriber(rospy.Subscriber):
     """
-    Load arbe offline data from bag file
-
-    :param filepath: .bag file path
-    :return: data generator: (topic, msg, ts)
+    Arbe Subscriber
     """
-    bag_file = filepath
-    bag = rosbag.Bag(bag_file, "r")
-    info = bag.get_type_and_topic_info()
-    bag_data = bag.read_messages()
-    print("Loading Arbe data, {}".format(info))
-    return bag_data
+    def __init__(self, name, data_class, callback=None, callback_args=None,
+                 queue_size=None, buff_size=65536, tcp_nodelay=False):
+        super().__init__(name, data_class, callback=callback, callback_args=callback_args, queue_size=queue_size, buff_size=buff_size, tcp_nodelay=tcp_nodelay)
+        
+        # True if self is ready to be released
+        self.release_flag = Value(ctypes.c_bool, False)
+
+        self.callback_args.update(dict(name=name, dataframe={}, task_queue={}, start_tm=time.time(),
+            pool=Pool(),
+            info=dict(formatter="\tcount={}/{}; \tfps={}; \tstatus={}; \t{}:{}", data=[0, 0, -1, 1, 0, 0])))
+
+        clean_dir(self.callback_args.get('save_path', './__test__/default/arbe/'))
+    
+    def unregister(self):
+        """
+        Stop task
+        override Subscriber.unregister
+        """
+        # prevent super.unregister removing args
+        args = self.callback_args
+        super().unregister()
+        self.callback_args = args
+        # wait until no more tasks will be added to pool
+        self._close_pool()
+        return
+
+    def _close_pool(self):
+        """
+        Check and close pool using Timer.
+        """
+        # check waiting tasks
+        waiting_count = self.callback_args["info"]["data"][1] - self.callback_args["info"]["data"][0]
+        # if some tasks are still waiting, start a Timer and check later
+        if waiting_count > 0:
+            self.timer = Timer(3, self._close_pool)
+            self.timer.start()
+            return
+
+        # close and wait until pool is terminated
+        self.callback_args["pool"].close()
+        self.callback_args["pool"].join()
+        # ready to be released
+        self.release_flag.value = True
 
 
-def arbe_loader_offline(filepath: str) -> pd.DataFrame:
-    """
-    Load arbe offline data from bag file to pandas.DataFrame
-    WARNING: need test.
-
-    :param filepath: .bag file path
-    :return: [idx, global_ts, other_fields] pandas.DataFrame, same idx for same frame.
-    """
-    bag_data = arbe_readfile_offline(filepath)
-
-    dataframes = {}
-    for topic, msg, t in bag_data:
-        dataframes[t] =  _msg_to_dataframe(msg)
-        # if clm is None:
-        #     clm = ["frame_idx", "global_ts"] + [item.name for item in msg.fields]
-        #     df = pd.DataFrame(columns=clm)
-        # gen = point_cloud2.read_points(msg)
-        # for p in gen:
-        #     df.loc[len(df)] = [frame_idx, t] + list(p)
-        # frame_idx += 1
-
-        print("arbe loader: {} frames saved.")
-    return dataframes
-
-
-# def arbe_loader_before_start_abandoned(sub: dict):
-#     sub["args"].update(dict(name=sub["name"], dataframe=pd.DataFrame(), frame_id=0, msg_list={}, arr=[]))
-
-
-def arbe_loader_before_start(sub: dict):
-    """
-    MultiSubClient before subscriber start trigger
-    Init args
-
-    :param sub: current subscriber
-    """
-    sub["args"].update(dict(name=sub["name"], dataframe={}, task_queue={}))
+def arbe_process(msg, frame_count, ts, save_path, infodata):
+    # _msg_to_dataframe(msg).to_csv(os.path.join(save_path, '{}.csv'.format(ts)))
+    np.save(os.path.join(save_path, 'id={}_ts={}'.format(frame_count, ts)), np.array(_msg_to_dataframe(msg)))
+    infodata[0] += 1
 
 
 def arbe_loader_callback(msg, args):
@@ -80,6 +90,48 @@ def arbe_loader_callback(msg, args):
     :return: None
     """
     ts = rospy.get_time()
+
+    # callback may be triggered before __init__ completes. if pool is not started yet, ignore current frame
+    if args.get("pool", None) is None:
+        args["start_tm"] = time.time()
+        return
+
+    save_path = args.get('save_path', './__test__/default/arbe/')
+    
+    # if head is not recorded, save head to file
+    if not args.get("headline", False):
+        args["headline"] = True
+        f = open(os.path.join(save_path, "headline.txt"), "w")
+        f.write(",".join([item.name for item in msg.fields]))
+        f.close()
+    
+    # add task
+    args["pool"].apply_async(arbe_process, (msg, args["info"]["data"][1], ts, save_path, args["info"]["data"]))
+    plt.ion()
+    if args["info"]["data"][0]%15==0:
+        fig = plt.figure()
+        frame = _point_cloud_loader(msg)
+        frame =np.array(frame)
+        x = frame[:,0]
+        y = frame[:,1]
+        z = frame[:,2]
+        ax = Axes3D()
+        ax.scatter(x,y,z,cmap='spectral',c='b',label='airplane')
+        plt.pause(0.1)
+        fig.clf()
+        plt.ioff()
+    print_log("[{}] {} frames captured.".format(
+        args['name'], args["info"]["data"][1]), args["log_obj"])
+    
+    # update pannel info
+    running_tm = time.time()-args["start_tm"]
+    m = int(np.floor(running_tm/60))
+    s = int(running_tm - m*60)
+    fps = round((args["info"]["data"][1]) / running_tm, 2)
+    args["info"]["data"][1] += 1
+    args["info"]["data"][2] = fps
+    args["info"]["data"][4] = m
+    args["info"]["data"][5] = s
     
     if args.get('force_realtime', True):
         args["dataframe"][ts] = _msg_to_dataframe(msg)
@@ -128,11 +180,7 @@ def _msg_to_dataframe(msg) -> pd.DataFrame:
     :param msg: ros messgae
     :return: DataFrame
     """
-    start_t = time.time()
-    df = pd.DataFrame(_point_cloud_loader(msg), columns=[item.name for item in msg.fields])
-    end_t = time.time()
-    print("{} points, time period {}.".format(len(df), end_t - start_t))
-    return df
+    return pd.DataFrame(_point_cloud_loader(msg), columns=[item.name for item in msg.fields])
 
 
 def _point_cloud_loader(cloud):

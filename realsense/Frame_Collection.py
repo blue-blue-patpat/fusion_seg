@@ -53,7 +53,7 @@ class DeviceManager:
     def enable_all_devices(self, enable_ir_emitter=True):
 
         # Show connected devices
-        print(str(len(self._available_devices)) + " devices have been found")
+        # print(str(len(self._available_devices)) + " devices have been found")
 
         # Create profile dict and serial list
         pipeline_profile_total = {}
@@ -65,10 +65,10 @@ class DeviceManager:
 
             # Append serial to list
             serial_total.append(serial)
-            print(serial,type(serial))
+            # print(serial,type(serial))
 
         # Show serial list
-        print(serial_total)
+        # print(serial_total)
 
         # Get all enabled pipeline
         all_pipeline = self.get_all_pipeline()
@@ -130,6 +130,7 @@ if __name__ == '__main__':
 
                 # Transform color and depth images into numpy arrays
                 img_color = np.array(frames.get_color_frame().get_data())
+                img_color = cv.cvtColor(img_color, cv.COLOR_RGB2BGR)
                 img_depth = np.array(frames.get_depth_frame().get_data())
 
                 # Saving images

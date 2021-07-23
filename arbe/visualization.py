@@ -8,7 +8,7 @@ import cv2
 from mpl_toolkits.mplot3d import Axes3D
 import os,time
 
-bag_file = "2021-06-18-15-30-09.bag"
+bag_file = "arbe.bag"
 bag = rosbag.Bag(bag_file, "r")
 info = bag.get_type_and_topic_info()
 bag_data = bag.read_messages()
