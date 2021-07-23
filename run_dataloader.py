@@ -40,8 +40,7 @@ def run_realsense_loader(client=None, **kwargs):
 def run_kinect_loader_multi(client=None, **kwargs):
     import os
     from dataloader.utils import MultiSubClient, print_log
-    from dataloader.kinect_loader import KinectSubscriber
-    from kinect.kinect_loader import _get_device_ids, _get_config
+    from dataloader.kinect_loader import KinectSubscriber, _get_device_ids, _get_config
 
     if client is None:
         client = MultiSubClient()
