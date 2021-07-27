@@ -32,6 +32,9 @@ class ArbeSubscriber(rospy.Subscriber):
     """
     def __init__(self, name, data_class, callback=None, callback_args=None,
                  queue_size=None, buff_size=65536, tcp_nodelay=False):
+        # clear dir before start
+        clean_dir(callback_args.get('save_path', './__test__/default/arbe/'))
+    
         super().__init__(name, data_class, callback=callback, callback_args=callback_args, queue_size=queue_size, buff_size=buff_size, tcp_nodelay=tcp_nodelay)
         
         # True if self is ready to be released
@@ -40,8 +43,7 @@ class ArbeSubscriber(rospy.Subscriber):
         self.callback_args.update(dict(name=name, dataframe={}, task_queue={}, start_tm=time.time(),
             pool=Pool(),fig = plt.figure(1),
             info=dict(formatter="\tcount={}/{}; \tfps={}; \tstatus={}; \t{}:{}", data=[0, 0, -1, 1, 0, 0])))
-        clean_dir(self.callback_args.get('save_path', './__test__/default/arbe/'))
-    
+
     def unregister(self):
         """
         Stop task
@@ -113,51 +115,7 @@ def arbe_loader_callback(msg, args):
     #visualization
     #plt.switch_backend("tkagg")
     if args["info"]["data"][0]%15==0:
-        frame = _point_cloud_loader(msg)
-        frame = np.array(frame)
-        
-    
-        plt.ion()
-
-        pcd = frame[:,0:3]
-        # db = DBSCAN(eps=0.35, min_samples=25).fit(pcd)
-        # labels = db.labels_
-        # core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
-        # core_samples_mask[db.core_sample_indices_] = True
-        # n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
-        # print(n_clusters_)
-
-        # unique_labels = set(labels)
-        # colors = [plt.cm.Spectral(each)
-        #         for each in np.linspace(0, 1, len(unique_labels))]
-        
-        plt.clf()
-        #mngr = plt.get_current_fig_manager()  # 获取当前figure manager
-        #mngr.window.wm_geometry("+380+310")  # 调整窗口在屏幕上弹出的位置
-        fig = args["fig"]
-        ax = fig.add_subplot(111, projection='3d')
-        # for k, col in zip(unique_labels, colors):
-        #     if k == -1:
-        #         # Black used for noise.
-        col = (0, 0, 0, 1)
-
-        #     class_member_mask = (labels == k)
-        #     pcd_visible = pcd[class_member_mask & core_samples_mask]
-        plt.plot(pcd[:, 0], pcd[:, 1], pcd[:, 2],'o', markerfacecolor=col,
-                markeredgecolor='k', markersize=5)
-        
-
-        
-        plt.xlim(-5, 5)
-        plt.ylim(0, 10)
-        ax.set_zlim(0, 10)
-        # plt.title('Estimated number of clusters: %d' % n_clusters_)
-        ax.set_xlabel('X Label')
-        ax.set_ylabel('Y Label')
-        ax.set_zlabel('Z Label')
-        plt.pause(0.0001)
-        #plt.switch_backend("agg")
-        plt.ioff()
+        _show_pc_img(msg, args["fig"])
 
     # update pannel info
     running_tm = time.time()-args["start_tm"]
@@ -236,3 +194,46 @@ def _point_cloud_loader(cloud):
             ret.append(unpack_from(data, offset))
             offset += point_step
     return ret
+
+
+def _show_pc_img(msg, fig):
+    frame = np.array(_point_cloud_loader(msg))
+
+    plt.ion()
+
+    pcd = frame[:,0:3]
+    # db = DBSCAN(eps=0.35, min_samples=25).fit(pcd)
+    # labels = db.labels_
+    # core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
+    # core_samples_mask[db.core_sample_indices_] = True
+    # n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+    # print(n_clusters_)
+
+    # unique_labels = set(labels)
+    # colors = [plt.cm.Spectral(each)
+    #         for each in np.linspace(0, 1, len(unique_labels))]
+    
+    plt.clf()
+    #mngr = plt.get_current_fig_manager()  # 获取当前figure manager
+    #mngr.window.wm_geometry("+380+310")  # 调整窗口在屏幕上弹出的位置
+    ax = fig.add_subplot(111, projection='3d')
+    # for k, col in zip(unique_labels, colors):
+    #     if k == -1:
+    #         # Black used for noise.
+    col = (0, 0, 0, 1)
+
+    #     class_member_mask = (labels == k)
+    #     pcd_visible = pcd[class_member_mask & core_samples_mask]
+    plt.plot(pcd[:, 0], pcd[:, 1], pcd[:, 2],'o', markerfacecolor=col,
+            markeredgecolor='k', markersize=5)
+
+    plt.xlim(-5, 5)
+    plt.ylim(0, 10)
+    ax.set_zlim(0, 10)
+    # plt.title('Estimated number of clusters: %d' % n_clusters_)
+    ax.set_xlabel('X Label')
+    ax.set_ylabel('Y Label')
+    ax.set_zlabel('Z Label')
+    plt.pause(0.0001)
+    #plt.switch_backend("agg")
+    plt.ioff()
