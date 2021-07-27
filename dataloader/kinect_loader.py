@@ -287,21 +287,21 @@ class KinectSubscriber(Process):
                                 cv.moveWindow("kinect_{}".format(self.device_id),600,0)
                                 frame_to_show = cv.resize(frame.color[:,:,:3], (400, 300), interpolation=cv.INTER_LANCZOS4)
                                 cv.imshow("kinect_{}".format(self.device_id), frame_to_show)
-                                key = cv.waitKey(10)
+                                cv.waitKey(10)
                             elif self.device_id==1:
                                 cv.namedWindow("kinect_{}".format(self.device_id),0)
                                 cv.resizeWindow("kinect_{}".format(self.device_id),400,300)
                                 cv.moveWindow("kinect_{}".format(self.device_id),1000,0)
                                 frame_to_show = cv.resize(frame.color[:,:,:3], (400, 300), interpolation=cv.INTER_LANCZOS4)
                                 cv.imshow("kinect_{}".format(self.device_id), frame_to_show)
-                                key = cv.waitKey(10)
+                                cv.waitKey(10)
                             elif self.device_id==2:
                                 cv.namedWindow("kinect_{}".format(self.device_id),0)
                                 cv.resizeWindow("kinect_{}".format(self.device_id),400,300)
                                 cv.moveWindow("kinect_{}".format(self.device_id),1400,0)
                                 frame_to_show = cv.resize(frame.color[:,:,:3], (400, 300), interpolation=cv.INTER_LANCZOS4)
                                 cv.imshow("kinect_{}".format(self.device_id), frame_to_show)      
-                                key = cv.waitKey(10)
+                                cv.waitKey(10)
 
         except Exception as e:
             print_log(e, log_obj=self.log_obj, always_console=True)

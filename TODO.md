@@ -20,7 +20,7 @@
 - [x] add comments 2021/07/10 xiangyu
 - [x] realtime write 2021/07/23 xiangyu
 - [x] pass test 2021/07/23 xiangyu
-- [ ] realtime visualization
+- [x] realtime visualization 2021/7/27
 
 ## dataloader/nokov_loader.py
 
@@ -39,7 +39,7 @@
 - [x] add comments 2021/07/16 xiangyu
 - [x] realtime write 2021/07/23 xiangyu
 - [x] pass test 2021/07/23 xiangyu
-- [x] realtime visualization 2021/
+- [x] realtime visualization 2021/7/24
 
 ## dataloader/kinect_loader.py
 
@@ -52,4 +52,4 @@
 - [x] pass test 2021/07/20 anjun
 - [x] realtime write 2021/07/23 xiangyu
 - [x] pass test 2021/07/23 xiangyu
-- [x] realtime visualization
+- [x] realtime visualization 2021/7/24

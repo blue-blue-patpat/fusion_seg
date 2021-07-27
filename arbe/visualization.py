@@ -8,11 +8,11 @@ import cv2
 from mpl_toolkits.mplot3d import Axes3D
 import os,time
 
-bag_file = "arbe.bag"
+bag_file = "/home/nesc525/chen/3DSVC/arbe/arbe.bag"
 bag = rosbag.Bag(bag_file, "r")
 info = bag.get_type_and_topic_info()
 bag_data = bag.read_messages()
-plt.ion()
+# plt.ion()
 for topic,msg,t in bag_data:
     # print(data)
     gen = point_cloud2.read_points(msg)
@@ -30,16 +30,17 @@ for topic,msg,t in bag_data:
         zs.append(p[2])
 
         # print (" x : %.3f  y: %.3f  z: %.3f" %(p[0],p[1],p[2]))
-    data = np.array((xs,ys,zs),dtype=float)
-    data = np.transpose(data)
-    db = DBSCAN(eps=0.35, min_samples=25).fit(data)
+    pcd = np.array((xs,ys,zs),dtype=float)
+    pcd = np.transpose(pcd)
+
+    db = DBSCAN(eps=0.35, min_samples=25).fit(pcd)
     labels = db.labels_
     core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
     core_samples_mask[db.core_sample_indices_] = True
     n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
     n_noise_ = list(labels).count(-1)
     # print(n_clusters_)
-
+    
     unique_labels = set(labels)
     colors = [plt.cm.Spectral(each)
               for each in np.linspace(0, 1, len(unique_labels))]
@@ -53,10 +54,10 @@ for topic,msg,t in bag_data:
             col = [0, 0, 0, 1]
 
         class_member_mask = (labels == k)
-        xy = data[class_member_mask & core_samples_mask]
+        xy = pcd[class_member_mask & core_samples_mask]
         # print(range)
         plt.plot(xy[:, 0], xy[:, 1], xy[:, 2],'o', markerfacecolor=tuple(col),
-                 markeredgecolor='k', markersize=6)
+                 markeredgecolor='k', markersize=5)
         # xy = data[class_member_mask & ~core_samples_mask]
         # plt.plot(xy[:, 0], xy[:, 1], xy[:, 2],'o', markerfacecolor=tuple(col),
         #          markeredgecolor='k', markersize=6)
@@ -69,6 +70,6 @@ for topic,msg,t in bag_data:
     ax.set_zlabel('Z Label')
     # print("1:",time.time() - start)
     plt.pause(0.00001)
-    plt.ioff()
+    # plt.ioff()
     # print("2",time.time()-start)
     # plt.show()

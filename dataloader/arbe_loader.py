@@ -15,6 +15,7 @@ from threading import Timer
 import ctypes
 import time
 import os
+import cv2
 import pandas as pd
 import numpy as np
 from multiprocessing.dummy import Pool
@@ -24,8 +25,7 @@ from dataloader.utils import clean_dir, print_log
 import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-
-
+from sklearn.cluster import DBSCAN
 class ArbeSubscriber(rospy.Subscriber):
     """
     Arbe Subscriber
@@ -38,9 +38,8 @@ class ArbeSubscriber(rospy.Subscriber):
         self.release_flag = Value(ctypes.c_bool, False)
 
         self.callback_args.update(dict(name=name, dataframe={}, task_queue={}, start_tm=time.time(),
-            pool=Pool(),
+            pool=Pool(),fig = plt.figure(1),
             info=dict(formatter="\tcount={}/{}; \tfps={}; \tstatus={}; \t{}:{}", data=[0, 0, -1, 1, 0, 0])))
-
         clean_dir(self.callback_args.get('save_path', './__test__/default/arbe/'))
     
     def unregister(self):
@@ -52,6 +51,8 @@ class ArbeSubscriber(rospy.Subscriber):
         args = self.callback_args
         super().unregister()
         self.callback_args = args
+        #@plt.switch_backend("agg")
+        plt.close("all")
         # wait until no more tasks will be added to pool
         self._close_pool()
         return
@@ -90,7 +91,6 @@ def arbe_loader_callback(msg, args):
     :return: None
     """
     ts = rospy.get_time()
-
     # callback may be triggered before __init__ completes. if pool is not started yet, ignore current frame
     if args.get("pool", None) is None:
         args["start_tm"] = time.time()
@@ -107,22 +107,58 @@ def arbe_loader_callback(msg, args):
     
     # add task
     args["pool"].apply_async(arbe_process, (msg, args["info"]["data"][1], ts, save_path, args["info"]["data"]))
-    plt.ion()
-    if args["info"]["data"][0]%15==0:
-        fig = plt.figure()
-        frame = _point_cloud_loader(msg)
-        frame =np.array(frame)
-        x = frame[:,0]
-        y = frame[:,1]
-        z = frame[:,2]
-        ax = Axes3D()
-        ax.scatter(x,y,z,cmap='spectral',c='b',label='airplane')
-        plt.pause(0.1)
-        fig.clf()
-        plt.ioff()
     print_log("[{}] {} frames captured.".format(
         args['name'], args["info"]["data"][1]), args["log_obj"])
+
+    #visualization
+    #plt.switch_backend("tkagg")
+    if args["info"]["data"][0]%15==0:
+        frame = _point_cloud_loader(msg)
+        frame = np.array(frame)
+        
     
+        plt.ion()
+
+        pcd = frame[:,0:3]
+        # db = DBSCAN(eps=0.35, min_samples=25).fit(pcd)
+        # labels = db.labels_
+        # core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
+        # core_samples_mask[db.core_sample_indices_] = True
+        # n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+        # print(n_clusters_)
+
+        # unique_labels = set(labels)
+        # colors = [plt.cm.Spectral(each)
+        #         for each in np.linspace(0, 1, len(unique_labels))]
+        
+        plt.clf()
+        #mngr = plt.get_current_fig_manager()  # 获取当前figure manager
+        #mngr.window.wm_geometry("+380+310")  # 调整窗口在屏幕上弹出的位置
+        fig = args["fig"]
+        ax = fig.add_subplot(111, projection='3d')
+        # for k, col in zip(unique_labels, colors):
+        #     if k == -1:
+        #         # Black used for noise.
+        col = (0, 0, 0, 1)
+
+        #     class_member_mask = (labels == k)
+        #     pcd_visible = pcd[class_member_mask & core_samples_mask]
+        plt.plot(pcd[:, 0], pcd[:, 1], pcd[:, 2],'o', markerfacecolor=col,
+                markeredgecolor='k', markersize=5)
+        
+
+        
+        plt.xlim(-5, 5)
+        plt.ylim(0, 10)
+        ax.set_zlim(0, 10)
+        # plt.title('Estimated number of clusters: %d' % n_clusters_)
+        ax.set_xlabel('X Label')
+        ax.set_ylabel('Y Label')
+        ax.set_zlabel('Z Label')
+        plt.pause(0.0001)
+        #plt.switch_backend("agg")
+        plt.ioff()
+
     # update pannel info
     running_tm = time.time()-args["start_tm"]
     m = int(np.floor(running_tm/60))
@@ -132,13 +168,11 @@ def arbe_loader_callback(msg, args):
     args["info"]["data"][2] = fps
     args["info"]["data"][4] = m
     args["info"]["data"][5] = s
-    
+
     if args.get('force_realtime', True):
         args["dataframe"][ts] = _msg_to_dataframe(msg)
     else:
         args["task_queue"][ts] = msg
-    print("[{}] {} frames saved, {} frames waiting: {}".format(
-        args['name'], len(args["dataframe"]), len(args['task_queue']), ts))
 
 
 # def arbe_loader_after_stop_abandoned(sub: dict):

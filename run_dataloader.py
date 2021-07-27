@@ -8,7 +8,6 @@
 2021/7/23 18:46    wxy        1.0         use dataloader module to capture data
 """
 
-
 def run_arbe_loader(client=None, **kwargs):
     from dataloader.utils import MultiSubClient
     from dataloader.arbe_loader import arbe_loader_callback, ArbeSubscriber
@@ -83,7 +82,7 @@ def run():
     import curses
     from dataloader.utils import MultiSubClient, ymdhms_time, print_log
     import argparse
-
+    import matplotlib.pyplot as plt
     parser = argparse.ArgumentParser(usage='"start_dataloader.py -h" to show help.')
     parser.add_argument('-e', '--env', dest='env', type=str, choices=[
                         'dev', 'prod'], default='dev', help='Environment, default "dev". dev: save in ./default; prod: save by timestamp')
@@ -96,7 +95,6 @@ def run():
     parser.add_argument('-nvis', '--disableVisualization', dest='disable_visualization',
                         action="store_true", help='Disable visualization, default False')
     args = parser.parse_args()
-
     # log obj, None if log is disabled
     log_obj = None
 

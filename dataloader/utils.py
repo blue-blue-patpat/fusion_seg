@@ -195,7 +195,7 @@ def clean_dir(dir):
     :param dir: target directory
     """
     if os.path.exists(dir):
-        shutil.rmtree(dir)
+        shutil.rmtree(dir, ignore_errors=True)
 
     os.makedirs(dir)
 
