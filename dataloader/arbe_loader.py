@@ -26,6 +26,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.cluster import DBSCAN
+
 class ArbeSubscriber(rospy.Subscriber):
     """
     Arbe Subscriber
@@ -41,7 +42,8 @@ class ArbeSubscriber(rospy.Subscriber):
         self.release_flag = Value(ctypes.c_bool, False)
 
         self.callback_args.update(dict(name=name, dataframe={}, task_queue={}, start_tm=time.time(),
-            pool=Pool(),fig = plt.figure(1),
+            pool=Pool(),
+            # fig = plt.figure(1),
             info=dict(formatter="\tcount={}/{}; \tfps={}; \tstatus={}; \t{}:{}", data=[0, 0, -1, 1, 0, 0])))
 
     def unregister(self):
@@ -114,8 +116,8 @@ def arbe_loader_callback(msg, args):
 
     #visualization
     #plt.switch_backend("tkagg")
-    if args["info"]["data"][0]%15==0:
-        _show_pc_img(msg, args["fig"])
+    # if args["info"]["data"][0]%15==0:
+        # _show_pc_img(msg, args["fig"])
 
     # update pannel info
     running_tm = time.time()-args["start_tm"]

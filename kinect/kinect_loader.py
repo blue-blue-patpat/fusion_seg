@@ -15,7 +15,7 @@ import cv2
 import rospy
 # from cv_bridge import CvBridge
 
-from dataloader.utils import clean_dir
+# from dataloader.utils import clean_dir
 
 
 """
@@ -139,18 +139,20 @@ Use kinect with SDK
 
 import ctypes
 import signal
-from multiprocessing import Value, Process
-from multiprocessing.dummy import Pool
+from multiprocessing import Value
+from multiprocessing.dummy import Pool, Process
 import shutil
 import numpy as np
 import os
 import time
 import cv2 as cv
-from pyk4a import Config, PyK4A, FPS, ColorResolution,DepthMode, WiredSyncMode
-from pyk4a import  connected_device_count
+from pyk4a import PyK4A
+from pyk4a import connected_device_count
 import sys
 sys.path.insert(1, './kinect/')
-from kinect import pyK4A, _k4a
+import _k4a
+from config import config
+from pyKinectAzure import pyKinectAzure as pyK4A
 
 try:
     from dataloader.utils import clean_dir, print_log, PrintableValue
@@ -180,14 +182,15 @@ class KinectSubscriber(Process):
         :param callback: Not used, implements rospy.Subscriber.callback
         :param callback_args: implements rospy.Subscriber.kwargs
         """
-        super().__init__(daemon=True)
+        super().__init__()
         self.name = name
         
         # device config
-        self.config = callback_args.get("config", Config())
+        self.config = callback_args.get("config", config())
         self.device_id = callback_args.get("device_id", 0)
-        self.device = callback_args.get("device", PyK4A(
-            config=self.config, device_id=self.device_id))
+        
+        # self.device = callback_args.get("device", PyK4A(
+        #     config=self.config, device_id=self.device_id))
 
         self.save_path = callback_args.get(
             "save_path", "./__test__/kinect_output")
@@ -198,15 +201,21 @@ class KinectSubscriber(Process):
         self.disable_visualization = Value(ctypes.c_bool, callback_args.get(
             "disable_visualization", False))
 
-        callback_args["info"] = dict(formatter="\tcount={}/{}; \tfps={}; \tstatus={}; \t{}:{}", data=[
-            PrintableValue(ctypes.c_uint32, 0),
-            PrintableValue(ctypes.c_uint32, 0),
-            PrintableValue(ctypes.c_double, -1.),
-            PrintableValue(ctypes.c_uint8, 0),
-            PrintableValue(ctypes.c_uint8, 0),
-            PrintableValue(ctypes.c_uint8, 0)
-        ])
-        self.infodata = callback_args["info"]["data"]
+        # callback_args["info"] = dict(formatter="\tcount={}/{}; \tfps={}; \tstatus={}; \t{}:{}", data=[
+        #     PrintableValue(ctypes.c_uint32, 0),
+        #     PrintableValue(ctypes.c_uint32, 0),
+        #     PrintableValue(ctypes.c_double, -1.),
+        #     PrintableValue(ctypes.c_uint8, 0),
+        #     PrintableValue(ctypes.c_uint8, 0),
+        #     PrintableValue(ctypes.c_uint8, 0)
+        # ])
+        # self.infodata = callback_args["info"]["data"]
+
+        self.pyk4a = pyK4A()
+        self.pyk4a.device_open(self.device_id)
+        self.pyk4a.device_start_cameras(self.config)
+        self.start_tm = time.time()
+        self.pyk4a.bodyTracker_start()
 
         # init flag
         # unregister flag: True if main process decides to unregister
@@ -216,10 +225,11 @@ class KinectSubscriber(Process):
         # release flag: True if sub process is ready to be released
         self.release_flag = Value(ctypes.c_bool, False)
 
-        print_log("[{}] {} started.".format(self.name, self.device_id), log_obj=self.log_obj, always_console=True)
+        # print_log("[{}] {} started.".format(self.name, self.device_id), log_obj=self.log_obj, always_console=True)
 
         # start process
         self.start()
+        # self.run()
 
     def unregister(self) -> None:
         """
@@ -238,21 +248,20 @@ class KinectSubscriber(Process):
         clean_dir(os.path.join(self.save_path, "depth"))
         frame_list = []
         frame_count = 0
-        self.device.start()
-        self.start_tm = time.time()
-        # self.pyk4a.bodyTracker_start()
-        self.infodata[3].value(1)
+        print(self.config)
+        
+        # self.infodata[3].value(1)
         
         # threading function
         def process(frame, frame_count, save_path, sys_tm, infodata):
-            timestamp = frame.color_timestamp_usec
+            timestamp = self.pyk4a.color_timestamp_usec
             filename = "id={}_tm={}_st={}.png".format(frame_count, timestamp, sys_tm)
             path_color = os.path.join(save_path, "color", filename)
             path_depth = os.path.join(save_path, "depth", filename)
             cv.imwrite(path_color, frame.color)
             cv.imwrite(path_depth, frame.depth)
 
-            infodata[0].value(infodata[0].value() + 1)
+            # infodata[0].value(infodata[0].value() + 1)
 
         # init threading pool
         pool = Pool()
@@ -260,12 +269,13 @@ class KinectSubscriber(Process):
         try:
             # wait for main program unreg flag
             while not self.global_unreg_flag.value:
-                frame = self.device.get_capture()
+                self.pyk4a.device_get_capture()
                 sys_tm = time.time()
-                if np.any(frame.color) and np.any(frame.depth):
-                    
+                color = self.pyk4a.image_convert_to_numpy(self.pyk4a.capture_get_color_image())
+                depth = self.pyk4a.image_convert_to_numpy(self.pyk4a.capture_get_depth_image())
+                if color and depth:
                     # add task
-                    pool.apply_async(process, (frame, frame_count, self.save_path, sys_tm, self.infodata))
+                    pool.apply_async(process, (frame_count, self.save_path, sys_tm, self.infodata))
 
                     frame_count += 1
                     self.infodata[1].value(frame_count)
@@ -352,38 +362,38 @@ def _get_device_ids() -> dict:
     return id_dict
 
 
-def _get_config(type="mas") -> Config:
+def _get_config(type="mas") -> config:
     """
     Get Kinect Config by character
     """
     if type == "mas":
-        return Config(
-                    camera_fps=FPS.FPS_30,
-                    color_resolution=ColorResolution.RES_1536P,
-                    depth_mode=DepthMode.NFOV_UNBINNED,
-                    wired_sync_mode=WiredSyncMode.MASTER,)
+        return config(
+	    			color_resolution=_k4a.K4A_COLOR_RESOLUTION_1536P,
+                    camera_fps=_k4a.K4A_FRAMES_PER_SECOND_30,
+                    depth_mode=_k4a.K4A_DEPTH_MODE_NFOV_UNBINNED,
+                    wired_sync_mode=_k4a.K4A_WIRED_SYNC_MODE_MASTER,)
     elif type == "sub":
-        return Config(
-                    camera_fps=FPS.FPS_30,
-                    color_resolution=ColorResolution.RES_1536P,
-                    depth_mode=DepthMode.NFOV_UNBINNED,
-                    wired_sync_mode=WiredSyncMode.SUBORDINATE,)
+        return config(
+                    color_resolution=_k4a.K4A_COLOR_RESOLUTION_1536P,
+                    camera_fps=_k4a.K4A_FRAMES_PER_SECOND_30,
+                    depth_mode=_k4a.K4A_DEPTH_MODE_NFOV_UNBINNED,
+                    wired_sync_mode=_k4a.K4A_WIRED_SYNC_MODE_SUBORDINATE,)
     else:
-        return Config()
+        return config()
 
 
 if __name__ == "__main__":
-    id_dict = _get_device_ids()
-    print(id_dict)
-    device_sub1 = KinectSubscriber("KinectSub1", callback_args=dict(config=_get_config("sub"),
-                                                                    device_id=id_dict["000053612112"],
-                                                                    save_path="./__test__/kinect_output/sub1"))
-    device_sub2 = KinectSubscriber("KinectSub2", callback_args=dict(config=_get_config("sub"),
-                                                                    device_id=id_dict["000176712112"],
-                                                                    save_path="./__test__/kinect_output/sub2"))
-    device_master = KinectSubscriber("KinectMaster", callback_args=dict(config=_get_config("mas"),
-                                                                        device_id=id_dict["000326312112"],
+    # id_dict = _get_device_ids()
+    # print(id_dict)
+    # device_sub1 = KinectSubscriber("KinectSub1", callback_args=dict(config=_get_config("sub"),
+    #                                                                 device_id=id_dict["000053612112"],
+    #                                                                 save_path="./__test__/kinect_output/sub1"))
+    # device_sub2 = KinectSubscriber("KinectSub2", callback_args=dict(config=_get_config("sub"),
+    #                                                                 device_id=id_dict["000176712112"],
+    #                                                                 save_path="./__test__/kinect_output/sub2"))
+    device_master = KinectSubscriber("KinectMaster", callback_args=dict(config=_get_config("mas1"),
+                                                                        device_id=1,
                                                                         save_path="./__test__/kinect_output/master"))
-    device_sub1.join()
-    device_sub2.join()
+    # device_sub1.join()
+    # device_sub2.join()
     device_master.join()

@@ -180,7 +180,7 @@ class RealSenseSubscriber(Process):
                     print_log("[{}] {} frames caught, {} frames waiting.".format(self.name, frame_count, len(frame_list)), log_obj=self.log_obj)
                     
                     # update info
-                    if frame_count%15==0:
+                    if frame_count%10==0:
                         running_tm = time.time()-self.start_tm
                         m = int(np.floor(running_tm/60))
                         s = int(running_tm - m*60)
@@ -221,5 +221,8 @@ class RealSenseSubscriber(Process):
         # set release flag, ready to be released
         self.infodata[3].value(0)
         self.release_flag.value = True
+
+        cv.destroyAllWindows()
+        
         # suicide
         os.kill(os.getpid(), signal.SIGTERM)

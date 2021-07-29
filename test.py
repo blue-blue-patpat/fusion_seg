@@ -1,3 +1,4 @@
+import minimal
 
 def data_aling_test():
     from dataloader import align
@@ -47,3 +48,69 @@ def nokov_loader_test(client=None):
     # df = nokov_loader.get_dataframe()
     # print(df.head(10))
     # df.to_csv('./dataloader/__test__/nokov_test.csv')
+
+
+def minimal_test():
+    import os
+    from minimal.solver import Solver
+    from minimal import armatures
+    from minimal.models import KinematicModel, KinematicPCAWrapper
+    import numpy as np
+    import minimal.config as config
+
+
+    np.random.seed(20160923)
+    pose_glb = np.zeros([1, 3]) # global rotation
+
+
+    ########################## smpl settings ##########################
+    # note that in smpl and smpl-h no pca for pose is provided
+    # therefore in the model we fake an identity matrix as the pca coefficients
+    # to make the code compatible
+
+    n_pose = 23 * 3 # degrees of freedom, (n_joints - 1) * 3
+    # smpl 1.0.0: 10
+    # smpl 1.1.0: 300
+    n_shape = 10
+    # TODO: Read pose from skeleton
+    pose_pca = np.random.uniform(-0.2, 0.2, size=n_pose)
+    shape = np.random.normal(size=n_shape)
+    mesh = KinematicModel(config.SMPL_MODEL_1_0_PATH, armatures.SMPLArmature, scale=1)
+
+    ########################## solving example ############################
+
+    wrapper = KinematicPCAWrapper(mesh, n_pose=n_pose)
+    solver = Solver(verbose=True)
+
+    verts, keypoints = \
+    mesh.set_params(pose_pca=pose_pca, pose_glb=pose_glb, shape=shape)
+    params_est = solver.solve(wrapper, keypoints)
+
+    shape_est, pose_pca_est, pose_glb_est = wrapper.decode(params_est)
+
+    print('----------------------------------------------------------------------')
+    print('ground truth parameters')
+    print('pose pca coefficients:', pose_pca)
+    print('pose global rotation:', pose_glb)
+    print('shape: pca coefficients:', shape)
+
+    print('----------------------------------------------------------------------')
+    print('estimated parameters')
+    print('pose pca coefficients:', pose_pca_est)
+    print('pose global rotation:', pose_glb_est)
+    print('shape: pca coefficients:', shape_est)
+
+    mesh.set_params(pose_pca=pose_pca)
+    mesh.show_obj()
+    mesh.save_obj(os.path.join(config.SAVE_PATH, './gt.obj'))
+    mesh.set_params(pose_pca=pose_pca_est)
+    mesh.show_obj()
+    mesh.save_obj(os.path.join(config.SAVE_PATH, './est.obj'))
+
+    print('ground truth and estimated meshes are saved into gt.obj and est.obj')
+
+
+if __name__ == "__main__":
+    minimal_test()
+    # from minimal import prepare_model
+    # prepare_model.prepare_smpl_model()
