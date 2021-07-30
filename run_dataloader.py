@@ -39,48 +39,57 @@ def run_realsense_loader(client=None, **kwargs):
 def run_kinect_loader_multi(client=None, **kwargs):
     import os
     from dataloader.utils import MultiSubClient, print_log
-    from dataloader.kinect_loader import KinectSubscriber, _get_device_ids, _get_config
+    from dataloader.kinect_loader import KinectSubscriber, KinectSkeletonSubscriber, _get_device_ids, _get_config
 
     if client is None:
         client = MultiSubClient()
 
     log_obj = kwargs.get("log_obj", None)
 
-    id_dict = _get_device_ids()
-    print_log("[{}] {} devices found.".format(kwargs.get("name", "KinectMulti"), len(id_dict)), log_obj)
+    # id_dict = _get_device_ids()
+    # print_log("[{}] {} devices found.".format(kwargs.get("name", "KinectMulti"), len(id_dict)), log_obj)
 
     # first start two sub devices
-    client.add_sub("KinectSub2", sub_type=KinectSubscriber, config=_get_config("sub"),
-                   device_id=id_dict["000176712112"],
-                   save_path=os.path.join(kwargs.get(
-                       "save_path", "./__test__/default/kinect/"), "sub2"),
-                   log_obj=log_obj,
-                   disable_visualization=kwargs.get("disable_visualization", False))
-    client.start_sub("KinectSub2")
+    # client.add_sub("KinectSub2", sub_type=KinectSubscriber, config=_get_config("sub"),
+    #                device_id=id_dict["000176712112"],
+    #                save_path=os.path.join(kwargs.get(
+    #                    "save_path", "./__test__/default/kinect/"), "sub2"),
+    #                log_obj=log_obj,
+    #                disable_visualization=kwargs.get("disable_visualization", False))
+    # client.start_sub("KinectSub2")
 
-    client.add_sub("KinectSub1", sub_type=KinectSubscriber, config=_get_config("sub"),
-                   device_id=id_dict["000053612112"],
-                   save_path=os.path.join(kwargs.get(
-                       "save_path", "./__test__/default/kinect/"), "sub1"),
-                   log_obj=log_obj,
-                   disable_visualization=kwargs.get("disable_visualization", False))
-    client.start_sub("KinectSub1")
+    # client.add_sub("KinectSub1", sub_type=KinectSubscriber, config=_get_config("sub"),
+    #                device_id=id_dict["000053612112"],
+    #                save_path=os.path.join(kwargs.get(
+    #                    "save_path", "./__test__/default/kinect/"), "sub1"),
+    #                log_obj=log_obj,
+    #                disable_visualization=kwargs.get("disable_visualization", False))
+    # client.start_sub("KinectSub1")
 
-    # then start the master divice
-    client.add_sub("KinectMaster", sub_type=KinectSubscriber, config=_get_config("mas"),
-                   device_id=id_dict["000326312112"],
+    # # then start the master divice
+    # client.add_sub("KinectMaster", sub_type=KinectSubscriber, config=_get_config("mas"),
+    #                device_id=id_dict["000326312112"],
+    #                save_path=os.path.join(kwargs.get(
+    #                    "save_path", "./__test__/default/kinect/"), "master"),
+    #                log_obj=log_obj,
+    #                disable_visualization=kwargs.get("disable_visualization", False))
+    # client.start_sub("KinectMaster")
+
+    client.add_sub("KinectMaster", sub_type=KinectSkeletonSubscriber, config=_get_config("skeleton_mas"),
+                #    device_id=id_dict["000326312112"],
+                   device_id=0,
                    save_path=os.path.join(kwargs.get(
                        "save_path", "./__test__/default/kinect/"), "master"),
                    log_obj=log_obj,
                    disable_visualization=kwargs.get("disable_visualization", False))
     client.start_sub("KinectMaster")
 
-
 def run():
     import time
     import os
     import curses
     from dataloader.utils import MultiSubClient, ymdhms_time, print_log
+    from dataloader.kinect_loader import KinectSkeletonSubscriber
     import argparse
     import matplotlib.pyplot as plt
     parser = argparse.ArgumentParser(usage='"start_dataloader.py -h" to show help.')
@@ -213,6 +222,8 @@ def run():
         # start client's tasks
         client.start_all_subs()
 
+        # ks = KinectSkeletonSubscriber()
+
         # show pannel if not disabled
         if not args.disable_pannel:
             stdscr = curses.initscr()
@@ -220,6 +231,7 @@ def run():
             curses.cbreak()
 
         try:
+            # ks.start()
             # wait for tasks, leave loop when tasks are all stoped
             while len(client.get_running_tasks()) > 0:
                 # update pannel info
@@ -227,12 +239,13 @@ def run():
                     client.print_info(stdscr)
 
                 # refresh log file
-                log_obj.flush()
+                if log_obj:
+                    log_obj.flush()
                 # sleep to avoid pannel flashing
                 time.sleep(0.1)
 
         except Exception as e:
-            print_log(e, log_obj=log_obj)
+            print_log(e, log_obj=log_obj, always_console=True)
 
         finally:
             # close pannel

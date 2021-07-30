@@ -468,7 +468,7 @@ class pyKinectAzure:
 
 		return int(self.k4a.k4a_image_get_height_pixels(image_handle))
 
-	def image_get_stride_bytes(self,image_handle):
+	def image_get_stride_bytes(self, image_handle):
 		"""Get the image stride in bytes.
 
 		Parameters:
@@ -481,6 +481,16 @@ class pyKinectAzure:
 
 		return int(self.k4a.k4a_image_get_stride_bytes(image_handle))
 
+	def image_get_timestamp(self, image_handle):
+		"""Get the image timestamp.
+
+		Parameters:
+		image_handle (k4a_image_t): Handle to the Image
+
+		Returns:
+		ctypes.POINTER(ctypes.c_uint64): The timestamp of image.
+		"""
+		return self.k4a.k4a_image_get_timestamp_usec(image_handle)
 
 	def transformation_create(self, calibration):
 		"""Get handle to transformation handle.

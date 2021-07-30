@@ -1,3 +1,4 @@
+from pytorch3d.ops import sample_points_from_meshes
 import minimal
 
 def data_aling_test():
@@ -52,6 +53,7 @@ def nokov_loader_test(client=None):
 
 def minimal_test():
     import os
+    from pytorch3d.structures import Meshes, Pointclouds
     from minimal.solver import Solver
     from minimal import armatures
     from minimal.models import KinematicModel, KinematicPCAWrapper
@@ -82,9 +84,10 @@ def minimal_test():
     wrapper = KinematicPCAWrapper(mesh, n_pose=n_pose)
     solver = Solver(verbose=True)
 
-    verts, keypoints = \
+    mesh_gt, keypoints_gt = \
     mesh.set_params(pose_pca=pose_pca, pose_glb=pose_glb, shape=shape)
-    params_est = solver.solve(wrapper, keypoints)
+    pointcloud_gt = Pointclouds(sample_points_from_meshes(mesh_gt, num_samples=5000))
+    params_est = solver.solve(wrapper, pointcloud_gt, keypoints_gt)
 
     shape_est, pose_pca_est, pose_glb_est = wrapper.decode(params_est)
 
@@ -101,10 +104,10 @@ def minimal_test():
     print('shape: pca coefficients:', shape_est)
 
     mesh.set_params(pose_pca=pose_pca)
-    mesh.show_obj()
+    mesh.show_obj('gt')
     mesh.save_obj(os.path.join(config.SAVE_PATH, './gt.obj'))
     mesh.set_params(pose_pca=pose_pca_est)
-    mesh.show_obj()
+    mesh.show_obj('est')
     mesh.save_obj(os.path.join(config.SAVE_PATH, './est.obj'))
 
     print('ground truth and estimated meshes are saved into gt.obj and est.obj')

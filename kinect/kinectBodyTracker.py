@@ -57,8 +57,8 @@ class kinectBodyTracker:
 		if num_bodies:
 			for bodyIdx in range(num_bodies):
 				body = _k4abt.k4abt_body_t()
-				body.skeleton = self.get_body_skeleton(bodyIdx);
-				body.id = self.get_body_id(bodyIdx);
+				body.skeleton = self.get_body_skeleton(bodyIdx)
+				body.id = self.get_body_id(bodyIdx)
 
 				self.bodiesNow.append(body)
 

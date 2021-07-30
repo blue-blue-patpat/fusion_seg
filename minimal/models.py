@@ -1,11 +1,14 @@
 import numpy as np
 import torch
 import pytorch3d
+from pytorch3d.ops import sample_points_from_meshes
 from pytorch3d.io import load_obj, save_obj
 from pytorch3d.utils import ico_sphere
 from pytorch3d.structures import Meshes
 from alfred.dl.torch.common import device
 import pickle
+
+from torch import tensor
 
 
 class KinematicModel():
@@ -111,6 +114,7 @@ class KinematicModel():
     np.ndarray, shape [K, 3]
       Keypoints coordinates of the model, scale applied.
     """
+    # update verts unscaled
     verts = self.mesh_template + self.mesh_shape_basis.dot(self.shape)
     self.J = self.J_regressor.dot(verts)
     self.R = self.rodrigues(self.pose.reshape((-1, 1, 3)))
@@ -133,12 +137,20 @@ class KinematicModel():
 
     self.verts = \
       np.matmul(T, verts.reshape([-1, 4, 1])).reshape([-1, 4])[:, :3]
-    self.keypoints = self.J_regressor_ext.dot(self.verts)
 
+    # update mesh
+    center = self.verts.mean(0)
+    verts = self.verts - center
+    scale = abs(verts).max(0).max()
+    self.mesh = Meshes(verts=[torch.tensor(verts, dtype=torch.float32)], faces=[torch.tensor(self.faces, dtype=torch.float32)])
+
+    # update keypoints
+    self.keypoints = self.J_regressor_ext.dot(self.mesh.verts_packed()) *self.scale
+
+    # update verts
     self.verts *= self.scale
-    self.keypoints *= self.scale
 
-    return self.verts.copy(), self.keypoints.copy()
+    return self.mesh, self.keypoints.copy()
 
   def rodrigues(self, r):
     """
@@ -214,31 +226,40 @@ class KinematicModel():
     with open(path, 'w') as fp:
       save_obj(fp, torch.tensor(self.verts), torch.tensor(self.faces))
 
-  def show_obj(self):
+  def show_obj(self, title, mode="open3d"):
     """
     Visualize the SMPL mesh using open3D
     """
-    import open3d as o3d
-
-    center = self.verts.mean(0)
-    verts = self.verts - center
-    scale = abs(verts).max(0).max()
-    verts = verts / scale
-
-    trg_mesh = Meshes(verts=[torch.tensor(verts).to(device)], faces=[torch.tensor(self.faces).to(device)])
-    src_mesh = ico_sphere(4, device)
-
-    # we can print verts as well, using open3d
-    pcobj = o3d.geometry.PointCloud()
-    pcobj.points = o3d.utility.Vector3dVector(verts)
-    o3d.visualization.draw_geometries([pcobj])
+    if mode == "opend3d":
+      import open3d as o3d
+      # we can print verts as well, using open3d
+      pcobj = o3d.geometry.PointCloud()
+      pcobj.points = o3d.utility.Vector3dVector(self.mesh.verts_packed())
+      o3d.visualization.draw_geometries([pcobj], title)
+    elif mode == "open3d-jupyter":
+      import open3d as o3d
+      from open3d import JVisualizer
+    elif mode =="matplotlib":
+      import matplotlib.pyplot as plt
+      import matplotlib as mpl
+      from mpl_toolkits.mplot3d import Axes3D
+      points = sample_points_from_meshes(self.mesh, 5000)
+      x, y, z = points.clone().detach().cpu().squeeze().unbind(1)    
+      fig = plt.figure(figsize=(5, 5))
+      ax = Axes3D(fig)
+      ax.scatter3D(x, z, -y)
+      ax.set_xlabel('x')
+      ax.set_ylabel('z')
+      ax.set_zlabel('y')
+      ax.set_title(title)
+      plt.show()
 
 
 class KinematicPCAWrapper():
   """
   A wrapper for `KinematicsModel` to be compatible to the solver.
   """
-  def __init__(self, core, n_pose=12):
+  def __init__(self, core: KinematicModel, n_pose=12):
     """
     Parameters
     ----------
@@ -269,7 +290,7 @@ class KinematicPCAWrapper():
     """
     shape, pose_pca, pose_glb = self.decode(params)
     return \
-      self.core.set_params(pose_glb=pose_glb, pose_pca=pose_pca, shape=shape)[1]
+      self.core.set_params(pose_glb=pose_glb, pose_pca=pose_pca, shape=shape)
 
   def decode(self, params):
     """

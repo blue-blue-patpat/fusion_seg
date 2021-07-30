@@ -27,7 +27,7 @@ if __name__ == "__main__":
 	device_config = pyK4A.config
 	# device_config.color_resolution = _k4a.K4A_COLOR_RESOLUTION_OFF
 	# device_config.depth_mode = _k4a.K4A_DEPTH_MODE_NFOV_UNBINNED
-	print(device_config)
+	# print(device_config)
 
 	# Start cameras using modified configuration
 	pyK4A.device_start_cameras(device_config)
@@ -43,7 +43,6 @@ if __name__ == "__main__":
 		# Get the depth image from the capture
 		depth_image_handle = pyK4A.capture_get_depth_image()
 
-
 		# Check the image has been read correctly
 		if depth_image_handle:
 
@@ -57,6 +56,7 @@ if __name__ == "__main__":
 
 			# Get body segmentation image
 			body_image_color = pyK4A.bodyTracker_get_body_segmentation()
+			# cv2.imshow("body", body_image_color)
 
 			combined_image = cv2.addWeighted(depth_color_image, 0.8, body_image_color, 0.2, 0)
 

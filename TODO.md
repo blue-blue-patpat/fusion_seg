@@ -53,3 +53,12 @@
 - [x] realtime write 2021/07/23 xiangyu
 - [x] pass test 2021/07/23 xiangyu
 - [x] realtime visualization 2021/7/24
+
+## minimal/solver.py
+
+### features
+- [x] minimal by keypoints
+- [x] minimal by pcls 2021/07/30 xiangyu
+- [ ] minimal with notebook
+- [ ] minimal speed up
+- [ ] pass test with realworld data

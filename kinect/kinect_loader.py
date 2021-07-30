@@ -248,7 +248,6 @@ class KinectSubscriber(Process):
         clean_dir(os.path.join(self.save_path, "depth"))
         frame_list = []
         frame_count = 0
-        print(self.config)
         
         # self.infodata[3].value(1)
         
@@ -274,7 +273,7 @@ class KinectSubscriber(Process):
                 color = self.pyk4a.image_convert_to_numpy(self.pyk4a.capture_get_color_image())
                 depth = self.pyk4a.image_convert_to_numpy(self.pyk4a.capture_get_depth_image())
                 if color and depth:
-                    # add task
+                    # add task 
                     pool.apply_async(process, (frame_count, self.save_path, sys_tm, self.infodata))
 
                     frame_count += 1
@@ -341,6 +340,49 @@ class KinectSubscriber(Process):
         # suicide
         os.kill(os.getpid(), signal.SIGTERM)
 
+class KinectSkeletonSubscriber(Process):
+    def __init__(self, name="KinectSub", topic_type=None, callback=None, callback_args={}) -> None:
+        super().__init__(daemon=True)
+        self.name = name
+        self.device_id = callback_args.get("device_id", 0)        
+        self.config = callback_args.get("config", config())
+        self.save_path = callback_args.get(
+            "save_path", "./__test__/kinect_output")
+        
+        # callback_args["info"] = dict(formatter="\tcount={}/{}; \tfps={}; \tstatus={}; \t{}:{}", data=[
+        #     PrintableValue(ctypes.c_uint32, 0),
+        #     PrintableValue(ctypes.c_uint32, 0),
+        #     PrintableValue(ctypes.c_double, -1.),
+        #     PrintableValue(ctypes.c_uint8, 0),
+        #     PrintableValue(ctypes.c_uint8, 0),
+        #     PrintableValue(ctypes.c_uint8, 0)
+        # ])
+        # self.infodata = callback_args["info"]["data"]
+
+        self.log_obj = callback_args.get(
+            "log_obj", None)
+        # self.disable_visualization = Value(ctypes.c_bool, callback_args.get(
+        #     "disable_visualization", False))
+
+        # init flag
+        # unregister flag: True if main process decides to unregister
+        self.global_unreg_flag = callback_args.get(
+            "global_unreg_flag", Value(ctypes.c_bool, False))
+        self.unreg_flag = Value(ctypes.c_bool, False)
+        # release flag: True if sub process is ready to be released
+        self.release_flag = Value(ctypes.c_bool, False)
+        
+        print_log("[{}] {} started.".format(self.name, self.device_id), log_obj=self.log_obj, always_console=True)
+
+        self.pyks = pyK4ASkeleton()
+        # Open device
+        self.pyks.device_open(self.device_id)
+        # Start cameras 
+        self.pyks.device_start_cameras(self.config)
+        # Initialize the body tracker
+        self.pyks.bodyTracker_start()
+        # start process
+        self.run()
 
 def _get_device_ids() -> dict:
     """
@@ -392,7 +434,7 @@ if __name__ == "__main__":
     #                                                                 device_id=id_dict["000176712112"],
     #                                                                 save_path="./__test__/kinect_output/sub2"))
     device_master = KinectSubscriber("KinectMaster", callback_args=dict(config=_get_config("mas1"),
-                                                                        device_id=1,
+                                                                        device_id=0,
                                                                         save_path="./__test__/kinect_output/master"))
     # device_sub1.join()
     # device_sub2.join()

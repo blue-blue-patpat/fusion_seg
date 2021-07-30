@@ -11,7 +11,7 @@
 # import lib
 import os
 
-import cv2
+import cv2 as cv
 import rospy
 # from cv_bridge import CvBridge
 
@@ -44,16 +44,16 @@ def kinect_loader_callback(msg, args):
     """
     ts = rospy.get_time()
 
-    # img = args["bridge"].imgmsg_to_cv2(msg, msg.encoding)
-    img = _imgmsg_to_cv2(msg)
-    # cv2.imshow('rgb', img)
+    # img = args["bridge"].imgmsg_to_cv(msg, msg.encoding)
+    img = _imgmsg_to_cv(msg)
+    # cv.imshow('rgb', img)
 
     save_path = args.get("save_path", "./__test__/kinect_output")
     filename = "cmr={}_id={}_rostm={}.png".format(
         args.get("img_type", "kinectdefault"),
         args.get("frame_count", 0),
         ts)
-    cv2.imwrite(os.path.join(save_path, filename), img)
+    cv.imwrite(os.path.join(save_path, filename), img)
 
     args["frame_count"] += 1
     print("[{}] {} frames saved, {} frames waiting: {}".format(
@@ -83,7 +83,7 @@ def _encoding_to_dtype_with_channels(encoding):
     return dtype, channel
 
 
-def _imgmsg_to_cv2(img_msg, desired_encoding="passthrough"):
+def _imgmsg_to_cv(img_msg, desired_encoding="passthrough"):
     """
     Convert a sensor_msgs::Image message to an OpenCV :cpp:type:`cv::Mat`.
     MOdified based on cv_bridge, only support passthrough mode
@@ -148,9 +148,6 @@ import time
 import cv2 as cv
 from pyk4a import Config, PyK4A, FPS, ColorResolution,DepthMode, WiredSyncMode
 from pyk4a import  connected_device_count
-import sys
-sys.path.insert(1, './kinect/')
-from kinect import pyK4A, _k4a
 
 try:
     from dataloader.utils import clean_dir, print_log, PrintableValue
@@ -331,6 +328,180 @@ class KinectSubscriber(Process):
         # suicide
         os.kill(os.getpid(), signal.SIGTERM)
 
+import sys
+sys.path.insert(1, './kinect/')
+
+import kinect._k4a as _k4a
+from kinect.config import config
+from kinect import pyK4ASkeleton
+
+class KinectSkeletonSubscriber(Process):
+    def __init__(self, name="KinectSub", topic_type=None, callback=None, callback_args={}) -> None:
+        super().__init__(daemon=True)
+        self.name = name
+        self.device_id = callback_args.get("device_id", 0)        
+        self.config = callback_args.get("config", config())
+        self.save_path = callback_args.get(
+            "save_path", "./__test__/kinect_output")
+        
+        callback_args["info"] = dict(formatter="\tcount={}/{}; \tfps={}; \tstatus={}; \t{}:{}", data=[
+            PrintableValue(ctypes.c_uint32, 0),
+            PrintableValue(ctypes.c_uint32, 0),
+            PrintableValue(ctypes.c_double, -1.),
+            PrintableValue(ctypes.c_uint8, 0),
+            PrintableValue(ctypes.c_uint8, 0),
+            PrintableValue(ctypes.c_uint8, 0)
+        ])
+        self.infodata = callback_args["info"]["data"]
+
+        self.log_obj = callback_args.get(
+            "log_obj", None)
+        self.disable_visualization = Value(ctypes.c_bool, callback_args.get(
+            "disable_visualization", False))
+
+        # init flag
+        # unregister flag: True if main process decides to unregister
+        self.global_unreg_flag = callback_args.get(
+            "global_unreg_flag", Value(ctypes.c_bool, False))
+        self.unreg_flag = Value(ctypes.c_bool, False)
+        # release flag: True if sub process is ready to be released
+        self.release_flag = Value(ctypes.c_bool, False)
+        
+        print_log("[{}] {} started.".format(self.name, self.device_id), log_obj=self.log_obj, always_console=True)
+
+        # start process
+        self.start()
+
+    def unregister(self) -> None:
+        """
+        Implements rospy.Subscriber.unregister()
+
+        :return: None
+        """
+        pass
+    
+    def run(self) -> None:
+        """
+        Process main function
+        """
+        # Designating image saving paths
+        clean_dir(os.path.join(self.save_path, "color"))
+        clean_dir(os.path.join(self.save_path, "depth"))
+        clean_dir(os.path.join(self.save_path, "skeleton"))
+        # frame_list = []
+        frame_count = 0
+        self.infodata[3].value(1)
+        
+        # TODO save the skeleton
+        # threading function
+        def process(color_image, depth_image, body_skeleton, frame_count, save_path, timestamp, sys_tm, infodata):
+            filename = "id={}_tm={}_st={}.png".format(frame_count, timestamp, sys_tm)
+            path_color = os.path.join(save_path, "color", filename)
+            path_depth = os.path.join(save_path, "depth", filename)
+            path_skelton = os.path.join(save_path, "skeleton", filename)
+
+            for body in body_skeleton:
+                print(body.skeleton.joints)
+                pass
+            # np.save()
+            cv.imwrite(path_color, color_image)
+            cv.imwrite(path_depth, depth_image)
+
+            infodata[0].value(infodata[0].value() + 1)
+
+        # init threading pool
+        pool = Pool()
+
+        self.pyks = pyK4ASkeleton()
+        # Open device
+        self.pyks.device_open(self.device_id)
+        # Start cameras 
+        self.pyks.device_start_cameras(self.config)
+        # Initialize the body tracker
+        self.pyks.bodyTracker_start()
+        self.start_tm = time.time()
+        try:
+            # wait for main program unreg flag
+            while not self.global_unreg_flag.value:
+                self.pyks.device_get_capture()
+                sys_tm = time.time()
+
+                color_image_handle = self.pyks.capture_get_color_image()
+                depth_image_handle = self.pyks.capture_get_depth_image()
+
+                timestamp = self.pyks.image_get_timestamp(color_image_handle)
+		        
+                if color_image_handle and depth_image_handle:
+                    # Perform body detection
+                    self.pyks.bodyTracker_update()
+
+                    # Read and convert the image data to numpy array:
+                    color_image = self.pyks.image_convert_to_numpy(color_image_handle)
+                    depth_image = self.pyks.image_convert_to_numpy(depth_image_handle)
+                    
+                    # depth_color_image = cv.convertScaleAbs (depth_image, alpha=0.05)  #alpha is fitted by visual comparison with Azure k4aviewer results 
+                    # depth_color_image = cv.cvtColor(depth_color_image, cv.COLOR_GRAY2RGB)
+                    # Get body segmentation image
+                    # body_image_color = self.pyks.bodyTracker_get_body_segmentation()
+                    # combined_image = cv.addWeighted(depth_color_image, 0.8, body_image_color, 0.2, 0)
+                    body_skeleton = []
+
+                    # Draw the skeleton
+                    for body in self.pyks.body_tracker.bodiesNow:
+                        body_skeleton.append(body)
+                        # skeleton2D = self.pyks.bodyTracker_project_skeleton(body.skeleton)
+                        # combined_image = self.pyks.body_tracker.draw2DSkeleton(skeleton2D, body.id, combined_image)
+                    # Overlay body segmentation on depth image
+                    # cv.imshow('Segmented Depth Image',combined_image)
+                    # cv.waitKey(1)
+
+                    # add task
+                    pool.apply_async(process, (color_image, depth_image, body_skeleton, frame_count, self.save_path, timestamp, sys_tm, self.infodata))
+                    frame_count += 1
+                    self.infodata[1].value(frame_count)
+                    print_log("[{}] {} frames captured.".format(self.name, frame_count), log_obj=self.log_obj)
+                    
+                    # Release the image
+                    # self.pyks.image_release(depth_image_handle)
+                    # self.pyks.image_release(self.pyks.body_tracker.segmented_body_img)
+                    if frame_count%15==0:
+                        running_tm = time.time()-self.start_tm
+                        m = int(np.floor(running_tm/60))
+                        s = int(running_tm - m*60)
+
+                        # update pannel info
+                        self.infodata[2].value(round(frame_count/running_tm, 2))
+                        self.infodata[4].value(m)
+                        self.infodata[5].value(s)
+                self.pyks.capture_release()
+                self.pyks.body_tracker.release_frame()
+
+        except Exception as e:
+            print_log(e, log_obj=self.log_obj, always_console=True)
+
+        cv.destroyAllWindows()
+        self.pyks.device_stop_cameras()
+        self.pyks.device_close()
+
+        print_log("[{}] Collection task stopped, processing {} frames...".format(self.name, frame_count), log_obj=self.log_obj)
+        if self.log_obj:
+            self.log_obj.flush()
+
+        self.infodata[2].value(-1)
+        self.infodata[3].value(2)
+        
+        # wait for pool tasks
+        pool.close()
+        pool.join()
+
+        print_log("[{}] {} frames saved".format(self.name, frame_count), log_obj=self.log_obj)
+
+        # ready to be released
+        self.infodata[3].value(0)
+        self.release_flag.value = True
+
+        # suicide
+        os.kill(os.getpid(), signal.SIGTERM)
 
 def _get_device_ids() -> dict:
     """
@@ -368,8 +539,20 @@ def _get_config(type="mas") -> Config:
                     color_resolution=ColorResolution.RES_1536P,
                     depth_mode=DepthMode.NFOV_UNBINNED,
                     wired_sync_mode=WiredSyncMode.SUBORDINATE,)
+    elif type == "skeleton_mas":
+        return config(
+	    			color_resolution=_k4a.K4A_COLOR_RESOLUTION_1536P,
+                    camera_fps=_k4a.K4A_FRAMES_PER_SECOND_30,
+                    depth_mode=_k4a.K4A_DEPTH_MODE_NFOV_UNBINNED,
+                    wired_sync_mode=_k4a.K4A_WIRED_SYNC_MODE_MASTER,)
+    elif type == "skeleton_sub":
+        return config(
+                    color_resolution=_k4a.K4A_COLOR_RESOLUTION_1536P,
+                    camera_fps=_k4a.K4A_FRAMES_PER_SECOND_30,
+                    depth_mode=_k4a.K4A_DEPTH_MODE_NFOV_UNBINNED,
+                    wired_sync_mode=_k4a.K4A_WIRED_SYNC_MODE_SUBORDINATE,)
     else:
-        return Config()
+        return config()
 
 
 if __name__ == "__main__":
