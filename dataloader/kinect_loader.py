@@ -580,7 +580,6 @@ def _get_config(type="mas") -> Config:
     else:
         return config()
 
-
 if __name__ == "__main__":
     id_dict = _get_device_ids()
     print(id_dict)
