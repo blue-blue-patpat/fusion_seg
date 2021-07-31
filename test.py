@@ -1,5 +1,5 @@
-from pytorch3d.ops import sample_points_from_meshes
-import minimal
+from pytorch3d.structures import pointclouds
+
 
 def data_aling_test():
     from dataloader import align
@@ -59,10 +59,11 @@ def minimal_test():
     from minimal.models import KinematicModel, KinematicPCAWrapper
     import numpy as np
     import minimal.config as config
-
+    from dataloader.result_loader import KinectResultLoader
+    from minimal.bridge import JointsBridge
 
     np.random.seed(20160923)
-    pose_glb = np.zeros([1, 3]) # global rotation
+    # pose_glb = np.zeros([1, 3]) # global rotation
 
 
     ########################## smpl settings ##########################
@@ -73,29 +74,39 @@ def minimal_test():
     n_pose = 23 * 3 # degrees of freedom, (n_joints - 1) * 3
     # smpl 1.0.0: 10
     # smpl 1.1.0: 300
-    n_shape = 10
+    # n_shape = 10
     # TODO: Read pose from skeleton
-    pose_pca = np.random.uniform(-0.2, 0.2, size=n_pose)
-    shape = np.random.normal(size=n_shape)
-    mesh = KinematicModel(config.SMPL_MODEL_1_0_PATH, armatures.SMPLArmature, scale=1)
+    k_loader = KinectResultLoader('./ignoredata/minimal_files/input/')
+    files = k_loader.select_by_id(200)
+    kinect_skeleton = np.load(files["master/skeleton"]["filepath"][0])
+    joints = kinect_skeleton[0][:,:3]
+
+    bridge = JointsBridge()
+    bridge.load_kinect_joints(joints)
+    keypoints_gt = bridge.update_smpl_joints()
+
+    # pose_pca = np.random.uniform(-0.2, 0.2, size=n_pose)
+    # shape = np.random.normal(size=n_shape)
+    mesh = KinematicModel(config.SMPL_MODEL_1_0_PATH, armatures.SMPLArmature, scale=100)
 
     ########################## solving example ############################
 
     wrapper = KinematicPCAWrapper(mesh, n_pose=n_pose)
-    solver = Solver(verbose=True)
+    solver = Solver(verbose=True, max_iter=2000)
 
-    mesh_gt, keypoints_gt = \
-    mesh.set_params(pose_pca=pose_pca, pose_glb=pose_glb, shape=shape)
-    pointcloud_gt = Pointclouds(sample_points_from_meshes(mesh_gt, num_samples=5000))
+    # mesh_gt, keypoints_gt = \
+    # mesh.set_params(pose_pca=pose_pca, pose_glb=pose_glb, shape=shape)
+    # pointcloud_gt = Pointclouds(sample_points_from_meshes(mesh_gt, num_samples=1000))
+    pointcloud_gt = None
     params_est = solver.solve(wrapper, pointcloud_gt, keypoints_gt)
 
     shape_est, pose_pca_est, pose_glb_est = wrapper.decode(params_est)
 
-    print('----------------------------------------------------------------------')
-    print('ground truth parameters')
-    print('pose pca coefficients:', pose_pca)
-    print('pose global rotation:', pose_glb)
-    print('shape: pca coefficients:', shape)
+    # print('----------------------------------------------------------------------')
+    # print('ground truth parameters')
+    # print('pose pca coefficients:', pose_pca)
+    # print('pose global rotation:', pose_glb)
+    # print('shape: pca coefficients:', shape)
 
     print('----------------------------------------------------------------------')
     print('estimated parameters')
@@ -103,9 +114,9 @@ def minimal_test():
     print('pose global rotation:', pose_glb_est)
     print('shape: pca coefficients:', shape_est)
 
-    mesh.set_params(pose_pca=pose_pca)
-    mesh.show_obj('gt')
-    mesh.save_obj(os.path.join(config.SAVE_PATH, './gt.obj'))
+    # mesh.set_params(pose_pca=pose_pca)
+    # mesh.show_obj('gt')
+    # mesh.save_obj(os.path.join(config.SAVE_PATH, './gt.obj'))
     mesh.set_params(pose_pca=pose_pca_est)
     mesh.show_obj('est')
     mesh.save_obj(os.path.join(config.SAVE_PATH, './est.obj'))
@@ -113,7 +124,15 @@ def minimal_test():
     print('ground truth and estimated meshes are saved into gt.obj and est.obj')
 
 
+def result_loader_test():
+    from dataloader.result_loader import KinectResultLoader
+    k_loader = KinectResultLoader('./__test__/default/')
+    res = k_loader.run()
+    gen = k_loader.gen_item()
+    print(next(gen))
+    print(k_loader.select_item(5.5, 'id', exact=False))
+    print(k_loader[3])
+
 if __name__ == "__main__":
     minimal_test()
-    # from minimal import prepare_model
-    # prepare_model.prepare_smpl_model()
+    # result_loader_test()

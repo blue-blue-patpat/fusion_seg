@@ -228,6 +228,31 @@ def print_log(content, log_obj=None, always_console=False):
         print("{} : {}".format(ymdhms_time(), content))
 
 
+def file_paths_from_dir(path, extension='.png', enable_print=True) -> list:
+    """
+    return specific files of the path and its sub-paths
+    """
+    if enable_print:
+        print('Loading {} from {}'.format(extension, path))
+    dir = os.listdir(path)
+    filepaths = []
+    for f in dir:
+      if os.path.isdir(os.path.join(path, f)):
+        file_paths_from_dir(os.path.join(path, f))
+
+      if os.path.splitext(f)[1] == extension:
+        filepaths.append(os.path.join(path, f))
+    return filepaths
+
+
+def filename_decoder(file_path) -> dict:
+    dir, _ = os.path.split(file_path)
+    filename, extension = os.path.splitext(_)
+    params = [param.split('=') for param in filename.split('_')]
+    params.append(["filepath", os.path.abspath(file_path)])
+    return dict(params)
+
+
 class PrintableValue:
     """
     multiprocessing.Value wrapper for better print.

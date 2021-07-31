@@ -56,7 +56,7 @@ class Solver:
 
     return d.ravel()
 
-  def solve(self, model: KinematicPCAWrapper, pcls_target, kpts_target, init=None, u=1e-3, v=1.5):
+  def solve(self, model: KinematicPCAWrapper, pcls_target, kpts_target, init=None, weights=[1,1,1], u=1e-3, v=1.5):
     """
     Solver for the target.
 
@@ -84,9 +84,7 @@ class Solver:
     out_n = np.shape(kpts_target.flatten())[0] + 2
     jacobian = np.zeros([out_n, init.shape[0]])
 
-    w_kpts = 0.1
-    w_edge = 5
-    w_face = 5
+    w_kpts, w_edge, w_face = weights
 
     self.kpts_losses = []
     self.edge_losses = []
@@ -105,11 +103,13 @@ class Solver:
       self.kpts_losses.append(loss_kpts)
 
       # compute edge loss
-      loss_edge = point_mesh_edge_distance(mesh_updated, pcls_target)
+      # loss_edge = point_mesh_edge_distance(mesh_updated, pcls_target)
+      loss_edge = 0.
       self.edge_losses.append(loss_edge)
 
       # compute face loss
-      loss_face = point_mesh_face_distance(mesh_updated, pcls_target)
+      # loss_face = point_mesh_face_distance(mesh_updated, pcls_target)
+      loss_face = 0.
       self.face_losses.append(loss_face)
 
       loss = w_kpts * loss_kpts + w_edge * loss_edge + w_face * loss_face

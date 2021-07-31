@@ -233,6 +233,7 @@ class KinectSubscriber(Process):
         # Designating image saving paths
         clean_dir(os.path.join(self.save_path, "color"))
         clean_dir(os.path.join(self.save_path, "depth"))
+        clean_dir(os.path.join(self.save_path, "point"))
         frame_list = []
         frame_count = 0
         self.device.start()
@@ -243,9 +244,12 @@ class KinectSubscriber(Process):
         # threading function
         def process(frame, frame_count, save_path, sys_tm, infodata):
             timestamp = frame.color_timestamp_usec
-            filename = "id={}_tm={}_st={}.png".format(frame_count, timestamp, sys_tm)
-            path_color = os.path.join(save_path, "color", filename)
-            path_depth = os.path.join(save_path, "depth", filename)
+            filename = "id={}_tm={}_st={}".format(frame_count, timestamp, sys_tm)
+            path_color = os.path.join(save_path, "color", filename+".png")
+            path_depth = os.path.join(save_path, "depth", filename+".png")
+            path_point = os.path.join(save_path, "point", filename)
+
+            np.save(path_point, frame.depth_point_cloud)
             cv.imwrite(path_color, frame.color)
             cv.imwrite(path_depth, frame.depth)
 
@@ -379,6 +383,37 @@ class KinectSkeletonSubscriber(Process):
         :return: None
         """
         pass
+
+    def get_skeleton(self, depth_image) -> list:
+        """
+        Detect human and return skeletons.
+        
+        :return: bodys
+        """
+        # Get body segmentation image
+        body_image_color = self.pyks.bodyTracker_get_body_segmentation()
+
+        depth_color_image = cv.convertScaleAbs (depth_image, alpha=0.05)  #alpha is fitted by visual comparison with Azure k4aviewer results 
+        depth_color_image = cv.cvtColor(depth_color_image, cv.COLOR_GRAY2RGB)
+        combined_image = cv.addWeighted(depth_color_image, 0.8, body_image_color, 0.2, 0)
+
+        bodys = []
+        # Draw the skeleton
+        for body in self.pyks.body_tracker.bodiesNow:
+            skeleton2D = self.pyks.bodyTracker_project_skeleton(body.skeleton)
+            combined_image = self.pyks.body_tracker.draw2DSkeleton(skeleton2D, body.id, combined_image)
+            skeleton = []
+            for joint in body.skeleton.joints:
+                # level = int(joint.confidence_level)
+                position = [p for p in joint.position.v]
+                orientation = [p for p in joint.orientation.v]
+                skeleton.append(position + orientation)
+            bodys.append(skeleton)
+
+        # Overlay body segmentation on depth image
+        cv.imshow(self.name, combined_image)
+        cv.waitKey(1)
+        return bodys
     
     def run(self) -> None:
         """
@@ -394,24 +429,24 @@ class KinectSkeletonSubscriber(Process):
         
         # TODO save the skeleton
         # threading function
-        def process(color_image, depth_image, body_skeleton, frame_count, save_path, timestamp, sys_tm, infodata):
-            filename = "id={}_tm={}_st={}.png".format(frame_count, timestamp, sys_tm)
-            path_color = os.path.join(save_path, "color", filename)
-            path_depth = os.path.join(save_path, "depth", filename)
+        def process(color_image, depth_image, bodys, frame_count, save_path, timestamp, sys_tm, infodata):
+            filename = "id={}_tm={}_st={}".format(frame_count, timestamp, sys_tm)
+            path_color = os.path.join(save_path, "color", filename+".png")
+            path_depth = os.path.join(save_path, "depth", filename+".png")
             path_skelton = os.path.join(save_path, "skeleton", filename)
 
-            for body in body_skeleton:
-                print(body.skeleton.joints)
-                pass
-            # np.save()
+            # save
             cv.imwrite(path_color, color_image)
             cv.imwrite(path_depth, depth_image)
+            body_arr = np.asarray(bodys)
+            if np.any(body_arr):
+                np.save(path_skelton, np.asarray(bodys))
 
             infodata[0].value(infodata[0].value() + 1)
 
         # init threading pool
         pool = Pool()
-
+        # init pyk4a
         self.pyks = pyK4ASkeleton()
         # Open device
         self.pyks.device_open(self.device_id)
@@ -438,33 +473,22 @@ class KinectSkeletonSubscriber(Process):
                     # Read and convert the image data to numpy array:
                     color_image = self.pyks.image_convert_to_numpy(color_image_handle)
                     depth_image = self.pyks.image_convert_to_numpy(depth_image_handle)
-                    
-                    # depth_color_image = cv.convertScaleAbs (depth_image, alpha=0.05)  #alpha is fitted by visual comparison with Azure k4aviewer results 
-                    # depth_color_image = cv.cvtColor(depth_color_image, cv.COLOR_GRAY2RGB)
-                    # Get body segmentation image
-                    # body_image_color = self.pyks.bodyTracker_get_body_segmentation()
-                    # combined_image = cv.addWeighted(depth_color_image, 0.8, body_image_color, 0.2, 0)
-                    body_skeleton = []
 
-                    # Draw the skeleton
-                    for body in self.pyks.body_tracker.bodiesNow:
-                        body_skeleton.append(body)
-                        # skeleton2D = self.pyks.bodyTracker_project_skeleton(body.skeleton)
-                        # combined_image = self.pyks.body_tracker.draw2DSkeleton(skeleton2D, body.id, combined_image)
-                    # Overlay body segmentation on depth image
-                    # cv.imshow('Segmented Depth Image',combined_image)
-                    # cv.waitKey(1)
+                    bodys = self.get_skeleton(depth_image)
+
+                    # Release the image
+                    self.pyks.image_release(color_image_handle)
+                    self.pyks.image_release(depth_image_handle)
+                    self.pyks.image_release(self.pyks.body_tracker.segmented_body_img)
 
                     # add task
-                    pool.apply_async(process, (color_image, depth_image, body_skeleton, frame_count, self.save_path, timestamp, sys_tm, self.infodata))
+                    pool.apply_async(process, (color_image, depth_image, bodys, frame_count, self.save_path, timestamp, sys_tm, self.infodata))
                     frame_count += 1
                     self.infodata[1].value(frame_count)
                     print_log("[{}] {} frames captured.".format(self.name, frame_count), log_obj=self.log_obj)
                     
-                    # Release the image
-                    # self.pyks.image_release(depth_image_handle)
-                    # self.pyks.image_release(self.pyks.body_tracker.segmented_body_img)
-                    if frame_count%15==0:
+
+                    if frame_count%5==0:
                         running_tm = time.time()-self.start_tm
                         m = int(np.floor(running_tm/60))
                         s = int(running_tm - m*60)
@@ -473,8 +497,8 @@ class KinectSkeletonSubscriber(Process):
                         self.infodata[2].value(round(frame_count/running_tm, 2))
                         self.infodata[4].value(m)
                         self.infodata[5].value(s)
-                self.pyks.capture_release()
-                self.pyks.body_tracker.release_frame()
+            self.pyks.capture_release()
+            self.pyks.body_tracker.release_frame()
 
         except Exception as e:
             print_log(e, log_obj=self.log_obj, always_console=True)
@@ -507,6 +531,8 @@ def _get_device_ids() -> dict:
     """
     Get Kinect device id dict 
     """
+    k4a = pyK4ASkeleton()
+    k4a.device_close()
     cnt = connected_device_count()
     if not cnt:
         print("No devices available")
