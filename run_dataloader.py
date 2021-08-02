@@ -54,55 +54,55 @@ def run_kinect_loader_multi(client=None, **kwargs):
     print_log("[{}] {} devices found.".format(kwargs.get("name", "KinectMulti"), len(id_dict)), log_obj)
 
     # first start two sub devices
-    # client.add_sub("KinectSub2", sub_type=KinectSubscriber, config=_get_config("sub"),
-    #                device_id=id_dict[SUB2],
-    #                save_path=os.path.join(kwargs.get(
-    #                    "save_path", "./__test__/default/kinect/"), "sub2"),
-    #                log_obj=log_obj,
-    #                disable_visualization=kwargs.get("disable_visualization", False))
-    # client.start_sub("KinectSub2")
-
-    # client.add_sub("KinectSub1", sub_type=KinectSubscriber, config=_get_config("sub"),
-    #                device_id=id_dict[SUB1],
-    #                save_path=os.path.join(kwargs.get(
-    #                    "save_path", "./__test__/default/kinect/"), "sub1"),
-    #                log_obj=log_obj,
-    #                disable_visualization=kwargs.get("disable_visualization", False))
-    # client.start_sub("KinectSub1")
-
-    # # then start the master divice
-    # client.add_sub("KinectMaster", sub_type=KinectSubscriber, config=_get_config("mas"),
-    #                device_id=id_dict[MAS],
-    #                save_path=os.path.join(kwargs.get(
-    #                    "save_path", "./__test__/default/kinect/"), "master"),
-    #                log_obj=log_obj,
-    #                disable_visualization=kwargs.get("disable_visualization", False))
-    # client.start_sub("KinectMaster")
-    
-    # first start two sub devices
-    client.add_sub("KinectSub2", sub_type=KinectSkeletonSubscriber, config=_get_config("skeleton_sub"),
-                   device_id=id_dict.get(SUB2, 2),
+    client.add_sub("KinectSub2", sub_type=KinectSubscriber, config=_get_config("sub"),
+                   device_id=id_dict[SUB2],
                    save_path=os.path.join(kwargs.get(
                        "save_path", "./__test__/default/kinect/"), "sub2"),
                    log_obj=log_obj,
                    disable_visualization=kwargs.get("disable_visualization", False))
     client.start_sub("KinectSub2")
 
-    client.add_sub("KinectSub1", sub_type=KinectSkeletonSubscriber, config=_get_config("skeleton_sub"),
-                   device_id=id_dict.get(SUB1 ,1),
+    client.add_sub("KinectSub1", sub_type=KinectSubscriber, config=_get_config("sub"),
+                   device_id=id_dict[SUB1],
                    save_path=os.path.join(kwargs.get(
                        "save_path", "./__test__/default/kinect/"), "sub1"),
                    log_obj=log_obj,
                    disable_visualization=kwargs.get("disable_visualization", False))
     client.start_sub("KinectSub1")
 
-    client.add_sub("KinectMaster", sub_type=KinectSkeletonSubscriber, config=_get_config("skeleton_mas"),
-                   device_id=id_dict.get(MAS, 0),
+    # then start the master divice
+    client.add_sub("KinectMaster", sub_type=KinectSubscriber, config=_get_config("mas"),
+                   device_id=id_dict[MAS],
                    save_path=os.path.join(kwargs.get(
                        "save_path", "./__test__/default/kinect/"), "master"),
                    log_obj=log_obj,
                    disable_visualization=kwargs.get("disable_visualization", False))
     client.start_sub("KinectMaster")
+    
+    # first start two sub devices
+    # client.add_sub("KinectSub2", sub_type=KinectSkeletonSubscriber, config=_get_config("skeleton_sub"),
+    #                device_id=id_dict.get(SUB2, 2),
+    #                save_path=os.path.join(kwargs.get(
+    #                    "save_path", "./__test__/default/kinect/"), "sub2"),
+    #                log_obj=log_obj,
+    #                disable_visualization=kwargs.get("disable_visualization", False))
+    # client.start_sub("KinectSub2")
+
+    # client.add_sub("KinectSub1", sub_type=KinectSkeletonSubscriber, config=_get_config("skeleton_sub"),
+    #                device_id=id_dict.get(SUB1 ,1),
+    #                save_path=os.path.join(kwargs.get(
+    #                    "save_path", "./__test__/default/kinect/"), "sub1"),
+    #                log_obj=log_obj,
+    #                disable_visualization=kwargs.get("disable_visualization", False))
+    # client.start_sub("KinectSub1")
+
+    # client.add_sub("KinectMaster", sub_type=KinectSkeletonSubscriber, config=_get_config("skeleton_mas"),
+    #                device_id=id_dict.get(MAS, 0),
+    #                save_path=os.path.join(kwargs.get(
+    #                    "save_path", "./__test__/default/kinect/"), "master"),
+    #                log_obj=log_obj,
+    #                disable_visualization=kwargs.get("disable_visualization", False))
+    # client.start_sub("KinectMaster")
 
 def run():
     import time

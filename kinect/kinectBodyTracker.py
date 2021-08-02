@@ -41,7 +41,8 @@ class kinectBodyTracker:
 		self.initializeTracker()
 
 	def detectBodies(self):
-
+		import time
+		t0 = time.time()
 		self.bodiesNow = []
 
 		# Get the next available body frame.
@@ -53,6 +54,8 @@ class kinectBodyTracker:
 		# Get the number of people in the frame
 		num_bodies = self.get_num_bodies()
 
+		t1 = time.time()
+
 		# Extract the skeleton of each person
 		if num_bodies:
 			for bodyIdx in range(num_bodies):
@@ -61,6 +64,8 @@ class kinectBodyTracker:
 				body.id = self.get_body_id(bodyIdx)
 
 				self.bodiesNow.append(body)
+		t2 = time.time()
+		return
 
 	def printBodyPosition(self, body):
 		print(f"BodyId: {body.id}", \

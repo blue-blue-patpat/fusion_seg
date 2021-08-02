@@ -241,25 +241,29 @@ class KinectSubscriber(Process):
         self.start_tm = time.time()
         # self.pyk4a.bodyTracker_start()
         self.infodata[3].value(1)
+
+        # self.queue_threshold = 100
+        # self.manual_queue = []
+        self.use_manual_queue = False
         
         # threading function
-        def process(frame, frame_count, save_path, sys_tm, infodata):
-            timestamp = frame.color_timestamp_usec
-            filename = "id={}_tm={}_st={}".format(frame_count, timestamp, sys_tm)
-            path_color = os.path.join(save_path, "color", filename+".png")
-            path_depth = os.path.join(save_path, "depth", filename+".png")
-            path_point = os.path.join(save_path, "point", filename)
+        def process(frame, save_path, filename, infodata):
+            path_color = os.path.join(save_path, "color", filename)
+            path_depth = os.path.join(save_path, "depth", filename)
+            # # path_point = os.path.join(save_path, "point", filename)
 
-            np.save(path_point, frame.depth_point_cloud)
-            cv.imwrite(path_color, frame.color)
-            cv.imwrite(path_depth, frame.depth)
+            # # np.save(path_point, frame.depth_point_cloud)
+            np.save(path_color, frame.color)
+            np.save(path_depth, frame.depth)
+            # cv.imwrite(path_color, frame.color)
+            # cv.imwrite(path_depth, frame.depth)
 
             infodata[0].value(infodata[0].value() + 1)
 
             del frame
 
         # init threading pool
-        pool = Pool(5)
+        pool = Pool()
         
         try:
             # wait for main program unreg flag
@@ -267,19 +271,29 @@ class KinectSubscriber(Process):
                 frame = self.device.get_capture()
                 sys_tm = time.time()
                 if np.any(frame.color) and np.any(frame.depth):
+                    timestamp = frame.color_timestamp_usec
+                    filename = "id={}_tm={}_st={}".format(frame_count, timestamp, sys_tm)
                     
                     # add task
-                    pool.apply_async(process, (frame, frame_count, self.save_path, sys_tm, self.infodata))
+                    # if self.use_manual_queue:
+                    pool.apply_async(process, (frame, self.save_path, filename, self.infodata))
+                    # else:
+                    #     process(frame, self.save_path, filename, self.infodata)
 
                     frame_count += 1
                     self.infodata[1].value(frame_count)
                     print_log("[{}] {} frames captured.".format(self.name, frame_count), log_obj=self.log_obj)
 
-                    if frame_count%300==0:
-                        gc.collect()
+                    # if frame_count%300==0:
+                    #     gc.collect()
 
                     # update info
-                    if frame_count%15==0:
+                    if frame_count%30==0:
+                        if self.infodata[2].value() < 28:
+                            self.use_manual_queue = True
+                        if self.use_manual_queue and self.infodata[2].value() >= 28:
+                            self.use_manual_queue = False
+
                         running_tm = time.time()-self.start_tm
                         m = int(np.floor(running_tm/60))
                         s = int(running_tm - m*60)
@@ -319,6 +333,9 @@ class KinectSubscriber(Process):
         self.device.close()
         print_log("[{}] Collection task stopped, processing {} frames...".format(self.name, frame_count), log_obj=self.log_obj)
         self.log_obj.flush()
+
+        # for item in self.manual_queue:
+        #     pool.apply_async(process, item)
 
         self.infodata[2].value(-1)
         self.infodata[3].value(2)
@@ -442,6 +459,7 @@ class KinectSkeletonSubscriber(Process):
             path_skelton = os.path.join(save_path, "skeleton", filename)
 
             # save
+            color_image = cv.imdecode(color_image, -1)
             cv.imwrite(path_color, color_image)
             cv.imwrite(path_depth, depth_image)
             # np.save(path_point, point_cloud)
@@ -471,20 +489,25 @@ class KinectSkeletonSubscriber(Process):
                 color_image_handle = self.pyks.capture_get_color_image()
                 depth_image_handle = self.pyks.capture_get_depth_image()
                 # TODO: slow
-                point_cloud_handle = self.pyks.transform_depth_image_to_point_cloud(depth_image_handle)
+                # point_cloud_handle = self.pyks.transform_depth_image_to_point_cloud(depth_image_handle)
 
                 timestamp = self.pyks.image_get_timestamp(color_image_handle)
 		        
                 if color_image_handle and depth_image_handle:
                     # Perform body detection
+                    t0 = time.time()
+                    # TODO: slow
                     self.pyks.bodyTracker_update()
-
+                    t1 = time.time()
                     # Read and convert the image data to numpy array:
                     color_image = self.pyks.image_convert_to_numpy(color_image_handle)
                     depth_image = self.pyks.image_convert_to_numpy(depth_image_handle)
-                    point_cloud = self.pyks.image_convert_to_numpy(point_cloud_handle)
+                    # point_cloud = self.pyks.image_convert_to_numpy(point_cloud_handle)
+                    t2 = time.time()
 
+                    # TODO: slow
                     bodys = self.get_skeleton(depth_image)
+                    t3 = time.time()
 
                     # Release the image
                     self.pyks.image_release(color_image_handle)

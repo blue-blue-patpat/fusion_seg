@@ -50,11 +50,10 @@ class pyKinectAzure:
 		self.body_tracker = kinectBodyTracker(bodyTrackerModulePath,  depthSensorCalibration, modelType)
 
 	def bodyTracker_update(self):
-
 		# Add capture to the body tracker processing queue
 		self.body_tracker.enqueue_capture(self.capture_handle)
-
 		# Perform body detection
+		# TODO: slow 0.08
 		self.body_tracker.detectBodies()
 
 	def bodyTracker_get_body_segmentation(self):
@@ -542,9 +541,7 @@ class pyKinectAzure:
 		self.getDepthSensorCalibration(calibration)
 		# TODO: slow
 		transformation_handle = self.transformation_create(calibration)
-		tm1 = time.time()
 		point_cloud = _k4atypes.k4a_image_t()
-		tm2 = time.time()
 
 		self.image_create(
 			_k4atypes.K4A_IMAGE_FORMAT_CUSTOM,
@@ -615,10 +612,10 @@ class pyKinectAzure:
 		import time
 		tm0=time.time()
 		if image_format == _k4a.K4A_IMAGE_FORMAT_COLOR_MJPG:
-			npdt = np.frombuffer(buffer_array, dtype=np.uint8)
+			color_image = np.frombuffer(buffer_array, dtype=np.uint8)
 			# TODO: slow
-			_ = cv2.imdecode(npdt, -1)
-			return _
+			# color_image = cv2.imdecode(color_image, -1)
+			return color_image
 		elif image_format == _k4a.K4A_IMAGE_FORMAT_COLOR_NV12:
 			yuv_image = np.frombuffer(buffer_array, dtype=np.uint8).reshape(int(image_height*1.5),image_width)
 			return cv2.cvtColor(yuv_image, cv2.COLOR_YUV2BGR_NV12)
@@ -628,10 +625,7 @@ class pyKinectAzure:
 		elif image_format == _k4a.K4A_IMAGE_FORMAT_COLOR_BGRA32:
 			return np.frombuffer(buffer_array, dtype=np.uint8).reshape(image_height,image_width,4)
 		elif image_format == _k4a.K4A_IMAGE_FORMAT_DEPTH16:
-			tm0 = time.time()
-			_ = np.frombuffer(buffer_array, dtype="<u2").reshape(image_height,image_width)#little-endian 16 bits unsigned Depth data
-			tm2 = time.time()
-			return _
+			return np.frombuffer(buffer_array, dtype="<u2").reshape(image_height,image_width)#little-endian 16 bits unsigned Depth data
 		elif image_format == _k4a.K4A_IMAGE_FORMAT_IR16:
 			return np.frombuffer(buffer_array, dtype="<u2").reshape(image_height,image_width)#little-endian 16 bits unsigned IR data. For more details see: https://microsoft.github.io/Azure-Kinect-Sensor-SDK/release/1.2.x/namespace_microsoft_1_1_azure_1_1_kinect_1_1_sensor_a7a3cb7a0a3073650bf17c2fef2bfbd1b.html
 		elif image_format == _k4a.K4A_IMAGE_FORMAT_CUSTOM8:
