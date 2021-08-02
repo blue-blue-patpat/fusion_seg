@@ -124,15 +124,23 @@ def minimal_test():
     print('ground truth and estimated meshes are saved into gt.obj and est.obj')
 
 
-def result_loader_test():
+def result_loader_test(file_path):
     from dataloader.result_loader import KinectResultLoader
-    k_loader = KinectResultLoader('./__test__/default/')
-    res = k_loader.run()
-    gen = k_loader.gen_item()
-    print(next(gen))
-    print(k_loader.select_item(5.5, 'id', exact=False))
-    print(k_loader[3])
+    k_loader = KinectResultLoader(file_path)
+    # res = k_loader.run()
+    # gen = k_loader.generator()
+    # print(next(gen))
+    print(k_loader.select_item(1627738564.7240, 'st', exact=False))
+    # print(k_loader[3])
+
+def result_manager_test(filepath):
+    import numpy as np
+    from dataloader.result_loader import ResultManager
+    rm = ResultManager(filepath)
+    for k_np, k_img, a_np in rm.generator():
+        print(np.size(k_np), np.size(k_img), np.size(a_np))
 
 if __name__ == "__main__":
-    minimal_test()
-    # result_loader_test()
+    # minimal_test()
+    result_manager_test('./__test__/2021-07-31 21:35:50/')
+    # result_loader_test('./__test__/2021-07-31 21:35:50/')

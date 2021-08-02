@@ -13,6 +13,7 @@ import os
 
 import cv2 as cv
 import rospy
+import gc
 # from cv_bridge import CvBridge
 
 from dataloader.utils import clean_dir
@@ -255,8 +256,10 @@ class KinectSubscriber(Process):
 
             infodata[0].value(infodata[0].value() + 1)
 
+            del frame
+
         # init threading pool
-        pool = Pool()
+        pool = Pool(5)
         
         try:
             # wait for main program unreg flag
@@ -271,6 +274,9 @@ class KinectSubscriber(Process):
                     frame_count += 1
                     self.infodata[1].value(frame_count)
                     print_log("[{}] {} frames captured.".format(self.name, frame_count), log_obj=self.log_obj)
+
+                    if frame_count%300==0:
+                        gc.collect()
 
                     # update info
                     if frame_count%15==0:
@@ -392,7 +398,6 @@ class KinectSkeletonSubscriber(Process):
         """
         # Get body segmentation image
         body_image_color = self.pyks.bodyTracker_get_body_segmentation()
-
         depth_color_image = cv.convertScaleAbs (depth_image, alpha=0.05)  #alpha is fitted by visual comparison with Azure k4aviewer results 
         depth_color_image = cv.cvtColor(depth_color_image, cv.COLOR_GRAY2RGB)
         combined_image = cv.addWeighted(depth_color_image, 0.8, body_image_color, 0.2, 0)
@@ -423,24 +428,26 @@ class KinectSkeletonSubscriber(Process):
         clean_dir(os.path.join(self.save_path, "color"))
         clean_dir(os.path.join(self.save_path, "depth"))
         clean_dir(os.path.join(self.save_path, "skeleton"))
+        clean_dir(os.path.join(self.save_path, "point"))
         # frame_list = []
         frame_count = 0
         self.infodata[3].value(1)
         
-        # TODO save the skeleton
         # threading function
         def process(color_image, depth_image, bodys, frame_count, save_path, timestamp, sys_tm, infodata):
             filename = "id={}_tm={}_st={}".format(frame_count, timestamp, sys_tm)
             path_color = os.path.join(save_path, "color", filename+".png")
             path_depth = os.path.join(save_path, "depth", filename+".png")
+            path_point = os.path.join(save_path, "point", filename)
             path_skelton = os.path.join(save_path, "skeleton", filename)
 
             # save
             cv.imwrite(path_color, color_image)
             cv.imwrite(path_depth, depth_image)
+            # np.save(path_point, point_cloud)
             body_arr = np.asarray(bodys)
             if np.any(body_arr):
-                np.save(path_skelton, np.asarray(bodys))
+                np.save(path_skelton, body_arr)
 
             infodata[0].value(infodata[0].value() + 1)
 
@@ -463,6 +470,8 @@ class KinectSkeletonSubscriber(Process):
 
                 color_image_handle = self.pyks.capture_get_color_image()
                 depth_image_handle = self.pyks.capture_get_depth_image()
+                # TODO: slow
+                point_cloud_handle = self.pyks.transform_depth_image_to_point_cloud(depth_image_handle)
 
                 timestamp = self.pyks.image_get_timestamp(color_image_handle)
 		        
@@ -473,6 +482,7 @@ class KinectSkeletonSubscriber(Process):
                     # Read and convert the image data to numpy array:
                     color_image = self.pyks.image_convert_to_numpy(color_image_handle)
                     depth_image = self.pyks.image_convert_to_numpy(depth_image_handle)
+                    point_cloud = self.pyks.image_convert_to_numpy(point_cloud_handle)
 
                     bodys = self.get_skeleton(depth_image)
 
@@ -531,8 +541,8 @@ def _get_device_ids() -> dict:
     """
     Get Kinect device id dict 
     """
-    k4a = pyK4ASkeleton()
-    k4a.device_close()
+    # k4a = pyK4ASkeleton()
+    # k4a.device_close()
     cnt = connected_device_count()
     if not cnt:
         print("No devices available")

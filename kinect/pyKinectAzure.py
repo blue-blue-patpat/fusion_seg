@@ -1,3 +1,4 @@
+from time import time
 import _k4a
 import _k4arecord
 import _k4atypes
@@ -535,10 +536,15 @@ class pyKinectAzure:
 		Returns:
 		point_cloud (k4a_image_t): Handle to point cloud
 		"""
+		import time
+		tm0 = time.time()
 		calibration = _k4a.k4a_calibration_t()
 		self.getDepthSensorCalibration(calibration)
+		# TODO: slow
 		transformation_handle = self.transformation_create(calibration)
+		tm1 = time.time()
 		point_cloud = _k4atypes.k4a_image_t()
+		tm2 = time.time()
 
 		self.image_create(
 			_k4atypes.K4A_IMAGE_FORMAT_CUSTOM,
@@ -554,7 +560,7 @@ class pyKinectAzure:
 			_k4atypes.K4A_CALIBRATION_TYPE_DEPTH,
 			point_cloud
 		), "Error Occur When Make Point Cloud")
-
+		
 		return point_cloud
 
 	def transformation_depth_image_to_color_camera(self,transformation_handle,input_depth_image_handle, transformed_depth_image_handle):
@@ -591,19 +597,28 @@ class pyKinectAzure:
 		buffer_pointer = self.image_get_buffer(image_handle)
 
 		# Get the size of the buffer
+		# 750205
 		image_size = self.image_get_size(image_handle)
+		# 2048
 		image_width = self.image_get_width_pixels(image_handle)
+		# 1536
 		image_height = self.image_get_height_pixels(image_handle)
 
 		# Get the image format
+		# 0 4
 		image_format = self.image_get_format(image_handle)
 
 		# Read the data in the buffer
 		buffer_array = np.ctypeslib.as_array(buffer_pointer,shape=(image_size,))
 
 		# Parse buffer based on image format
+		import time
+		tm0=time.time()
 		if image_format == _k4a.K4A_IMAGE_FORMAT_COLOR_MJPG:
-			return cv2.imdecode(np.frombuffer(buffer_array, dtype=np.uint8), -1)
+			npdt = np.frombuffer(buffer_array, dtype=np.uint8)
+			# TODO: slow
+			_ = cv2.imdecode(npdt, -1)
+			return _
 		elif image_format == _k4a.K4A_IMAGE_FORMAT_COLOR_NV12:
 			yuv_image = np.frombuffer(buffer_array, dtype=np.uint8).reshape(int(image_height*1.5),image_width)
 			return cv2.cvtColor(yuv_image, cv2.COLOR_YUV2BGR_NV12)
@@ -613,11 +628,16 @@ class pyKinectAzure:
 		elif image_format == _k4a.K4A_IMAGE_FORMAT_COLOR_BGRA32:
 			return np.frombuffer(buffer_array, dtype=np.uint8).reshape(image_height,image_width,4)
 		elif image_format == _k4a.K4A_IMAGE_FORMAT_DEPTH16:
-			return np.frombuffer(buffer_array, dtype="<u2").reshape(image_height,image_width)#little-endian 16 bits unsigned Depth data
+			tm0 = time.time()
+			_ = np.frombuffer(buffer_array, dtype="<u2").reshape(image_height,image_width)#little-endian 16 bits unsigned Depth data
+			tm2 = time.time()
+			return _
 		elif image_format == _k4a.K4A_IMAGE_FORMAT_IR16:
 			return np.frombuffer(buffer_array, dtype="<u2").reshape(image_height,image_width)#little-endian 16 bits unsigned IR data. For more details see: https://microsoft.github.io/Azure-Kinect-Sensor-SDK/release/1.2.x/namespace_microsoft_1_1_azure_1_1_kinect_1_1_sensor_a7a3cb7a0a3073650bf17c2fef2bfbd1b.html
 		elif image_format == _k4a.K4A_IMAGE_FORMAT_CUSTOM8:
 			return np.frombuffer(buffer_array, dtype="<u1").reshape(image_height,image_width)
+		elif image_format == _k4a.K4A_IMAGE_FORMAT_CUSTOM:
+			return np.frombuffer(buffer_array, dtype=np.int16).reshape(image_height,image_width, 3)
 
 	def transform_depth_to_color(self,input_depth_image_handle, color_image_handle):
 		calibration = _k4a.k4a_calibration_t()

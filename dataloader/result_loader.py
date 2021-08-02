@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
+import cv2 as cv
 from sklearn.neighbors import KNeighborsClassifier
 from dataloader.utils import file_paths_from_dir, filename_decoder
 
@@ -8,13 +9,16 @@ from dataloader.utils import file_paths_from_dir, filename_decoder
 class ResultLoader():
     def __init__(self, result_path) -> None:
         self.path = result_path
+        self.params = {}
         self.file_dict = {}
         self.clfs = {}
 
     def run(self):
-        raise Warning("[ResultLoader] This method should be overriden.")
+        for param in self.params:
+            self.parse_files(os.path.join(self.path, param["tag"]), **param)
+        return self.file_dict
 
-    def gen_item(self):
+    def generator(self):
         for i in range(len(self)):
             yield self.select_by_id(i)
 
@@ -26,7 +30,7 @@ class ResultLoader():
                 if not np.issubdtype(df[tag].dtypes, np.number):
                     value = str(value)
                 # match equal
-                res[k] = df[df[tag]==value]
+                res[k] = dict(df[df[tag]==value].iloc[0])
             else:
                 # match closest
                 # persistent clf
@@ -34,7 +38,7 @@ class ResultLoader():
                     X = np.array([df[tag]]).T.astype(np.float64)
                     y = df.index
                     self.clfs[tag] = KNeighborsClassifier(n_neighbors=1).fit(X, y)
-                res[k] = df[self.clfs[tag].predict([value])[0]]
+                res[k] = dict(df.iloc[self.clfs[tag].predict(np.array([[value]], dtype=np.float64))[0]])
         return res
 
     def select_by_id(self, idx):
@@ -51,7 +55,7 @@ class ResultLoader():
         |                              [ 0  123 /home/xxx]
         |                              [ 1  125 ...      ])
         |-...
-        |-tag2=sub1/depth:   DataFrame [ id tm filepath]
+        |-tag2=sub1/depth:   DataFrame([ id tm  filepath ])
         |-...
         """
         self.file_dict[tag] = pd.DataFrame([filename_decoder(f) for f in file_paths])
@@ -65,20 +69,56 @@ class ResultLoader():
         return min([len(v) for v in self.file_dict.values()])
 
 
-class KinectResultLoader(ResultLoader):
+class ArbeResultLoader(ResultLoader):
     def __init__(self, result_path, params=None) -> None:
-        super().__init__(os.path.join(result_path, "kinect"))
+        super().__init__(result_path)
         if params is None:
             self.params = [
-                dict(tag="master/color", ext=".png"),
-                dict(tag="master/depth", ext=".png"),
-                dict(tag="master/skeleton", ext=".npy"),
+                dict(tag="arbe", ext=".npy"),
             ]
         else:
             self.params = params
         self.run()
 
-    def run(self):
-        for param in self.params:
-            self.parse_files(os.path.join(self.path, param["tag"]), **param)
-        return self.file_dict
+
+class RealSenseResultLoader(ResultLoader):
+    def __init__(self, result_path, params=None) -> None:
+        super().__init__(result_path)
+        if params is None:
+            self.params = [
+                dict(tag="realsense/color", ext=".png"),
+                dict(tag="realsense/depth", ext=".png"),
+                # dict(tag="realsense/vertex", ext=".npy"),
+            ]
+        else:
+            self.params = params
+        self.run()
+
+
+class KinectResultLoader(ResultLoader):
+    def __init__(self, result_path, params=None) -> None:
+        super().__init__(result_path)
+        if params is None:
+            self.params = [
+                dict(tag="kinect/master/color", ext=".png"),
+                dict(tag="kinect/master/depth", ext=".png"),
+                dict(tag="kinect/master/skeleton", ext=".npy"),
+            ]
+        else:
+            self.params = params
+        self.run()
+
+
+class ResultManager():
+    def __init__(self, result_path) -> None:
+        self.k_loader = KinectResultLoader(result_path)
+        self.a_loader = ArbeResultLoader(result_path)
+        self.gen = self.generator()
+
+    def generator(self):
+        for i in range(len(self.k_loader)):
+            k_row = self.k_loader[i]
+            a_row = self.a_loader.select_item(k_row["kinect/master/skeleton"]["st"], "ts", False)
+            yield np.load(k_row["kinect/master/skeleton"]["filepath"]),\
+                  cv.imread(k_row["kinect/master/color"]["filepath"]),\
+                  np.load(a_row["arbe"]["filepath"])
