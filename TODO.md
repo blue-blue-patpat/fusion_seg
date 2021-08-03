@@ -53,6 +53,9 @@
 - [x] realtime write 2021/07/23 xiangyu
 - [x] pass test 2021/07/23 xiangyu
 - [x] realtime visualization 2021/7/24
+- [x] skeleton mode
+- [x] mkv mode 2021/08/03 xiangyu
+- [x] pass test
 
 ## minimal/solver.py
 
@@ -62,3 +65,10 @@
 - [ ] minimal with notebook
 - [ ] minimal speed up
 - [ ] pass test with realworld data
+
+## visualize/kinect_mkv.py
+
+### features
+- [x] visualize mkv 2021/08/03 xiangyu
+- [x] extract mkv to png 2021/08/03 xiangyu
+- [x] pass test 2021/08/03 xiangyu

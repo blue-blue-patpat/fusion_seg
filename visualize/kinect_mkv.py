@@ -2,10 +2,13 @@ from argparse import ArgumentParser
 
 from typing import Optional, Tuple
 
+import os
 import cv2
 import numpy as np
 
 from pyk4a import ImageFormat, PyK4APlayback
+
+from dataloader.utils import clean_dir, ymdhms_time
 
 
 def convert_to_bgra_if_required(color_format: ImageFormat, color_image):
@@ -39,20 +42,28 @@ def colorize(
     return img
 
 
-
 def info(playback: PyK4APlayback):
     print(f"Record length: {playback.length / 1000000: 0.2f} sec")
 
 
-def play(playback: PyK4APlayback):
+def save_and_play(playback: PyK4APlayback, save_path="./", start_tm=0):
+    i = 0
     while True:
         try:
             capture = playback.get_next_capture()
+            if i==0:
+                color_tm_offset = capture.color_timestamp_usec
+                depth_tm_offset = capture.depth_timestamp_usec
             if capture.color is not None:
-                cv2.imshow("Color", convert_to_bgra_if_required(playback.configuration["color_format"], capture.color))
+                color = convert_to_bgra_if_required(playback.configuration["color_format"], capture.color)
+                cv2.imshow("Color", color)
+                cv2.imwrite(os.path.join(save_path, "color/id={}_tm={}.png".format(i, start_tm + (capture.color_timestamp_usec - color_tm_offset)/1000000)), color)
             if capture.depth is not None:
                 cv2.imshow("Depth", colorize(capture.depth, (None, 5000)))
+                cv2.imwrite(os.path.join(save_path, "depth/id={}_tm={}.png".format(i, start_tm + (capture.depth_timestamp_usec - depth_tm_offset)/1000000)), capture.depth)
             key = cv2.waitKey(10)
+            print(i, end="\r")
+            i += 1
             if key != -1:
                 break
         except EOFError:
@@ -60,26 +71,52 @@ def play(playback: PyK4APlayback):
     cv2.destroyAllWindows()
 
 
-def main() -> None:
-    parser = ArgumentParser(description="pyk4a player")
-    parser.add_argument("--seek", type=float, help="Seek file to specified offset in seconds", default=0.0)
-    parser.add_argument("FILE", type=str, help="Path to MKV file written by k4arecorder")
+def save(playback: PyK4APlayback, save_path="./", start_tm=0):
+    from multiprocessing.dummy import Pool
+    info = [0, 0]
+    pool = Pool()
+    def process(capture, save_path, start_tm, idx, info, color_tm_offset, depth_tm_offset):
+        if capture.color is not None:
+            cv2.imwrite(os.path.join(save_path, "color/id={}_tm={}.png".format(idx, start_tm + (capture.color_timestamp_usec - color_tm_offset)/1000000)), capture.color)
+        if capture.depth is not None:
+            cv2.imwrite(os.path.join(save_path, "depth/id={}_tm={}.png".format(idx, start_tm + (capture.depth_timestamp_usec - depth_tm_offset)/1000000)), capture.depth)
+        info[1] += 1
 
-    args = parser.parse_args()
-    filename: str = args.FILE
-    offset: float = args.seek
+    while True:
+        try:
+            capture = playback.get_next_capture()
+            if info[0]==0:
+                color_tm_offset = capture.color_timestamp_usec
+                depth_tm_offset = capture.depth_timestamp_usec
+            pool.apply_async(process, (capture, save_path, start_tm, info[0], info, color_tm_offset, depth_tm_offset))
+            
+            print("{} : [Kinect MKV] Extracting {}/{} frame.".format(ymdhms_time(), info[0], info[1]), end="\r")
+            info[0] += 1
+        except EOFError:
+            break
+    pool.close()
+    pool.join()
+    print()
 
+
+def extract_mkv(filename, enable_view=False) -> None:
+    print("{} : [Kinect MKV] Extracting mkv to color and depth; enable_view={}.".format(ymdhms_time(), enable_view))
     playback = PyK4APlayback(filename)
     playback.open()
 
-    info(playback)
+    save_path, _ = os.path.split(filename)
+    filename, extension = os.path.splitext(_)
 
-    if offset != 0.0:
-        playback.seek(int(offset * 1000000))
-    play(playback)
+    with open(os.path.join(save_path, "info.txt"), 'r') as f:
+        tm = float(f.readline())
+
+    clean_dir(os.path.join(save_path, "color"))
+    clean_dir(os.path.join(save_path, "depth"))
+
+    info(playback)
+    if enable_view:
+        save_and_play(playback, save_path, tm)
+    else:
+        save(playback, save_path, tm)
 
     playback.close()
-
-
-if __name__ == "__main__":
-    main()

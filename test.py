@@ -140,10 +140,10 @@ def result_manager_test(filepath):
     for k_np, k_img, a_np in rm.generator():
         print(np.size(k_np), np.size(k_img), np.size(a_np))
 
-def aaa():
-    from calib import msy
 
 if __name__ == "__main__":
     # minimal_test()
-    result_manager_test('./__test__/2021-07-31 21:35:50/')
+    # result_manager_test('./__test__/2021-07-31 21:35:50/')
     # result_loader_test('./__test__/2021-07-31 21:35:50/')
+    from visualize.kinect_mkv import extract_mkv
+    extract_mkv('./__test__/default/kinect/master/out.mkv', False) 
