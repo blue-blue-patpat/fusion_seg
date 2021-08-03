@@ -147,7 +147,7 @@ import numpy as np
 import os
 import time
 import cv2 as cv
-from pyk4a import Config, PyK4A, FPS, ColorResolution,DepthMode, WiredSyncMode
+from pyk4a import Config, PyK4A, FPS, ColorResolution,DepthMode, WiredSyncMode, ImageFormat, PyK4ARecord
 from pyk4a import  connected_device_count
 
 try:
@@ -248,22 +248,22 @@ class KinectSubscriber(Process):
         
         # threading function
         def process(frame, save_path, filename, infodata):
-            path_color = os.path.join(save_path, "color", filename)
-            path_depth = os.path.join(save_path, "depth", filename)
+            path_color = os.path.join(save_path, "color", "{}.png".format(filename))
+            path_depth = os.path.join(save_path, "depth", "{}.png".format(filename))
             # # path_point = os.path.join(save_path, "point", filename)
 
             # # np.save(path_point, frame.depth_point_cloud)
-            np.save(path_color, frame.color)
-            np.save(path_depth, frame.depth)
-            # cv.imwrite(path_color, frame.color)
-            # cv.imwrite(path_depth, frame.depth)
+            # np.save(path_color, frame.color)
+            # np.save(path_depth, frame.depth)
+            cv.imwrite(path_color, frame.color)
+            cv.imwrite(path_depth, frame.depth)
 
             infodata[0].value(infodata[0].value() + 1)
 
             del frame
 
         # init threading pool
-        pool = Pool()
+        pool = Pool(10)
         
         try:
             # wait for main program unreg flag
@@ -332,7 +332,8 @@ class KinectSubscriber(Process):
 
         self.device.close()
         print_log("[{}] Collection task stopped, processing {} frames...".format(self.name, frame_count), log_obj=self.log_obj)
-        self.log_obj.flush()
+        if self.log_obj:
+            self.log_obj.flush()
 
         # for item in self.manual_queue:
         #     pool.apply_async(process, item)
@@ -354,6 +355,159 @@ class KinectSubscriber(Process):
 
         # suicide
         os.kill(os.getpid(), signal.SIGTERM)
+
+
+"""
+Use kinect with SDK
+MKV
+"""
+
+
+class KinectMKVSubscriber(Process):
+    """
+    Kinect Subscriber
+    """
+    def __init__(self, name="KinectMKVSub", topic_type=None, callback=None, callback_args={}) -> None:
+        """
+        KinectSubscriber init
+
+        :param name: implements rospy.Subscriber.topic_name
+        :param topic_type: Not used, implements rospy.Subscriber.topic_type
+        :param callback: Not used, implements rospy.Subscriber.callback
+        :param callback_args: implements rospy.Subscriber.kwargs
+        """
+        super().__init__(daemon=True)
+        self.name = name
+        
+        # device config
+        self.config = callback_args.get("config", Config())
+        self.device_id = callback_args.get("device_id", 0)
+        self.device = callback_args.get("device", PyK4A(
+            config=self.config, device_id=self.device_id))
+
+        self.save_path = callback_args.get(
+            "save_path", "./__test__/kinect_output")
+        
+        
+        self.log_obj = callback_args.get(
+            "log_obj", None)
+        self.disable_visualization = Value(ctypes.c_bool, callback_args.get(
+            "disable_visualization", False))
+
+        callback_args["info"] = dict(formatter="\tcount={}/{}; \tfps={}; \tstatus={}; \t{}:{}", data=[
+            PrintableValue(ctypes.c_uint32, 0),
+            PrintableValue(ctypes.c_uint32, 0),
+            PrintableValue(ctypes.c_double, -1.),
+            PrintableValue(ctypes.c_uint8, 0),
+            PrintableValue(ctypes.c_uint8, 0),
+            PrintableValue(ctypes.c_uint8, 0)
+        ])
+        self.infodata = callback_args["info"]["data"]
+
+        # init flag
+        # unregister flag: True if main process decides to unregister
+        self.global_unreg_flag = callback_args.get(
+            "global_unreg_flag", Value(ctypes.c_bool, False))
+        self.unreg_flag = Value(ctypes.c_bool, False)
+        # release flag: True if sub process is ready to be released
+        self.release_flag = Value(ctypes.c_bool, False)
+
+        print_log("[{}] {} started.".format(self.name, self.device_id), log_obj=self.log_obj, always_console=True)
+
+        # start process
+        self.start()
+
+    def unregister(self) -> None:
+        """
+        Implements rospy.Subscriber.unregister()
+
+        :return: None
+        """
+        pass
+
+    def run(self) -> None:
+        """
+        Process main function
+        """
+        # Designating image saving paths
+        clean_dir(os.path.join(self.save_path, "color"))
+        clean_dir(os.path.join(self.save_path, "depth"))
+        clean_dir(os.path.join(self.save_path, "point"))
+        frame_list = []
+        frame_count = 0
+        self.device.start()
+        self.infodata[3].value(1)
+
+        record = PyK4ARecord(device=self.device, config=self.config, path=os.path.join(self.save_path, "out.mkv"))
+        record.create()
+        
+        try:
+            self.start_tm = time.time()
+            # wait for main program unreg flag
+            while not self.global_unreg_flag.value:
+                frame = self.device.get_capture()
+                
+                record.write_capture(frame)
+
+                self.infodata[1].value(self.infodata[1].value() + 1)
+                frame_count += 1
+                
+                # update info
+                if frame_count%30==0:
+                    if self.infodata[2].value() < 28:
+                        self.use_manual_queue = True
+                    if self.use_manual_queue and self.infodata[2].value() >= 28:
+                        self.use_manual_queue = False
+
+                    running_tm = time.time()-self.start_tm
+                    m = int(np.floor(running_tm/60))
+                    s = int(running_tm - m*60)
+
+                    # update pannel info
+                    self.infodata[2].value(round(frame_count/running_tm, 2))
+                    self.infodata[4].value(m)
+                    self.infodata[5].value(s)
+                    
+                    # update vis info
+                    if not self.disable_visualization.value:
+                        cv.namedWindow("kinect_{}".format(self.device_id),0)
+                        cv.resizeWindow("kinect_{}".format(self.device_id),400,300)
+                        cv.moveWindow("kinect_{}".format(self.device_id),600 + self.device_id*400,0)
+                        frame_to_show = cv.resize(frame.color[:,:,:3], (400, 300), interpolation=cv.INTER_LANCZOS4)
+                        cv.imshow("kinect_{}".format(self.device_id), frame_to_show)
+                        cv.waitKey(10)
+
+        except Exception as e:
+            print_log(e, log_obj=self.log_obj, always_console=True)
+        
+        record.flush()
+        record.close()
+
+        self.device.close()
+        print_log("[{}] Collection task stopped, processing {} frames...".format(self.name, frame_count), log_obj=self.log_obj)
+        if self.log_obj:
+            self.log_obj.flush()
+
+        self.infodata[2].value(-1)
+        self.infodata[3].value(2)
+
+        print_log("[{}] {} frames saved".format(self.name, len(frame_list)), log_obj=self.log_obj)
+
+        # ready to be released
+        self.infodata[3].value(0)
+        self.release_flag.value = True
+
+        cv.destroyAllWindows()
+
+        # suicide
+        os.kill(os.getpid(), signal.SIGTERM)
+
+
+"""
+Kinect with Skeleton
+Only 10pfs
+"""
+
 
 import sys
 sys.path.insert(1, './kinect/')
@@ -564,8 +718,8 @@ def _get_device_ids() -> dict:
     """
     Get Kinect device id dict 
     """
-    # k4a = pyK4ASkeleton()
-    # k4a.device_close()
+    k4a = pyK4ASkeleton()
+    k4a.device_close()
     cnt = connected_device_count()
     if not cnt:
         print("No devices available")

@@ -48,13 +48,15 @@ def run_kinect_loader_multi(client=None, **kwargs):
     if client is None:
         client = MultiSubClient()
 
+    sub_type = kwargs.get("sub_type", KinectSubscriber)
+
     log_obj = kwargs.get("log_obj", None)
 
     id_dict = _get_device_ids()
     print_log("[{}] {} devices found.".format(kwargs.get("name", "KinectMulti"), len(id_dict)), log_obj)
 
     # first start two sub devices
-    client.add_sub("KinectSub2", sub_type=KinectSubscriber, config=_get_config("sub"),
+    client.add_sub("KinectSub2", sub_type=sub_type, config=_get_config("sub"),
                    device_id=id_dict[SUB2],
                    save_path=os.path.join(kwargs.get(
                        "save_path", "./__test__/default/kinect/"), "sub2"),
@@ -62,7 +64,7 @@ def run_kinect_loader_multi(client=None, **kwargs):
                    disable_visualization=kwargs.get("disable_visualization", False))
     client.start_sub("KinectSub2")
 
-    client.add_sub("KinectSub1", sub_type=KinectSubscriber, config=_get_config("sub"),
+    client.add_sub("KinectSub1", sub_type=sub_type, config=_get_config("sub"),
                    device_id=id_dict[SUB1],
                    save_path=os.path.join(kwargs.get(
                        "save_path", "./__test__/default/kinect/"), "sub1"),
@@ -71,45 +73,21 @@ def run_kinect_loader_multi(client=None, **kwargs):
     client.start_sub("KinectSub1")
 
     # then start the master divice
-    client.add_sub("KinectMaster", sub_type=KinectSubscriber, config=_get_config("mas"),
+    client.add_sub("KinectMaster", sub_type=sub_type, config=_get_config("mas"),
                    device_id=id_dict[MAS],
                    save_path=os.path.join(kwargs.get(
                        "save_path", "./__test__/default/kinect/"), "master"),
                    log_obj=log_obj,
                    disable_visualization=kwargs.get("disable_visualization", False))
     client.start_sub("KinectMaster")
-    
-    # first start two sub devices
-    # client.add_sub("KinectSub2", sub_type=KinectSkeletonSubscriber, config=_get_config("skeleton_sub"),
-    #                device_id=id_dict.get(SUB2, 2),
-    #                save_path=os.path.join(kwargs.get(
-    #                    "save_path", "./__test__/default/kinect/"), "sub2"),
-    #                log_obj=log_obj,
-    #                disable_visualization=kwargs.get("disable_visualization", False))
-    # client.start_sub("KinectSub2")
 
-    # client.add_sub("KinectSub1", sub_type=KinectSkeletonSubscriber, config=_get_config("skeleton_sub"),
-    #                device_id=id_dict.get(SUB1 ,1),
-    #                save_path=os.path.join(kwargs.get(
-    #                    "save_path", "./__test__/default/kinect/"), "sub1"),
-    #                log_obj=log_obj,
-    #                disable_visualization=kwargs.get("disable_visualization", False))
-    # client.start_sub("KinectSub1")
-
-    # client.add_sub("KinectMaster", sub_type=KinectSkeletonSubscriber, config=_get_config("skeleton_mas"),
-    #                device_id=id_dict.get(MAS, 0),
-    #                save_path=os.path.join(kwargs.get(
-    #                    "save_path", "./__test__/default/kinect/"), "master"),
-    #                log_obj=log_obj,
-    #                disable_visualization=kwargs.get("disable_visualization", False))
-    # client.start_sub("KinectMaster")
 
 def run():
     import time
     import os
     import curses
     from dataloader.utils import MultiSubClient, ymdhms_time, print_log
-    from dataloader.kinect_loader import KinectSkeletonSubscriber
+    from dataloader.kinect_loader import KinectSubscriber, KinectMKVSubscriber, KinectSkeletonSubscriber
     import argparse
     import matplotlib.pyplot as plt
     parser = argparse.ArgumentParser(usage='"start_dataloader.py -h" to show help.')
@@ -190,6 +168,31 @@ def run():
                 args=dict(
                     save_path=os.path.join(parent_path, "kinect"),
                     name='KinectSDK',
+                    sub_type=KinectSubscriber,
+                    log_obj=log_obj,
+                    disable_visualization=args.disable_visualization
+                )
+            ),
+            kinect_multi_skeleton=dict(
+                key="s",
+                name="KinectSDK",
+                func=run_kinect_loader_multi,
+                args=dict(
+                    save_path=os.path.join(parent_path, "kinect"),
+                    name='KinectSDK',
+                    sub_type=KinectSkeletonSubscriber,
+                    log_obj=log_obj,
+                    disable_visualization=args.disable_visualization
+                )
+            ),
+            kinect_multi_mkv=dict(
+                key="m",
+                name="KinectSDK",
+                func=run_kinect_loader_multi,
+                args=dict(
+                    save_path=os.path.join(parent_path, "kinect"),
+                    name='KinectSDK',
+                    sub_type=KinectMKVSubscriber,
                     log_obj=log_obj,
                     disable_visualization=args.disable_visualization
                 )

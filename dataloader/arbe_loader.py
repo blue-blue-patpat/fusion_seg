@@ -42,7 +42,7 @@ class ArbeSubscriber(rospy.Subscriber):
         self.release_flag = Value(ctypes.c_bool, False)
 
         self.callback_args.update(dict(name=name, dataframe={}, task_queue={}, start_tm=time.time(),
-            pool=Pool(),
+            pool=Pool(2),
             # fig = plt.figure(1),
             info=dict(formatter="\tcount={}/{}; \tfps={}; \tstatus={}; \t{}:{}", data=[0, 0, -1, 1, 0, 0])))
 
