@@ -80,6 +80,8 @@ def save(playback: PyK4APlayback, save_path="./", start_tm=0):
             cv2.imwrite(os.path.join(save_path, "color/id={}_tm={}.png".format(idx, start_tm + (capture.color_timestamp_usec - color_tm_offset)/1000000)), capture.color)
         if capture.depth is not None:
             cv2.imwrite(os.path.join(save_path, "depth/id={}_tm={}.png".format(idx, start_tm + (capture.depth_timestamp_usec - depth_tm_offset)/1000000)), capture.depth)
+        if capture.depth_point_cloud is not None:
+            np.save(os.path.join(save_path, "pcls/id={}_tm={}".format(idx, start_tm + (capture.depth_timestamp_usec - depth_tm_offset)/1000000)), capture.depth_point_cloud)
         info[1] += 1
 
     while True:
@@ -112,6 +114,7 @@ def extract_mkv(filename, enable_view=False) -> None:
 
     clean_dir(os.path.join(save_path, "color"))
     clean_dir(os.path.join(save_path, "depth"))
+    clean_dir(os.path.join(save_path, "pcls"))
 
     info(playback)
     if enable_view:

@@ -120,5 +120,4 @@ class ResultManager():
             k_row = self.k_loader[i]
             a_row = self.a_loader.select_item(k_row["kinect/master/skeleton"]["st"], "ts", False)
             yield np.load(k_row["kinect/master/skeleton"]["filepath"]),\
-                  cv.imread(k_row["kinect/master/color"]["filepath"]),\
                   np.load(a_row["arbe"]["filepath"])

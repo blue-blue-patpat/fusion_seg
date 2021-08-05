@@ -1,4 +1,5 @@
 import numpy as np
+import math
 
 
 class JointsBridge():
@@ -72,4 +73,59 @@ class JointsBridge():
             self.k_jnt[27] + 1.5*((self.k_jnt[28]-self.k_jnt[27]) + (self.k_jnt[30]-self.k_jnt[27]))
         ])
         return self.smpl_jnt
-        
+
+
+def KinectStoSMPL(file):    
+    content= np.load(file)
+    content=content[0,:,0:3]    #提取前三列
+
+    a=content[0,0]  #前三列单独拿出来
+    b=content[0,1]
+    c=content[0,2]
+
+    d=content[:,0:1]-a  #进行平移工作
+    e=content[:,1:2]-b
+    f=content[:,2:3]-c
+    content[:,0:1]=d
+    content[:,1:2]=e
+    content[:,2:3]=f
+    '''
+    point_cloud1 = open3d.geometry.PointCloud()
+    point_cloud1.points = open3d.utility.Vector3dVector(content)
+    point_cloud1.paint_uniform_color([1,0,0])
+    '''
+    def cos(a,b):
+        return a/math.sqrt(a*a+b*b)
+
+    g=content[1,:]  #旋转r1到y轴
+
+    h=[[1, 0, 0],   #绕x旋转矩阵
+        [0, cos(g[1],g[2]), -cos(g[2],g[1])],
+        [0, cos(g[2],g[1]), cos(g[1],g[2])]]
+
+    i=np.dot(g,h)
+
+    j=[[cos(i[1], i[0]), cos(i[0],i[1]),0], #绕z旋转矩阵
+        [-cos(i[0],i[1]), cos(i[1],i[0]), 0],
+        [0, 0, 1]]
+
+    k=np.dot(h,j)
+    l=np.dot(content,k)
+
+    m=[[cos(l[18,0],l[18,2]),0,-cos(l[18,2],l[18,0])],  #绕y旋转矩阵
+        [0,1,0],
+        [cos(l[18,2],l[18,0]),0,cos(l[18,0],l[18,2])]]
+
+    n=np.dot(l,m)   #乘到最后是前三列最终
+
+    content=np.load(file)  #把前三列存回去
+    content[:,:,0:3]=n
+    return content
+    '''
+    pt2=open3d.geometry.PointCloud()
+    pt2.points=open3d.utility.Vector3dVector(n.reshape(-1, 3))
+    pt2.paint_uniform_color([0, 1, 0])
+
+    axis_pcd = open3d.geometry.TriangleMesh.create_coordinate_frame(size=500, origin=[0, 0, 0])
+    open3d.visualization.draw_geometries([point_cloud1,pt2]+[axis_pcd])
+    '''

@@ -66,7 +66,7 @@
 - [ ] minimal speed up
 - [ ] pass test with realworld data
 
-## visualize/kinect_mkv.py
+## visualization/kinect_mkv.py
 
 ### features
 - [x] visualize mkv 2021/08/03 xiangyu

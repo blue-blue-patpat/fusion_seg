@@ -305,27 +305,12 @@ class KinectSubscriber(Process):
 
                         # update vis info
                         if not self.disable_visualization.value:
-                            if self.device_id==0:
-                                cv.namedWindow("kinect_{}".format(self.device_id),0)
-                                cv.resizeWindow("kinect_{}".format(self.device_id),400,300)
-                                cv.moveWindow("kinect_{}".format(self.device_id),600,0)
-                                frame_to_show = cv.resize(frame.color[:,:,:3], (400, 300), interpolation=cv.INTER_LANCZOS4)
-                                cv.imshow("kinect_{}".format(self.device_id), frame_to_show)
-                                cv.waitKey(10)
-                            elif self.device_id==1:
-                                cv.namedWindow("kinect_{}".format(self.device_id),0)
-                                cv.resizeWindow("kinect_{}".format(self.device_id),400,300)
-                                cv.moveWindow("kinect_{}".format(self.device_id),1000,0)
-                                frame_to_show = cv.resize(frame.color[:,:,:3], (400, 300), interpolation=cv.INTER_LANCZOS4)
-                                cv.imshow("kinect_{}".format(self.device_id), frame_to_show)
-                                cv.waitKey(10)
-                            elif self.device_id==2:
-                                cv.namedWindow("kinect_{}".format(self.device_id),0)
-                                cv.resizeWindow("kinect_{}".format(self.device_id),400,300)
-                                cv.moveWindow("kinect_{}".format(self.device_id),1400,0)
-                                frame_to_show = cv.resize(frame.color[:,:,:3], (400, 300), interpolation=cv.INTER_LANCZOS4)
-                                cv.imshow("kinect_{}".format(self.device_id), frame_to_show)      
-                                cv.waitKey(10)
+                            cv.namedWindow("kinect_{}".format(self.device_id),0)
+                            cv.resizeWindow("kinect_{}".format(self.device_id),400,300)
+                            cv.moveWindow("kinect_{}".format(self.device_id),600 + self.device_id*400,0)
+                            frame_to_show = cv.resize(frame.color[:,:,:3], (400, 300), interpolation=cv.INTER_LANCZOS4)
+                            cv.imshow("kinect_{}".format(self.device_id), frame_to_show)
+                            cv.waitKey(10)
 
         except Exception as e:
             print_log(e, log_obj=self.log_obj, always_console=True)
@@ -612,7 +597,7 @@ class KinectSkeletonSubscriber(Process):
             filename = "id={}_tm={}_st={}".format(frame_count, timestamp, sys_tm)
             path_color = os.path.join(save_path, "color", filename+".png")
             path_depth = os.path.join(save_path, "depth", filename+".png")
-            path_point = os.path.join(save_path, "point", filename)
+            # path_point = os.path.join(save_path, "point", filename)
             path_skelton = os.path.join(save_path, "skeleton", filename)
 
             # save
