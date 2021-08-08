@@ -149,7 +149,7 @@ class RealSenseSubscriber(Process):
             del frame
 
         # init threading pool
-        pool = Pool(3)
+        pool = Pool()
 
         # Start collecting
         try:

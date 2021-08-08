@@ -263,7 +263,7 @@ class KinectSubscriber(Process):
             del frame
 
         # init threading pool
-        pool = Pool(10)
+        pool = Pool()
         
         try:
             # wait for main program unreg flag
@@ -700,8 +700,8 @@ def _get_device_ids() -> dict:
     """
     Get Kinect device id dict 
     """
-    k4a = pyK4ASkeleton()
-    k4a.device_close()
+    # k4a = pyK4ASkeleton()
+    # k4a.device_close()
     cnt = connected_device_count()
     if not cnt:
         print("No devices available")
