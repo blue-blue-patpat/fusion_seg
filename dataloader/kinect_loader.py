@@ -271,7 +271,7 @@ class KinectSubscriber(Process):
                 frame = self.device.get_capture()
                 sys_tm = time.time()
                 if np.any(frame.color) and np.any(frame.depth):
-                    timestamp = frame.color_timestamp_usec/1000000 + self.start_tm
+                    timestamp = frame.color_timestamp_usec/1000000
                     filename = "id={}_tm={}_st={}".format(frame_count, timestamp, sys_tm)
                     
                     # add task
@@ -418,11 +418,12 @@ class KinectMKVSubscriber(Process):
         frame_list = []
         frame_count = 0
         self.device.start()
+        self.task_tm = time.time()
         self.run_init_flag = False
 
         self.infodata[3].value(1)
 
-        record = PyK4ARecord(device=self.device, config=self.config, path=os.path.join(self.save_path, "tasktm={}.mkv".format(time.time())))
+        record = PyK4ARecord(device=self.device, config=self.config, path=os.path.join(self.save_path, "tasktm={}.mkv".format(self.task_tm)))
         record.create()
         
         try:
@@ -477,7 +478,7 @@ class KinectMKVSubscriber(Process):
             self.log_obj.flush()
 
         with open(os.path.join(self.save_path, "info.txt"), "w") as f:
-            f.write(str(self.start_tm))
+            f.write("starttm={}_takstm={}".format(self.start_tm, self.task_tm))
 
         self.infodata[2].value(-1)
         self.infodata[3].value(2)
@@ -636,7 +637,7 @@ class KinectSkeletonSubscriber(Process):
                 # TODO: slow
                 # point_cloud_handle = self.pyks.transform_depth_image_to_point_cloud(depth_image_handle)
 
-                timestamp = self.pyks.image_get_timestamp(color_image_handle)/1000000 + self.start_tm
+                timestamp = self.pyks.image_get_timestamp(color_image_handle)/1000000
 		        
                 if color_image_handle and depth_image_handle:
                     # Perform body detection

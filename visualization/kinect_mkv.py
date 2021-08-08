@@ -46,7 +46,7 @@ def info(playback: PyK4APlayback):
     print(f"Record length: {playback.length / 1000000: 0.2f} sec")
 
 
-def save_and_play(playback: PyK4APlayback, save_path="./", start_tm=0):
+def save_and_play(playback: PyK4APlayback, save_path="./", **kwargs):
     i = 0
     while True:
         try:
@@ -57,10 +57,10 @@ def save_and_play(playback: PyK4APlayback, save_path="./", start_tm=0):
             if capture.color is not None:
                 color = convert_to_bgra_if_required(playback.configuration["color_format"], capture.color)
                 cv2.imshow("Color", color)
-                cv2.imwrite(os.path.join(save_path, "color/id={}_tm={}.png".format(i, start_tm + (capture.color_timestamp_usec - color_tm_offset)/1000000)), color)
+                cv2.imwrite(os.path.join(save_path, "color/id={}_systm={}_devicetm={}.png".format(i, kwargs["start_tm"] + (capture.color_timestamp_usec - color_tm_offset)/1000000)), kwargs["tasktm"] + capture.color_timestamp_usec, color)
             if capture.depth is not None:
                 cv2.imshow("Depth", colorize(capture.depth, (None, 5000)))
-                cv2.imwrite(os.path.join(save_path, "depth/id={}_tm={}.png".format(i, start_tm + (capture.depth_timestamp_usec - depth_tm_offset)/1000000)), capture.depth)
+                cv2.imwrite(os.path.join(save_path, "depth/id={}_systm={}_devicetm={}.png".format(i, kwargs["start_tm"] + (capture.depth_timestamp_usec - color_tm_offset)/1000000)), kwargs["tasktm"] + capture.depth_timestamp_usec, capture.depth)
             key = cv2.waitKey(10)
             print(i, end="\r")
             i += 1
@@ -71,17 +71,17 @@ def save_and_play(playback: PyK4APlayback, save_path="./", start_tm=0):
     cv2.destroyAllWindows()
 
 
-def save(playback: PyK4APlayback, save_path="./", start_tm=0):
+def save(playback: PyK4APlayback, save_path="./", **kwargs):
     from multiprocessing.dummy import Pool
     info = [0, 0]
     pool = Pool()
-    def process(capture, save_path, start_tm, idx, info, color_tm_offset, depth_tm_offset):
+    def process(capture, save_path, kwargs, idx, info, color_tm_offset, depth_tm_offset):
         if capture.color is not None:
-            cv2.imwrite(os.path.join(save_path, "color/id={}_tm={}.png".format(idx, start_tm + (capture.color_timestamp_usec - color_tm_offset)/1000000)), capture.color)
+            cv2.imwrite(os.path.join(save_path, "color/id={}_systm={}_devicetm={}.png".format(idx, kwargs["start_tm"] + (capture.color_timestamp_usec - color_tm_offset)/1000000)), kwargs["tasktm"] + capture.color_timestamp_usec, capture.color)
         if capture.depth is not None:
-            cv2.imwrite(os.path.join(save_path, "depth/id={}_tm={}.png".format(idx, start_tm + (capture.depth_timestamp_usec - depth_tm_offset)/1000000)), capture.depth)
+            cv2.imwrite(os.path.join(save_path, "depth/id={}_systm={}_devicetm={}.png".format(idx, kwargs["start_tm"] + (capture.depth_timestamp_usec - depth_tm_offset)/1000000)), kwargs["tasktm"] + capture.depth_timestamp_usec, capture.depth)
         if capture.depth_point_cloud is not None:
-            np.save(os.path.join(save_path, "pcls/id={}_tm={}".format(idx, start_tm + (capture.depth_timestamp_usec - depth_tm_offset)/1000000)), capture.depth_point_cloud)
+            np.save(os.path.join(save_path, "pcls/id={}_systm={}_devicetm={}.png".format(idx, kwargs["start_tm"] + (capture.depth_timestamp_usec - depth_tm_offset)/1000000)), kwargs["tasktm"] + capture.depth_timestamp_usec, capture.depth_point_cloud)
         info[1] += 1
 
     while True:
@@ -90,7 +90,7 @@ def save(playback: PyK4APlayback, save_path="./", start_tm=0):
             if info[0]==0:
                 color_tm_offset = capture.color_timestamp_usec
                 depth_tm_offset = capture.depth_timestamp_usec
-            pool.apply_async(process, (capture, save_path, start_tm, info[0], info, color_tm_offset, depth_tm_offset))
+            pool.apply_async(process, (capture, save_path, kwargs, info[0], info, color_tm_offset, depth_tm_offset))
             
             print("{} : [Kinect MKV] Extracting {}/{} frame.".format(ymdhms_time(), info[0], info[1]), end="\r")
             info[0] += 1
@@ -110,7 +110,7 @@ def extract_mkv(filename, enable_view=False) -> None:
     filename, extension = os.path.splitext(_)
 
     with open(os.path.join(save_path, "info.txt"), 'r') as f:
-        tm = float(f.readline())
+        params = dict([param.split('=') for param in f.readline().split('_')])
 
     clean_dir(os.path.join(save_path, "color"))
     clean_dir(os.path.join(save_path, "depth"))
@@ -118,8 +118,8 @@ def extract_mkv(filename, enable_view=False) -> None:
 
     info(playback)
     if enable_view:
-        save_and_play(playback, save_path, tm)
+        save_and_play(playback, save_path, params)
     else:
-        save(playback, save_path, tm)
+        save(playback, save_path, params)
 
     playback.close()
