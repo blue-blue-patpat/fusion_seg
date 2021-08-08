@@ -57,10 +57,10 @@ def save_and_play(playback: PyK4APlayback, save_path="./", **kwargs):
             if capture.color is not None:
                 color = convert_to_bgra_if_required(playback.configuration["color_format"], capture.color)
                 cv2.imshow("Color", color)
-                cv2.imwrite(os.path.join(save_path, "color/id={}_systm={}_devicetm={}.png".format(i, kwargs["start_tm"] + (capture.color_timestamp_usec - color_tm_offset)/1000000)), kwargs["tasktm"] + capture.color_timestamp_usec, color)
+                cv2.imwrite(os.path.join(save_path, "color/id={}_systm={}_devicetm={}.png".format(i, float(kwargs["starttm"]) + (capture.color_timestamp_usec - color_tm_offset)/1000000, float(kwargs["tasktm"]) + capture.color_timestamp_usec/1000000)), color)
             if capture.depth is not None:
                 cv2.imshow("Depth", colorize(capture.depth, (None, 5000)))
-                cv2.imwrite(os.path.join(save_path, "depth/id={}_systm={}_devicetm={}.png".format(i, kwargs["start_tm"] + (capture.depth_timestamp_usec - color_tm_offset)/1000000)), kwargs["tasktm"] + capture.depth_timestamp_usec, capture.depth)
+                cv2.imwrite(os.path.join(save_path, "depth/id={}_systm={}_devicetm={}.png".format(i, float(kwargs["starttm"]) + (capture.depth_timestamp_usec - color_tm_offset)/1000000, float(kwargs["tasktm"]) + capture.depth_timestamp_usec/1000000)), capture.depth)
             key = cv2.waitKey(10)
             print(i, end="\r")
             i += 1
@@ -77,11 +77,11 @@ def save(playback: PyK4APlayback, save_path="./", **kwargs):
     pool = Pool()
     def process(capture, save_path, kwargs, idx, info, color_tm_offset, depth_tm_offset):
         if capture.color is not None:
-            cv2.imwrite(os.path.join(save_path, "color/id={}_systm={}_devicetm={}.png".format(idx, kwargs["start_tm"] + (capture.color_timestamp_usec - color_tm_offset)/1000000)), kwargs["tasktm"] + capture.color_timestamp_usec, capture.color)
+            cv2.imwrite(os.path.join(save_path, "color/id={}_systm={}_devicetm={}.png".format(idx, float(kwargs["starttm"]) + (capture.color_timestamp_usec - color_tm_offset)/1000000, float(kwargs["tasktm"]) + capture.color_timestamp_usec/1000000)), capture.color)
         if capture.depth is not None:
-            cv2.imwrite(os.path.join(save_path, "depth/id={}_systm={}_devicetm={}.png".format(idx, kwargs["start_tm"] + (capture.depth_timestamp_usec - depth_tm_offset)/1000000)), kwargs["tasktm"] + capture.depth_timestamp_usec, capture.depth)
+            cv2.imwrite(os.path.join(save_path, "depth/id={}_systm={}_devicetm={}.png".format(idx, float(kwargs["starttm"]) + (capture.depth_timestamp_usec - depth_tm_offset)/1000000, float(kwargs["tasktm"]) + capture.depth_timestamp_usec/1000000)), capture.depth)
         if capture.depth_point_cloud is not None:
-            np.save(os.path.join(save_path, "pcls/id={}_systm={}_devicetm={}.png".format(idx, kwargs["start_tm"] + (capture.depth_timestamp_usec - depth_tm_offset)/1000000)), kwargs["tasktm"] + capture.depth_timestamp_usec, capture.depth_point_cloud)
+            np.save(os.path.join(save_path, "pcls/id={}_systm={}_devicetm={}.png".format(idx, float(kwargs["starttm"]) + (capture.depth_timestamp_usec - depth_tm_offset)/1000000, float(kwargs["tasktm"]) + capture.depth_timestamp_usec/1000000)), capture.depth_point_cloud)
         info[1] += 1
 
     while True:
@@ -118,8 +118,8 @@ def extract_mkv(filename, enable_view=False) -> None:
 
     info(playback)
     if enable_view:
-        save_and_play(playback, save_path, params)
+        save_and_play(playback, save_path, **params)
     else:
-        save(playback, save_path, params)
+        save(playback, save_path, **params)
 
     playback.close()

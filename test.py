@@ -1,6 +1,3 @@
-from pytorch3d.structures import pointclouds
-
-
 def data_aling_test():
     from dataloader import align
     df = align('./dataloader/__test__/gt', './dataloader/__test__/camera',
@@ -144,8 +141,8 @@ if __name__ == "__main__":
     # minimal_test()
     # result_manager_test('./__test__/2021-07-31 21:35:50/')
     # result_loader_test('./__test__/2021-07-31 21:35:50/')
-    # from visualization.kinect_mkv import extract_mkv
-    # extract_mkv('./__test__/default/kinect/master/out.mkv', False) 
-    from visualization import pcd_visualization
-    pcd_visualization("/home/nesc525/chen/3DSVC/__test__/2021-08-07 21:53:20")
+    from visualization.kinect_mkv import extract_mkv
+    extract_mkv("__test__/default/kinect/master/tasktm=1628427345.0281131.mkv", False) 
+    # from visualization import pcd_visualization
+    # pcd_visualization("/home/nesc525/chen/3DSVC/__test__/2021-08-07 21:53:20")
     # pcd_visualization("/home/nesc525/chen/3DSVC/__test__/2021-08-06 14:09:37")

@@ -478,7 +478,7 @@ class KinectMKVSubscriber(Process):
             self.log_obj.flush()
 
         with open(os.path.join(self.save_path, "info.txt"), "w") as f:
-            f.write("starttm={}_takstm={}".format(self.start_tm, self.task_tm))
+            f.write("starttm={}_tasktm={}".format(self.start_tm, self.task_tm))
 
         self.infodata[2].value(-1)
         self.infodata[3].value(2)
