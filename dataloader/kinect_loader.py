@@ -271,7 +271,7 @@ class KinectSubscriber(Process):
                 frame = self.device.get_capture()
                 sys_tm = time.time()
                 if np.any(frame.color) and np.any(frame.depth):
-                    timestamp = frame.color_timestamp_usec
+                    timestamp = frame.color_timestamp_usec/1000000 + self.start_tm
                     filename = "id={}_tm={}_st={}".format(frame_count, timestamp, sys_tm)
                     
                     # add task
@@ -414,20 +414,18 @@ class KinectMKVSubscriber(Process):
         """
         Process main function
         """
-        # Designating image saving paths
-        clean_dir(os.path.join(self.save_path, "color"))
-        clean_dir(os.path.join(self.save_path, "depth"))
-        clean_dir(os.path.join(self.save_path, "point"))
+        clean_dir(self.save_path)
         frame_list = []
         frame_count = 0
         self.device.start()
+        self.start_tm = time.time()
+
         self.infodata[3].value(1)
 
-        record = PyK4ARecord(device=self.device, config=self.config, path=os.path.join(self.save_path, "out.mkv"))
+        record = PyK4ARecord(device=self.device, config=self.config, path=os.path.join(self.save_path, "tm={}.mkv".format(self.start_tm)))
         record.create()
         
         try:
-            self.start_tm = time.time()
             # wait for main program unreg flag
             while not self.global_unreg_flag.value:
                 frame = self.device.get_capture()
@@ -619,9 +617,9 @@ class KinectSkeletonSubscriber(Process):
         self.pyks.device_open(self.device_id)
         # Start cameras 
         self.pyks.device_start_cameras(self.config)
+        self.start_tm = time.time()
         # Initialize the body tracker
         self.pyks.bodyTracker_start()
-        self.start_tm = time.time()
         try:
             # wait for main program unreg flag
             while not self.global_unreg_flag.value:
@@ -633,23 +631,19 @@ class KinectSkeletonSubscriber(Process):
                 # TODO: slow
                 # point_cloud_handle = self.pyks.transform_depth_image_to_point_cloud(depth_image_handle)
 
-                timestamp = self.pyks.image_get_timestamp(color_image_handle)
+                timestamp = self.pyks.image_get_timestamp(color_image_handle)/1000000 + self.start_tm
 		        
                 if color_image_handle and depth_image_handle:
                     # Perform body detection
-                    t0 = time.time()
                     # TODO: slow
                     self.pyks.bodyTracker_update()
-                    t1 = time.time()
                     # Read and convert the image data to numpy array:
                     color_image = self.pyks.image_convert_to_numpy(color_image_handle)
                     depth_image = self.pyks.image_convert_to_numpy(depth_image_handle)
                     # point_cloud = self.pyks.image_convert_to_numpy(point_cloud_handle)
-                    t2 = time.time()
 
                     # TODO: slow
                     bodys = self.get_skeleton(depth_image)
-                    t3 = time.time()
 
                     # Release the image
                     self.pyks.image_release(color_image_handle)

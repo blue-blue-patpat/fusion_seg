@@ -24,6 +24,7 @@ def run_arbe_loader(client=None, **kwargs):
 
 
 def run_realsense_loader(client=None, **kwargs):
+    
     from dataloader.utils import MultiSubClient
     from dataloader.realsense_loader import RealSenseSubscriber
     
@@ -82,6 +83,14 @@ def run_kinect_loader_multi(client=None, **kwargs):
                    log_obj=log_obj,
                    disable_visualization=kwargs.get("disable_visualization", False))
     client.start_sub("KinectMaster")
+
+
+
+def quit(client, **args):
+    if args["env"] == "prod":
+        import shutil
+        shutil.rmtree(args["path"], ignore_errors=True)
+    exit(0)
 
 
 def run():
@@ -209,8 +218,11 @@ def run():
             quit=dict(
                 key="q",
                 name="/QuitMainProcess",
-                func=exit,
-                args={}
+                func=quit,
+                args=dict(
+                    path=parent_path,
+                    env=args.env
+                )
             ),
         )
 

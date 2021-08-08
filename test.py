@@ -135,15 +135,17 @@ def result_loader_test(file_path):
 
 def result_manager_test(filepath):
     import numpy as np
-    from dataloader.result_loader import ResultManager
+    from visualization.pcd_visual import ResultManager
     rm = ResultManager(filepath)
-    for k_np, k_img, a_np in rm.generator():
-        print(np.size(k_np), np.size(k_img), np.size(a_np))
+
 
 
 if __name__ == "__main__":
     # minimal_test()
     # result_manager_test('./__test__/2021-07-31 21:35:50/')
     # result_loader_test('./__test__/2021-07-31 21:35:50/')
-    from visualization.kinect_mkv import extract_mkv
-    extract_mkv('./__test__/default/kinect/master/out.mkv', False) 
+    # from visualization.kinect_mkv import extract_mkv
+    # extract_mkv('./__test__/default/kinect/master/out.mkv', False) 
+    from visualization import pcd_visualization
+    pcd_visualization("/home/nesc525/chen/3DSVC/__test__/2021-08-07 21:53:20")
+    # pcd_visualization("/home/nesc525/chen/3DSVC/__test__/2021-08-06 14:09:37")

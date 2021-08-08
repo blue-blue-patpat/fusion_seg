@@ -107,17 +107,3 @@ class KinectResultLoader(ResultLoader):
         else:
             self.params = params
         self.run()
-
-
-class ResultManager():
-    def __init__(self, result_path) -> None:
-        self.k_loader = KinectResultLoader(result_path)
-        self.a_loader = ArbeResultLoader(result_path)
-        self.gen = self.generator()
-
-    def generator(self):
-        for i in range(len(self.k_loader)):
-            k_row = self.k_loader[i]
-            a_row = self.a_loader.select_item(k_row["kinect/master/skeleton"]["st"], "ts", False)
-            yield np.load(k_row["kinect/master/skeleton"]["filepath"]),\
-                  np.load(a_row["arbe"]["filepath"])
