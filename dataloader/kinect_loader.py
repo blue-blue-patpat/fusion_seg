@@ -418,6 +418,7 @@ class KinectMKVSubscriber(Process):
         frame_list = []
         frame_count = 0
         self.device.start()
+        self.run_init_flag = False
 
         self.infodata[3].value(1)
 
@@ -428,9 +429,11 @@ class KinectMKVSubscriber(Process):
             # wait for main program unreg flag
             while not self.global_unreg_flag.value:
                 frame = self.device.get_capture()
-
-                if self.start_tm is not None and frame:
+                if not (np.any(frame.color) and np.any(frame.depth)):
+                    continue
+                if not self.run_init_flag:
                     self.start_tm = time.time()
+                    self.run_init_flag = True
                 
                 record.write_capture(frame)
 
