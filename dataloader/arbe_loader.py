@@ -82,7 +82,7 @@ class ArbeSubscriber(rospy.Subscriber):
 
 def arbe_process(msg, frame_count, ts, save_path, infodata):
     # _msg_to_dataframe(msg).to_csv(os.path.join(save_path, '{}.csv'.format(ts)))
-    np.save(os.path.join(save_path, 'id={}_ts={}'.format(frame_count, ts)), np.array(_msg_to_dataframe(msg)))
+    np.save(os.path.join(save_path, 'id={}_tm={}'.format(frame_count, ts)), np.array(_msg_to_dataframe(msg)))
     infodata[0] += 1
 
 

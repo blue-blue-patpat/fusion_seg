@@ -418,17 +418,19 @@ class KinectMKVSubscriber(Process):
         frame_list = []
         frame_count = 0
         self.device.start()
-        self.start_tm = time.time()
 
         self.infodata[3].value(1)
 
-        record = PyK4ARecord(device=self.device, config=self.config, path=os.path.join(self.save_path, "tm={}.mkv".format(self.start_tm)))
+        record = PyK4ARecord(device=self.device, config=self.config, path=os.path.join(self.save_path, "tasktm={}.mkv".format(time.time())))
         record.create()
         
         try:
             # wait for main program unreg flag
             while not self.global_unreg_flag.value:
                 frame = self.device.get_capture()
+
+                if self.start_tm is not None and frame:
+                    self.start_tm = time.time()
                 
                 record.write_capture(frame)
 
