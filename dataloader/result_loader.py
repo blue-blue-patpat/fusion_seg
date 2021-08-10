@@ -96,13 +96,14 @@ class RealSenseResultLoader(ResultLoader):
 
 
 class KinectResultLoader(ResultLoader):
-    def __init__(self, result_path, params=None) -> None:
+    def __init__(self, result_path, params=None, device="master") -> None:
         super().__init__(result_path)
         if params is None:
             self.params = [
-                dict(tag="kinect/master/color", ext=".png"),
-                dict(tag="kinect/master/depth", ext=".png"),
-                dict(tag="kinect/master/skeleton", ext=".npy"),
+                dict(tag="kinect/{}/color".format(device), ext=".png"),
+                dict(tag="kinect/{}/depth".format(device), ext=".png"),
+                dict(tag="kinect/{}/pcls".format(device), ext=".npy"),
+                dict(tag="kinect/{}/skeleton".format(device), ext=".npy"),
             ]
         else:
             self.params = params

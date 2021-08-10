@@ -206,7 +206,7 @@ def ymdhms_time() -> str:
 
     :return: time str
     """
-    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time()))
+    return time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime(time.time()))
 
 
 def print_log(content, log_obj=None, always_console=False):

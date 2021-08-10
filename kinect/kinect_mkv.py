@@ -81,7 +81,7 @@ def save(playback: PyK4APlayback, save_path="./", **kwargs):
         if capture.depth is not None:
             cv2.imwrite(os.path.join(save_path, "depth/id={}_systm={}_devicetm={}.png".format(idx, float(kwargs["starttm"]) + (capture.depth_timestamp_usec - depth_tm_offset)/1000000, float(kwargs["tasktm"]) + capture.depth_timestamp_usec/1000000)), capture.depth)
         if capture.depth_point_cloud is not None:
-            np.save(os.path.join(save_path, "pcls/id={}_systm={}_devicetm={}.png".format(idx, float(kwargs["starttm"]) + (capture.depth_timestamp_usec - depth_tm_offset)/1000000, float(kwargs["tasktm"]) + capture.depth_timestamp_usec/1000000)), capture.depth_point_cloud)
+            np.save(os.path.join(save_path, "pcls/id={}_systm={}_devicetm={}".format(idx, float(kwargs["starttm"]) + (capture.depth_timestamp_usec - depth_tm_offset)/1000000, float(kwargs["tasktm"]) + capture.depth_timestamp_usec/1000000)), capture.depth_point_cloud)
         info[1] += 1
 
     while True:
@@ -115,6 +115,7 @@ def extract_mkv(filename, enable_view=False) -> None:
     clean_dir(os.path.join(save_path, "color"))
     clean_dir(os.path.join(save_path, "depth"))
     clean_dir(os.path.join(save_path, "pcls"))
+    clean_dir(os.path.join(save_path, "skeleton"))
 
     info(playback)
     if enable_view:

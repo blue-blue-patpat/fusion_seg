@@ -43,6 +43,7 @@ def pcd_visualization(filepath) -> None:
     vis.add_geometry(line_set)
     vis.add_geometry(o3d_arbe_pcd)
     vis.add_geometry(o3d_skel_pcd)
+    
     for s_row, a_row in rm.generator():
         s_np = np.load(s_row["filepath"])
         a_np = np.load(a_row["filepath"])
@@ -103,6 +104,15 @@ def pcd_visualization(filepath) -> None:
         # o3d.visualization.draw_geometries([o3d_skel_pcd]+[o3d_arbe_pcd]+[axis_pcd]+[line_set])
 
         # o3d.io.write_point_cloud(os.path.join(filepath, "{}.ply".format(s_row["id"])), o3d_pcd)
+
+
+def vis_smpl_skeleton(smpl_skeleton):
+    axis_pcd = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+    o3d_skel_pcd = o3d.geometry.PointCloud()
+    o3d_skel_pcd.points = o3d.utility.Vector3dVector(smpl_skeleton)
+    o3d_skel_pcd.paint_uniform_color([0,0,1])
+    o3d.visualization.draw_geometries([axis_pcd, o3d_skel_pcd], 'skeleton')
+
 
 if __name__ == "__main__":
     k_np = np.load("__test__/2021-08-05 17:21:35/kinect/master/skeleton/id=122_tm=21161244_st=1628155321.3146186.npy")

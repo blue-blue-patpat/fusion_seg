@@ -75,16 +75,16 @@ def minimal_test():
     # TODO: Read pose from skeleton
     k_loader = KinectResultLoader('./ignoredata/minimal_files/input/')
     files = k_loader.select_by_id(200)
-    kinect_skeleton = np.load(files["master/skeleton"]["filepath"][0])
-    joints = kinect_skeleton[0][:,:3]
+    kinect_skeleton = np.load(files["kinect/master/skeleton"]["filepath"])
 
     bridge = JointsBridge()
-    bridge.load_kinect_joints(joints)
-    keypoints_gt = bridge.update_smpl_joints()
+    bridge.load_kinect_joints(kinect_skeleton[0])
+    bridge.kinect_joints_transfer_coordinates()
+    keypoints_gt = bridge.update_smpl_joints_from_kinect_joints()
 
     # pose_pca = np.random.uniform(-0.2, 0.2, size=n_pose)
     # shape = np.random.normal(size=n_shape)
-    mesh = KinematicModel(config.SMPL_MODEL_1_0_PATH, armatures.SMPLArmature, scale=100)
+    mesh = KinematicModel(config.SMPL_MODEL_1_0_PATH, armatures.SMPLArmature, scale=1)
 
     ########################## solving example ############################
 
@@ -116,7 +116,7 @@ def minimal_test():
     # mesh.save_obj(os.path.join(config.SAVE_PATH, './gt.obj'))
     mesh.set_params(pose_pca=pose_pca_est)
     mesh.show_obj('est')
-    mesh.save_obj(os.path.join(config.SAVE_PATH, './est.obj'))
+    mesh.save_obj(os.path.join(config.SAVE_PATH, './est_1.obj'))
 
     print('ground truth and estimated meshes are saved into gt.obj and est.obj')
 
@@ -141,8 +141,33 @@ if __name__ == "__main__":
     # minimal_test()
     # result_manager_test('./__test__/2021-07-31 21:35:50/')
     # result_loader_test('./__test__/2021-07-31 21:35:50/')
-    from visualization.kinect_mkv import extract_mkv
-    extract_mkv("__test__/default/kinect/master/tasktm=1628427345.0281131.mkv", False) 
+
+    # from kinect.kinect_mkv import extract_mkv
+    # extract_mkv("/home/nesc525/chen/3DSVC/__test__/mkv/kinect/master/out.mkv", False) 
+
     # from visualization import pcd_visualization
     # pcd_visualization("/home/nesc525/chen/3DSVC/__test__/2021-08-07 21:53:20")
     # pcd_visualization("/home/nesc525/chen/3DSVC/__test__/2021-08-06 14:09:37")
+
+    # from minimal.bridge import JointsBridge
+    # import numpy as np
+    # np.save("ignoredata/minimal_files/output/id=200_tm=60127922_st=1627651318.2057362.npy", bridge.smpl_jnts)
+
+    # from dataloader.result_loader import KinectResultLoader
+    # from minimal.bridge import JointsBridge
+    # import numpy as np
+    # from visualization.pcd_visual import vis_smpl_skeleton
+
+    # k_loader = KinectResultLoader('./ignoredata/minimal_files/input/')
+    # files = k_loader.select_by_id(200)
+    # kinect_skeleton = np.load(files["kinect/master/skeleton"]["filepath"])
+
+    # bridge = JointsBridge()
+    # bridge.load_kinect_joints(kinect_skeleton[0])
+    # bridge.kinect_joints_transfer_coordinates()
+    # keypoints_gt = bridge.update_smpl_joints_from_kinect_joints()
+
+    # vis_smpl_skeleton(keypoints_gt)
+
+    from kinect.body_loader import extract_body
+    extract_body("/home/nesc525/chen/3DSVC/__test__/mkv","master")

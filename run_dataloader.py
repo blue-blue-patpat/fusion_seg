@@ -76,13 +76,13 @@ def run_kinect_loader_multi(client=None, **kwargs):
     client.start_sub("KinectSub1")
 
     # then start the master divice
-    client.add_sub("KinectMaster", sub_type=sub_type, config=_get_config("skeleton_mas") if type_name == "s" else _get_config("mas"),
-                   device_id=id_dict[MAS],
-                   save_path=os.path.join(kwargs.get(
-                       "save_path", "./__test__/default/kinect/"), "master"),
-                   log_obj=log_obj,
-                   disable_visualization=kwargs.get("disable_visualization", False))
-    client.start_sub("KinectMaster")
+    # client.add_sub("KinectMaster", sub_type=sub_type, config=_get_config("skeleton_mas") if type_name == "s" else _get_config("mas"),
+    #                device_id=id_dict[MAS],
+    #                save_path=os.path.join(kwargs.get(
+    #                    "save_path", "./__test__/default/kinect/"), "master"),
+    #                log_obj=log_obj,
+    #                disable_visualization=kwargs.get("disable_visualization", False))
+    # client.start_sub("KinectMaster")
 
 
 

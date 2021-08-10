@@ -501,11 +501,8 @@ Only 10pfs
 """
 
 
-import sys
-sys.path.insert(1, './kinect/')
-
-import kinect._k4a as _k4a
-from kinect.config import config
+import kinect.k4a._k4a as _k4a
+from kinect.k4a.config import config
 from kinect import pyK4ASkeleton
 
 class KinectSkeletonSubscriber(Process):

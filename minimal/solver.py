@@ -1,3 +1,4 @@
+from dataloader.utils import ymdhms_time
 from minimal.models import KinematicPCAWrapper
 from tqdm import tqdm
 import numpy as np
@@ -147,6 +148,6 @@ class Solver:
       self.losses.append(loss)
 
       if self.verbose:
-        print(i, self.timer.tic(), loss)
+        print("[{}] : idx={}\tperiod={}\tloss={}\tloss_kpts={}\tloss_edge={}\tloss_face={}".format(ymdhms_time() , i, self.timer.tic(), loss, loss_kpts, loss_edge, loss_face))
 
     return params
