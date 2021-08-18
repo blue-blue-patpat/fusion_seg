@@ -139,10 +139,9 @@ class KinematicModel():
       np.matmul(T, verts.reshape([-1, 4, 1])).reshape([-1, 4])[:, :3]
 
     # update mesh
-    # center = self.verts.mean(0)
-    # verts = self.verts - center
-    # scale = abs(verts).max(0).max()
-    # self.mesh = Meshes(verts=[torch.tensor(verts, dtype=torch.float32)], faces=[torch.tensor(self.faces, dtype=torch.float32)])
+    center = self.verts.mean(0)
+    verts = self.verts - center
+    self.mesh = Meshes(verts=[torch.tensor(verts, dtype=torch.float32)], faces=[torch.tensor(self.faces, dtype=torch.float32)])
 
     # update keypoints
     # self.keypoints = self.J_regressor_ext.dot(self.mesh.verts_packed()) *self.scale
@@ -151,8 +150,8 @@ class KinematicModel():
     # update verts
     self.verts *= self.scale
 
-    # return self.mesh, self.keypoints.copy()
-    return [], self.keypoints.copy()
+    return self.mesh, self.keypoints.copy()
+    # return [], self.keypoints.copy()
 
   def rodrigues(self, r):
     """

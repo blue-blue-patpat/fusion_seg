@@ -1,5 +1,6 @@
 MANO_MODEL_PATH = './model_files/mano_left.pkl'
 SMPL_MODEL_1_0_PATH = './ignoredata/minimal_files/model_files/smpl_1_0_female.pkl'
+SMPL_MODEL_1_0_MALE_PATH = './ignoredata/minimal_files/model_files/smpl_1_0_male.pkl'
 SMPL_MODEL_1_1_PATH = './ignoredata/minimal_files/model_files/smpl_1_1_female.pkl'
 SMPLH_MODEL_PATH = './model_files/smplh_neutral'
 

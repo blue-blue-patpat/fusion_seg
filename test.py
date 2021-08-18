@@ -72,15 +72,16 @@ def minimal_test():
     # smpl 1.0.0: 10
     # smpl 1.1.0: 300
     # n_shape = 10
-    # TODO: Read pose from skeleton
     k_loader = KinectResultLoader('./ignoredata/minimal_files/input/')
-    files = k_loader.select_by_id(200)
-    kinect_skeleton = np.load(files["kinect/master/skeleton"]["filepath"])
+    k_loader.file_dict.pop("kinect/master/pcls")
+    files = k_loader.select_item_in_tag(58, "id", "kinect/master/skeleton")
+    kinect_skeleton = np.load(files["filepath"])
 
     bridge = JointsBridge()
     bridge.load_kinect_joints(kinect_skeleton[0])
     bridge.kinect_joints_transfer_coordinates()
     keypoints_gt = bridge.update_smpl_joints_from_kinect_joints()
+    keypoints_gt = bridge.normalization(keypoints_gt)
 
     # pose_pca = np.random.uniform(-0.2, 0.2, size=n_pose)
     # shape = np.random.normal(size=n_shape)
@@ -95,7 +96,7 @@ def minimal_test():
     # mesh.set_params(pose_pca=pose_pca, pose_glb=pose_glb, shape=shape)
     # pointcloud_gt = Pointclouds(sample_points_from_meshes(mesh_gt, num_samples=1000))
     pointcloud_gt = None
-    params_est = solver.solve(wrapper, pointcloud_gt, keypoints_gt)
+    params_est = solver.solve_full(wrapper, pointcloud_gt, keypoints_gt)
 
     shape_est, pose_pca_est, pose_glb_est = wrapper.decode(params_est)
 
@@ -124,29 +125,40 @@ def minimal_test():
 def result_loader_test(file_path):
     from dataloader.result_loader import KinectResultLoader
     k_loader = KinectResultLoader(file_path)
-    # res = k_loader.run()
-    # gen = k_loader.generator()
-    # print(next(gen))
-    print(k_loader.select_item(1627738564.7240, 'st', exact=False))
+    gen = k_loader.generator()
+    print(next(gen))
+    # print(k_loader.select_item(1627738564.7240, 'st', exact=False))
     # print(k_loader[3])
 
 def result_manager_test(filepath):
     import numpy as np
-    from visualization.pcd_visual import ResultManager
-    rm = ResultManager(filepath)
+    from visualization.pcd_visual import SkelArbeManager
+    rm = SkelArbeManager(filepath)
 
 
 
 if __name__ == "__main__":
-    # minimal_test()
-    # result_manager_test('./__test__/2021-07-31 21:35:50/')
-    # result_loader_test('./__test__/2021-07-31 21:35:50/')
+    minimal_test()
+    # result_manager_test('/home/nesc525/chen/3DSVC/__test__/2021-08-05 17:21:35')
+    # result_loader_test('./__test__/mkv/')
 
     # from kinect.kinect_mkv import extract_mkv
-    # extract_mkv("/home/nesc525/chen/3DSVC/__test__/mkv/kinect/master/out.mkv", False) 
+    # extract_mkv("/media/nesc525/perple/2021-08-09_20-28-20/kinect/sub2/tasktm=1628512119.258128.mkv", False) 
 
     # from visualization import pcd_visualization
-    # pcd_visualization("/home/nesc525/chen/3DSVC/__test__/2021-08-07 21:53:20")
+    # from multiprocessing import Process
+    # parent_path = "/media/nesc525/perple/2021-08-09_19-47-45"
+    # v_front = Process(target=pcd_visualization, args=(parent_path, "master"))
+    # v_left = Process(target=pcd_visualization, args=(parent_path, "master"))
+    # v_right = Process(target=pcd_visualization, args=(parent_path, "master"))
+    # v_front.start()
+    # # v_left.start()
+    # # v_right.start()
+    # v_front.join()
+    # # v_left.join()
+    # # v_right.join()
+
+    # pcd_visualization("/media/nesc525/perple/2021-08-09_20-28-20", "master")
     # pcd_visualization("/home/nesc525/chen/3DSVC/__test__/2021-08-06 14:09:37")
 
     # from minimal.bridge import JointsBridge
@@ -168,6 +180,7 @@ if __name__ == "__main__":
     # keypoints_gt = bridge.update_smpl_joints_from_kinect_joints()
 
     # vis_smpl_skeleton(keypoints_gt)
+    # vis_smpl_skeleton(np.load("/home/nesc525/chen/3DSVC/__test__/mkv/kinect/master/skeleton/id=165_st=1628392679.8134906_dt=1628392680.1205788.npy"))
 
-    from kinect.body_loader import extract_body
-    extract_body("/home/nesc525/chen/3DSVC/__test__/mkv","master")
+    # from kinect.kinect_skeleton import extract_skeleton
+    # extract_skeleton("/media/nesc525/perple/2021-08-09_20-28-20")

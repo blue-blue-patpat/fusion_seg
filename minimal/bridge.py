@@ -7,22 +7,40 @@ class JointsBridge():
         self.k_jnts = np.zeros((32, 3))
         self.smpl_jnts = np.zeros((28, 3))
 
-    def load_kinect_joints(self, k_jnts):
-        self.k_jnts = k_jnts
+    def smpl_from_kinect(self, jnts, pcl=np.array([[0,0,0]])):
+        self.kinect_joints_transfer_coordinates(jnts, pcl)
+        self.update_smpl_joints_from_kinect_joints()
+        return self.normalization()
 
-    
-    def kinect_joints_transfer_coordinates(self, kinect_joints=None):
+    def kinect_joints_transfer_v2(self, kinect_joints=None):
+        from calib.coord_trans import solve_r, r_zyx, r_x, r_y, r_z
         if kinect_joints is None:
             kinect_joints = self.k_jnts
-        
-        # extract first 3 rows as joints(x, y, z)
         content=kinect_joints[:,0:3]
+        u = np.array([1,0,0])
+        v = np.array([0,-1,0])
+        w = np.array([0,0,-1])
+        angles = solve_r([u, v, w], r_zyx)
+        angle_x, angle_y, angle_z = angles
+        R = r_x(angle_x) @ r_y(angle_y) @ r_z(angle_z)
+        t = -content[0]
+        self.k_jnts = (content + np.repeat([t], content.shape[0], axis=0)) @ R.T
+        return self.k_jnts
+    
+    def kinect_joints_transfer_coordinates(self, kinect_joints=None, pcl=None):
+        if kinect_joints is None:
+            kinect_joints = self.k_jnts
+        if pcl is None:
+            pcl = self.pcl
+        # extract first 3 rows as joints(x, y, z)
+        content=kinect_joints[:,:3]
+        pcl = pcl[:,:3]
 
         # tranfer
-        t = np.array([0.5 * content[0] + 0.5 * content[1]])
+        t = -np.array([0.5 * content[0] + 0.5 * content[1]])
 
         # apply transfer to all joints
-        content = content - np.repeat(t, content.shape[0], 0)
+        content = content + np.repeat(t, content.shape[0], 0)
 
         '''
         point_cloud1 = open3d.geometry.PointCloud()
@@ -40,20 +58,22 @@ class JointsBridge():
 
         i=np.dot(g,h)
 
-        j=[[cos(i[1], i[0]), cos(i[0],i[1]),0], #绕z旋转矩阵
-            [-cos(i[0],i[1]), cos(i[1],i[0]), 0],
+        j=[[cos(i[1], i[0]), -cos(i[0],i[1]),0], #绕z旋转矩阵
+            [cos(i[0],i[1]), cos(i[1],i[0]), 0],
             [0, 0, 1]]
 
         k=np.dot(h,j)
         l=np.dot(content,k)
 
-        m=[[cos(l[18,0],l[18,2]),0,-cos(l[18,2],l[18,0])],  #绕y旋转矩阵
+        m=[[cos(l[18,0],l[18,2]),0,cos(l[18,2],l[18,0])],  #绕y旋转矩阵
             [0,1,0],
-            [cos(l[18,2],l[18,0]),0,cos(l[18,0],l[18,2])]]
-
+            [-cos(l[18,2],l[18,0]),0,cos(l[18,0],l[18,2])]]
+        
         self.k_jnts = np.dot(l,m)   #乘到最后是前三列最终
+        R = np.dot(k,m)    #matrix是最终旋转矩阵
 
-        return self.k_jnts
+        self.pcl = np.dot(pcl + np.repeat(t, pcl.shape[0], 0), R)
+        return self.k_jnts, self.pcl
         '''
         pt2=open3d.geometry.PointCloud()
         pt2.points=open3d.utility.Vector3dVector(n.reshape(-1, 3))
@@ -130,9 +150,15 @@ class JointsBridge():
         ])
         return self.smpl_jnts
 
-    def normalization(self, jnts):
-        x_norm = np.linalg.norm(jnts, axis = 0, keepdims = True, ord=np.inf)
+    def normalization(self, jnts=None, pcl=None):
+        if jnts is None:
+            jnts = self.smpl_jnts
+        if pcl is None:
+            pcl = self.pcl
+        # x_norm = np.linalg.norm(jnts, axis = 0, keepdims = True, ord=np.inf)
+        x_norm = np.repeat(np.max(jnts), 3)
         self.smpl_jnts = jnts / x_norm
-        return self.smpl_jnts
+        self.pcl = pcl/x_norm
+        return self.smpl_jnts, self.pcl
 
 

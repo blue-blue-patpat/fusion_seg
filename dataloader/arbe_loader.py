@@ -80,9 +80,10 @@ class ArbeSubscriber(rospy.Subscriber):
         self.release_flag.value = True
 
 
-def arbe_process(msg, frame_count, ts, save_path, infodata):
+def arbe_process(msg, ts, save_path, infodata, dt_base):
     # _msg_to_dataframe(msg).to_csv(os.path.join(save_path, '{}.csv'.format(ts)))
-    np.save(os.path.join(save_path, 'id={}_tm={}'.format(frame_count, ts)), np.array(_msg_to_dataframe(msg)))
+    data = np.array(_msg_to_dataframe(msg))
+    np.save(os.path.join(save_path, 'id={}_st={}_dt={}'.format(infodata[1], ts, dt_base + float(data[0][-1]) / 1000)), data)
     infodata[0] += 1
 
 
@@ -94,11 +95,16 @@ def arbe_loader_callback(msg, args):
     :param args: dict(dataframe, name, task_queue)
     :return: None
     """
-    ts = rospy.get_time()
+    st = rospy.get_time()
     # callback may be triggered before __init__ completes. if pool is not started yet, ignore current frame
     if args.get("pool", None) is None:
         args["start_tm"] = time.time()
         return
+
+    if args["info"]["data"][1] == 0:
+        args["start_tm"] = time.time()
+        data = np.array(_msg_to_dataframe(msg))
+        args["dt_base"] = args["start_tm"] - float(data[0][-1]) / 1000
 
     save_path = args.get('save_path', './__test__/default/arbe/')
     
@@ -110,7 +116,7 @@ def arbe_loader_callback(msg, args):
         f.close()
     
     # add task
-    args["pool"].apply_async(arbe_process, (msg, args["info"]["data"][1], ts, save_path, args["info"]["data"]))
+    args["pool"].apply_async(arbe_process, (msg, st, save_path, args["info"]["data"], args["dt_base"]))
     print_log("[{}] {} frames captured.".format(
         args['name'], args["info"]["data"][1]), args["log_obj"])
 
@@ -129,10 +135,10 @@ def arbe_loader_callback(msg, args):
     args["info"]["data"][4] = m
     args["info"]["data"][5] = s
 
-    if args.get('force_realtime', True):
-        args["dataframe"][ts] = _msg_to_dataframe(msg)
-    else:
-        args["task_queue"][ts] = msg
+    # if args.get('force_realtime', True):
+    #     args["dataframe"][ts] = _msg_to_dataframe(msg)
+    # else:
+    #     args["task_queue"][ts] = msg
 
 
 # def arbe_loader_after_stop_abandoned(sub: dict):

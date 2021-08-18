@@ -272,7 +272,7 @@ class KinectSubscriber(Process):
                 sys_tm = time.time()
                 if np.any(frame.color) and np.any(frame.depth):
                     timestamp = frame.color_timestamp_usec/1000000
-                    filename = "id={}_tm={}_st={}".format(frame_count, timestamp, sys_tm)
+                    filename = "id={}_st={}_dt={}".format(frame_count, sys_tm, timestamp)
                     
                     # add task
                     # if self.use_manual_queue:
@@ -423,7 +423,7 @@ class KinectMKVSubscriber(Process):
 
         self.infodata[3].value(1)
 
-        record = PyK4ARecord(device=self.device, config=self.config, path=os.path.join(self.save_path, "tasktm={}.mkv".format(self.task_tm)))
+        record = PyK4ARecord(device=self.device, config=self.config, path=os.path.join(self.save_path, "out.mkv"))
         record.create()
         
         try:
@@ -595,7 +595,7 @@ class KinectSkeletonSubscriber(Process):
         
         # threading function
         def process(color_image, depth_image, bodys, frame_count, save_path, timestamp, sys_tm, infodata):
-            filename = "id={}_tm={}_st={}".format(frame_count, timestamp, sys_tm)
+            filename = "id={}_st={}_dt={}".format(frame_count, sys_tm, timestamp)
             path_color = os.path.join(save_path, "color", filename+".png")
             path_depth = os.path.join(save_path, "depth", filename+".png")
             # path_point = os.path.join(save_path, "point", filename)

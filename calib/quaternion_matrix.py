@@ -63,7 +63,8 @@ def quaternion_matrix(file1,file2,file3):
     #matrix=np.load(file1[:-5]+'.npy')
     #print(matrix)
 
-file1 = './data/cn01.json'
-file2 = './data/cn02.json'
-file3 = './data/cn03.json'
-QuaternionMatrix(file1,file2,file3)
+if __name__ == "__main__":
+    file1 = './data/cn01.json'
+    file2 = './data/cn02.json'
+    file3 = './data/cn03.json'
+    quaternion_matrix(file1,file2,file3)

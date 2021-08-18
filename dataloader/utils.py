@@ -248,7 +248,10 @@ def file_paths_from_dir(path, extension='.png', enable_print=True) -> list:
 def filename_decoder(file_path) -> dict:
     dir, _ = os.path.split(file_path)
     filename, extension = os.path.splitext(_)
-    params = [param.split('=') for param in filename.split('_')]
+    if '=' in filename:
+        params = [param.split('=') for param in filename.split('_')]
+    else:
+        params = [[filename, " "]]
     params.append(["filepath", os.path.abspath(file_path)])
     return dict(params)
 

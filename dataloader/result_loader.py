@@ -18,31 +18,37 @@ class ResultLoader():
             self.parse_files(os.path.join(self.path, param["tag"]), **param)
         return self.file_dict
 
-    def generator(self):
+    def generator(self, item_key="id"):
         for i in range(len(self)):
-            yield self.select_by_id(i)
+            yield self.select_item(i, item_key)
 
-    def select_item(self, value, tag, exact=True):
+    def select_item(self, value, item_key, exact=True):
         res = {}
-        for k, df in self.file_dict.items():            
-            if exact:
-                # auto convert type when comparing strs
-                if not np.issubdtype(df[tag].dtypes, np.number):
-                    value = str(value)
-                # match equal
-                res[k] = dict(df[df[tag]==value].iloc[0])
-            else:
-                # match closest
-                # persistent clf
-                if tag not in self.clfs.keys():
-                    X = np.array([df[tag]]).T.astype(np.float64)
-                    y = df.index
-                    self.clfs[tag] = KNeighborsClassifier(n_neighbors=1).fit(X, y)
-                res[k] = dict(df.iloc[self.clfs[tag].predict(np.array([[value]], dtype=np.float64))[0]])
+        for tag in self.file_dict.keys():            
+            res[tag] = self.select_item_in_tag(value, item_key, tag, exact)
+        return res
+
+    def select_item_in_tag(self, value, item_key, tag, exact=True):
+        df = self.file_dict[tag]
+        res = None
+        if exact:
+            # auto convert type when comparing strs
+            if not np.issubdtype(df[item_key].dtypes, np.number):
+                value = str(value)
+            # match equal
+            res = dict(df[df[item_key]==value].iloc[0])
+        else:
+            # match closest
+            # persistent clf
+            if item_key not in self.clfs.keys():
+                X = np.array([df[item_key]]).T.astype(np.float64)
+                y = df.index
+                self.clfs[item_key] = KNeighborsClassifier(n_neighbors=1).fit(X, y)
+            res = dict(df.iloc[self.clfs[item_key].predict(np.array([[value]], dtype=np.float64))[0]])
         return res
 
     def select_by_id(self, idx):
-        return self.select_item(idx, tag="id")
+        return self.select_item(idx, item_key="id")
 
     def parse_files(self, path=None, ext='.png', tag="default"):
         if path is None:
@@ -98,12 +104,52 @@ class RealSenseResultLoader(ResultLoader):
 class KinectResultLoader(ResultLoader):
     def __init__(self, result_path, params=None, device="master") -> None:
         super().__init__(result_path)
+        self.device = device
         if params is None:
             self.params = [
                 dict(tag="kinect/{}/color".format(device), ext=".png"),
                 dict(tag="kinect/{}/depth".format(device), ext=".png"),
                 dict(tag="kinect/{}/pcls".format(device), ext=".npy"),
                 dict(tag="kinect/{}/skeleton".format(device), ext=".npy"),
+            ]
+        else:
+            self.params = params
+        self.run()
+
+    def select_by_skid(self, skid):
+        idx = self.select_item_in_tag(skid, "skid", "kinect/{}/skeleton".format(self.device))["id"]
+        return self.select_item(idx, "id")
+
+    def generator(self, item_key="id"):
+        print("[KinectResultLoader] WARNING: May meet empty skeleton. Try generator_by_skeleton instead.")
+        return super().generator(item_key=item_key)
+
+    def generator_by_skeleton(self):
+        for i in range(len(self)):
+            yield self.select_by_skid(i)
+
+
+class KinectMKVtLoader(ResultLoader):
+    def __init__(self, result_path, params=None) -> None:
+        super().__init__(result_path)
+        if params is None:
+            self.params = [
+                dict(tag="kinect/master", ext=".mkv"),
+                dict(tag="kinect/sub1", ext=".mkv"),
+                dict(tag="kinect/sub2", ext=".mkv"),
+            ]
+        else:
+            self.params = params
+        self.run()
+
+class KinectJsonLoader(ResultLoader):
+    def __init__(self, result_path, params=None) -> None:
+        super().__init__(result_path)
+        if params is None:
+            self.params = [
+                dict(tag="kinect/master", ext=".json"),
+                dict(tag="kinect/sub1", ext=".json"),
+                dict(tag="kinect/sub2", ext=".json"),
             ]
         else:
             self.params = params
