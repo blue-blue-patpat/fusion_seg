@@ -9,8 +9,27 @@ class JointsBridge():
 
     def smpl_from_kinect(self, jnts, pcl=np.array([[0,0,0]])):
         self.kinect_joints_transfer_coordinates(jnts, pcl)
+        self.filter_pcl()
         self.update_smpl_joints_from_kinect_joints()
         return self.normalization()
+
+    def filter_pcl(self, kinect_joints=None, pcl=None) -> np.ndarray:
+        if kinect_joints is None:
+            kinect_joints = self.k_jnts
+        if pcl is None:
+            pcl = self.pcl
+        upper_bound = kinect_joints.max(axis=0) + 300
+        lower_bound = kinect_joints.min(axis=0) - 300
+        # remove ground pcl
+        lower_bound[1] += 320
+        _filter = np.apply_along_axis(
+            lambda row:\
+                np.all((lower_bound<row) & (row<upper_bound))\
+                and np.linalg.norm(kinect_joints - row, axis=1, keepdims=True).min() < 250,\
+        axis=1, arr=pcl)
+
+        self.pcl = pcl[_filter]
+        return self.pcl
 
     def kinect_joints_transfer_v2(self, kinect_joints=None):
         from calib.coord_trans import solve_r, r_zyx, r_x, r_y, r_z
@@ -37,7 +56,7 @@ class JointsBridge():
         pcl = pcl[:,:3]
 
         # tranfer
-        t = -np.array([0.5 * content[0] + 0.5 * content[1]])
+        t = -np.array([0.75 * content[2] + 0.25 * content[1]])
 
         # apply transfer to all joints
         content = content + np.repeat(t, content.shape[0], 0)
@@ -50,7 +69,7 @@ class JointsBridge():
         def cos(a,b):
             return a/math.sqrt(a*a+b*b)
 
-        g=content[1,:]  #旋转r1到y轴
+        g=content[3,:]  #旋转r1到y轴
 
         h=[[1, 0, 0],   #绕x旋转矩阵
             [0, cos(g[1],g[2]), -cos(g[2],g[1])],
@@ -65,9 +84,9 @@ class JointsBridge():
         k=np.dot(h,j)
         l=np.dot(content,k)
 
-        m=[[cos(l[18,0],l[18,2]),0,cos(l[18,2],l[18,0])],  #绕y旋转矩阵
+        m=[[cos(l[4,0],l[4,2]),0,cos(l[4,2],l[4,0])],  #绕y旋转矩阵
             [0,1,0],
-            [-cos(l[18,2],l[18,0]),0,cos(l[18,0],l[18,2])]]
+            [-cos(l[4,2],l[4,0]),0,cos(l[4,0],l[4,2])]]
         
         self.k_jnts = np.dot(l,m)   #乘到最后是前三列最终
         R = np.dot(k,m)    #matrix是最终旋转矩阵
@@ -156,9 +175,8 @@ class JointsBridge():
         if pcl is None:
             pcl = self.pcl
         # x_norm = np.linalg.norm(jnts, axis = 0, keepdims = True, ord=np.inf)
-        x_norm = np.repeat(np.max(jnts), 3)
+        origin_scale =  np.max(np.abs(jnts))
+        x_norm = np.repeat(origin_scale, 3)
         self.smpl_jnts = jnts / x_norm
         self.pcl = pcl/x_norm
-        return self.smpl_jnts, self.pcl
-
-
+        return self.smpl_jnts, self.pcl, origin_scale

@@ -6,4 +6,5 @@ def click_time():
             if isinstance(i, pynput.mouse.Events.Click):
                 return(i.x, i.y, i.button, i.pressed, time.time())    
 
-print(click_time()))
+if __name__ == "__main__":
+    print(click_time())

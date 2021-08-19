@@ -32,6 +32,7 @@ def extract_skeleton(parent_path, *devices):
             info[0] += 1
 
         i = 0
+        print()
         for frame in json_data["frames"]:
             bodies = []
             for body in frame["bodies"]:

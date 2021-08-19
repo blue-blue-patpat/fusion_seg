@@ -1,164 +1,10 @@
-from typing import Tuple, List, Dict, Optional, Callable
-import math
-import os
-
-from minimal.models import KinematicModel, KinematicPCAWrapper
-from tqdm import tqdm
-from livelossplot import PlotLosses
-from livelossplot.outputs import MatplotlibPlot, ExtremaPrinter
-from livelossplot.main_logger import MainLogger, LogItem
 import numpy as np
+import torch
 from pytorch3d.loss import point_mesh_edge_distance, point_mesh_face_distance
-from pytorch3d.structures import Meshes
-import matplotlib.pyplot as plt
-
-
-class ExtremaPrinterWithExclude(ExtremaPrinter):
-  def __init__(self,
-        massage_template: str = '\t{metric_name:16} \t (min: {min:8.3f},'
-        ' max: {max:8.3f}, cur: {current:8.3f})'):
-        super().__init__(massage_template=massage_template)
-
-  def send(self, logger: MainLogger):
-        log_groups = logger.grouped_log_history()
-        log_groups.pop("_exclude")
-        self.last_message = '\n'.join(self._create_massages(log_groups))
-        print(self.last_message)
-
-
-class MeshPlot(MatplotlibPlot):
-    def __init__(
-        self,
-        cell_size: Tuple[int, int] = (6, 4),
-        max_cols: int = 2,
-        max_epoch: int = None,
-        skip_first: int = 2,
-        extra_plots: List[Callable[[MainLogger], None]] = [],
-        figpath: Optional[str] = None,
-        after_subplot: Optional[Callable[[plt.Axes, str, str], None]] = None,
-        before_plots: Optional[Callable[[plt.Figure, np.ndarray, int], None]] = None,
-        after_plots: Optional[Callable[[plt.Figure], None]] = None,
-    ):
-        super().__init__(cell_size=cell_size, max_cols=max_cols, max_epoch=max_epoch, skip_first=skip_first, extra_plots=extra_plots, figpath=figpath, after_subplot=after_subplot, before_plots=before_plots, after_plots=after_plots)
-
-    def send(self, logger: MainLogger):
-
-        """Draw figures with metrics and show"""
-        log_groups = logger.grouped_log_history()
-
-        max_rows = math.ceil((len(log_groups) + len(self.extra_plots)) / self.max_cols)
-
-        fig, axes = plt.subplots(max_rows, self.max_cols)
-        axes = axes.reshape(-1, self.max_cols)
-        self._before_plots(fig, axes, len(log_groups))
-
-        for group_idx, (group_name, group_logs) in enumerate(log_groups.items()):
-            ax = axes[group_idx // self.max_cols, group_idx % self.max_cols]
-            if group_name == "_exclude":
-                ax.set_axis_off()
-                self._mesh_plot(fig, group_logs)
-            elif any(len(logs) > 0 for name, logs in group_logs.items()):
-                self._draw_metric_subplot(ax, group_logs, group_name=group_name, x_label=logger.step_names[group_name])
-
-        for idx, extra_plot in enumerate(self.extra_plots):
-            ax = axes[(len(log_groups) + idx) // self.max_cols, (len(log_groups) + idx) % self.max_cols]
-            extra_plot(ax, logger)
-
-        self._after_plots(fig)
-
-    def _mesh_plot(self, fig, logger):
-        mesh = logger.get("mesh", [None])
-        if mesh[-1].value is None:
-            return
-        x, y, z = mesh[-1].value[0].T
-        # ax = Axes3D(fig)
-        ax = fig.add_subplot(1, 2, 1, projection='3d')
-        ax.plot_trisurf(x, -z, y, triangles=mesh[-1].value[1], cmap=plt.cm.Spectral)
-        ax.set_xlabel('x')
-        ax.set_ylabel('z')
-        ax.set_zlabel('y')
-        ax.set_title("mesh")
-        ax.set_xlim(-1.2, 1.2)
-        ax.set_ylim(-1.2, 1.2)
-        ax.set_zlim(-1.2, 1.2)
-
-
-class WeightLoss(list):
-    def __init__(self, weight=1) -> None:
-        super().__init__()
-        self.weight = weight
-
-    def delta(self, idx=-1, absolute=True):
-        if absolute:
-            return abs(self[idx-1] - self[idx])
-        else:
-            return self[idx-1] - self[idx]
-    
-    def __getitem__(self, i):
-        try:
-            ret = super(WeightLoss, self).__getitem__(i) * self.weight
-        except:
-            ret = 0.
-        return ret
-
-class LossManager():
-    def __init__(self, losses_with_weights={}, mse_threshold=1e-8, loss_threshold=1e-8) -> None:
-        self.losses = {}
-        self.epoch = 0
-        self.mse_threshold = mse_threshold
-        self.loss_threshold = loss_threshold
-        self.add_loss(losses_with_weights)
-
-        self.plotlosses = PlotLosses(from_step=-5, groups={'losses': list(self.losses.keys())+['loss'], '_exclude': ['mesh']},
-                                    outputs=[MeshPlot(cell_size=[10,5]), ExtremaPrinterWithExclude()])
-
-    def add_loss(self, losses_with_weights: dict):
-        for loss_name, weight in losses_with_weights.items():
-            self.losses[loss_name] = WeightLoss(weight)
-
-    def update_loss(self, loss_name: str, value: float):
-        if loss_name in self.losses.keys():
-            self.losses[loss_name].append(value)
-
-    def update_losses(self, losses_value: dict):
-        for loss_name, value in losses_value.items():
-            self.update_loss(loss_name, value)
-        self.epoch += 1
-
-    def delta(self, idx=-1, absolute=True):
-        return sum([loss.delta(idx, absolute) for loss in self.losses.values()])
-
-    def check_losses(self):
-        return self[-1] < self.loss_threshold or self.delta() < self.mse_threshold
-
-    def str_losses(self, idx=-1):
-        return "\t".join(["{}={:.4f}".format(loss_name, loss[idx]) for loss_name, loss in self.losses.items()])
-
-    def show_losses(self):
-        import matplotlib.pyplot as plt
-        fig = plt.figure(figsize=(13, 10))
-        ax = fig.gca()
-        for loss_name, loss in self.losses: 
-            ax.plot(loss, label=loss_name)
-        ax.legend(fontsize="16")
-        ax.set_xlabel("Iteration", fontsize="16")
-        ax.set_ylabel("Loss", fontsize="16")
-        ax.set_title("Loss vs iterations", fontsize="16")
-        plt.show()
-        return fig
-
-    def update_loss_curve(self, **kwargs):
-        log = dict(zip(self.losses.keys(), [loss[-1] for loss in self.losses.values()]))
-        log["loss"] = self[-1]
-        log["mesh"] = kwargs.get("mesh", None)
-        self.plotlosses.update(log)
-        self.plotlosses.send()
-
-    def __len__(self):
-        return min([len(loss) for loss in self.losses.values()])
-
-    def __getitem__(self, i):
-        return sum([loss[i] for loss in self.losses.values()])
+from pytorch3d.structures import Meshes, Pointclouds
+from alfred.dl.torch.common import device
+from minimal.models import KinematicModel, KinematicPCAWrapper
+from minimal.utils import LossManager
 
 
 class Solver:
@@ -181,7 +27,7 @@ class Solver:
 
         self.params = []
 
-    def solve_full(self, kpts_target, pcls_target, init=None, losses_with_weights=None,
+    def solve_full(self, kpts_target, pcls_target, origin_scale, init=None, losses_with_weights=None,
                     mse_threshold=1e-8, loss_threshold=1e-8, u=1e-3, v=1.5, verbose=False):
         if init is None:
             init = np.zeros(self.model.n_params)
@@ -189,12 +35,16 @@ class Solver:
         if losses_with_weights is None:
             losses_with_weights = dict(
                 kpts_losses=1,
-                # edge_losses=1,
-                # face_losses=1,
+                edge_losses=1,
+                face_losses=1,
             )
 
-        out_n = np.shape(kpts_target.flatten())[0]
-        jacobian = np.zeros([out_n, init.shape[0]])
+        jacobian = np.zeros([kpts_target.size, init.shape[0]])
+
+        pcls = Pointclouds([torch.tensor(pcls_target, dtype=torch.float32, device=device)])
+
+        # accelerate draw
+        pcls_vis = pcls_target[np.random.choice(np.arange(pcls_target.shape[0]), size=1000, replace=False)]
 
         losses = LossManager(losses_with_weights, mse_threshold, loss_threshold)
 
@@ -202,20 +52,21 @@ class Solver:
 
         for i in range(self.max_iter):
             # update modle
-            mesh_updated, keypoints_updated = self.model.run(params)
+            mesh_updated, kpts_updated = self.model.run(params)
 
             # compute keypoints loss
-            residual = (keypoints_updated - kpts_target).reshape(out_n, 1)
-            loss_kpts = np.mean(np.square(residual))
+            loss_kpts, residual = keypoints_distance(kpts_updated, kpts_target, activate_distance=40/origin_scale)
+            # residual = (kpts_updated - kpts_target).reshape(kpts_updated.size, 1)
+            # loss_kpts = np.mean(np.square(residual))
             losses.update_loss("kpts_losses", loss_kpts)
 
-            # # compute edge loss
-            # loss_edge = point_mesh_edge_distance(mesh_updated, pcls_target)
-            # losses.update_loss("edge_losses", loss_edge)
+            # compute edge loss
+            loss_edge = point_mesh_edge_distance(mesh_updated, pcls).cpu()
+            losses.update_loss("edge_losses", loss_edge)
         
             # # compute face loss
-            # loss_face = point_mesh_face_distance(mesh_updated, pcls_target)
-            # losses.update_loss("face_losses", loss_face)
+            loss_face = point_mesh_face_distance(mesh_updated, pcls).cpu()
+            losses.update_loss("face_losses", loss_face)
 
             # check loss
             if losses.check_losses():
@@ -239,10 +90,12 @@ class Solver:
             else:
                 u *= v
 
-            if verbose:
-                # pcls = sample_points_from_meshes(mesh_updated, 1000).clone().detach().cpu().squeeze().unbind(1)
-                vertices, faces= mesh_updated.verts_packed(), mesh_updated.faces_packed()
-                losses.update_loss_curve(mesh=(vertices, faces))
+            if verbose > 0:
+                if i%verbose == 0:
+                    vertices, faces= mesh_updated.verts_packed().cpu(), mesh_updated.faces_packed().cpu()
+                else:
+                    vertices = faces = None
+                losses.update_loss_curve(mesh=(vertices, faces), pcls=pcls_vis, kpts_target=kpts_target, kpts_updated=kpts_updated)
                 # print("[{}] : idx={}\tperiod={:.2f}\tloss={:.4f}\t{}".format(ymdhms_time() , i, 0, losses[-1], losses.str_losses(-1)))
 
         self.pose_params, self.shape_params = params[:-self.model.n_shape], params[-self.model.n_shape:]
@@ -261,6 +114,8 @@ class Solver:
         out_n = np.shape(kpts_target.flatten())[0]
         jacobian = np.zeros([out_n, self.init_params.shape[0]])
 
+        pcls = Pointclouds([torch.tensor(pcls_target, dtype=torch.float32, device=device)])
+
         losses = LossManager(losses_with_weights, mse_threshold, loss_threshold)
 
         for i in range(self.max_iter):
@@ -272,13 +127,13 @@ class Solver:
             loss_kpts = np.mean(np.square(residual))
             losses.update_loss("kpts_losses", loss_kpts)
 
-            # # compute edge loss
-            # loss_edge = point_mesh_edge_distance(mesh_updated, pcls_target)
-            # losses.update_loss("edge_losses", loss_edge)
+            # compute edge loss
+            loss_edge = point_mesh_edge_distance(mesh_updated, pcls)
+            losses.update_loss("edge_losses", loss_edge)
         
-            # # compute face loss
-            # loss_face = point_mesh_face_distance(mesh_updated, pcls_target)
-            # losses.update_loss("face_losses", loss_face)
+            # compute face loss
+            loss_face = point_mesh_face_distance(mesh_updated, pcls)
+            losses.update_loss("face_losses", loss_face)
 
             # check loss
             if losses.check_losses():
@@ -304,8 +159,8 @@ class Solver:
 
             if verbose:
                 # pcls = sample_points_from_meshes(mesh_updated, 1000).clone().detach().cpu().squeeze().unbind(1)
-                vertices, faces= mesh_updated.verts_packed(), mesh_updated.faces_packed()
-                losses.update_loss_curve(mesh=(vertices, faces))
+                vertices, faces= mesh_updated.verts_packed().cpu(), mesh_updated.faces_packed().cpu()
+                losses.update_loss_curve(mesh=(vertices, faces), pcls=pcls_target)
                 # print("[{}] : idx={}\tperiod={:.2f}\tloss={:.4f}\t{}".format(ymdhms_time() , i, 0, losses[-1], losses.str_losses(-1)))
         return np.hstack(self.pose_params, self.shape_params)
 
@@ -370,3 +225,10 @@ class Solver:
         d = (res1 - res2) / (2 * self.eps)
 
         return d.ravel()
+
+def keypoints_distance(kpts_updated, kpts_target, activate_distance):
+    d = (kpts_updated - kpts_target)
+    _filter = np.linalg.norm(d, axis=1) < activate_distance
+    residual = np.where(np.repeat(_filter.reshape(_filter.shape[0], 1), 3, axis=1), 0, d).reshape(kpts_updated.size, 1)
+    loss_kpts = np.mean(np.square(residual))
+    return loss_kpts, residual

@@ -128,12 +128,21 @@ def pcd_visualization(filepath, *devices) -> None:
         # o3d.io.write_point_cloud(os.path.join(filepath, "{}.ply".format(s_row["id"])), o3d_pcd)
 
 
-def vis_smpl_skeleton(smpl_skeleton):
+def vis_skel_pcl(skel=None, jnts=None, pcl=None):
     axis_pcd = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
-    o3d_skel_pcd = o3d.geometry.PointCloud()
-    o3d_skel_pcd.points = o3d.utility.Vector3dVector(smpl_skeleton.reshape(-1,3))
-    o3d_skel_pcd.paint_uniform_color([0,0,1])
-    o3d.visualization.draw_geometries([axis_pcd, o3d_skel_pcd], 'skeleton')
+    if skel is not None:
+        o3d_skel_pcd = o3d.geometry.PointCloud()
+        o3d_skel_pcd.points = o3d.utility.Vector3dVector(skel.reshape(-1,3))
+        o3d_skel_pcd.paint_uniform_color([0,0,1])
+    if jnts is not None:
+        o3d_jnts_pcd = o3d.geometry.PointCloud()
+        o3d_jnts_pcd.points = o3d.utility.Vector3dVector(jnts.reshape(-1,3))
+        o3d_jnts_pcd.paint_uniform_color([0,1,0])
+    if pcl is not None:
+        o3d_pcls_pcd = o3d.geometry.PointCloud()
+        o3d_pcls_pcd.points = o3d.utility.Vector3dVector(pcl.reshape(-1,3))
+        o3d_pcls_pcd.paint_uniform_color([1,0,0])
+    o3d.visualization.draw_geometries([axis_pcd, o3d_pcls_pcd, o3d_skel_pcd, o3d_jnts_pcd], 'skel-pcl')
 
 
 if __name__ == "__main__":

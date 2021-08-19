@@ -141,7 +141,7 @@ class KinematicModel():
     # update mesh
     center = self.verts.mean(0)
     verts = self.verts - center
-    self.mesh = Meshes(verts=[torch.tensor(verts, dtype=torch.float32)], faces=[torch.tensor(self.faces, dtype=torch.float32)])
+    self.mesh = Meshes(verts=[torch.tensor(verts, dtype=torch.float32, device=device)], faces=[torch.tensor(self.faces, dtype=torch.float32, device=device)])
 
     # update keypoints
     # self.keypoints = self.J_regressor_ext.dot(self.mesh.verts_packed()) *self.scale

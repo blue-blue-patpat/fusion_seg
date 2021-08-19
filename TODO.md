@@ -22,12 +22,6 @@
 - [x] pass test 2021/07/23 xiangyu
 - [x] realtime visualization 2021/7/27
 
-## dataloader/nokov_loader.py
-
-### features
-
-- [ ] online loader
-
 ## dataloader/realsense_loader.py
 
 ### features
@@ -62,9 +56,10 @@
 ### features
 - [x] minimal by keypoints
 - [x] minimal by pcls 2021/07/30 xiangyu
-- [ ] minimal with notebook
+- [x] minimal with notebook
 - [ ] minimal speed up
-- [ ] pass test with realworld data
+- [x] kinect skel & pcl transform
+- [x] pass test with T-pose data 2021/08/19 xiangyu
 
 ## visualization/kinect_mkv.py
 

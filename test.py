@@ -50,6 +50,7 @@ def nokov_loader_test(client=None):
 
 def minimal_test():
     import os
+    import torch
     from pytorch3d.structures import Meshes, Pointclouds
     from minimal.solver import Solver
     from minimal import armatures
@@ -59,52 +60,33 @@ def minimal_test():
     from dataloader.result_loader import KinectResultLoader
     from minimal.bridge import JointsBridge
 
+    from dataloader.utils import ymdhms_time
+
     np.random.seed(20160923)
     # pose_glb = np.zeros([1, 3]) # global rotation
-
-
-    ########################## smpl settings ##########################
-    # note that in smpl and smpl-h no pca for pose is provided
-    # therefore in the model we fake an identity matrix as the pca coefficients
-    # to make the code compatible
 
     n_pose = 23 * 3 # degrees of freedom, (n_joints - 1) * 3
     # smpl 1.0.0: 10
     # smpl 1.1.0: 300
-    # n_shape = 10
-    k_loader = KinectResultLoader('./ignoredata/minimal_files/input/')
-    k_loader.file_dict.pop("kinect/master/pcls")
-    files = k_loader.select_item_in_tag(58, "id", "kinect/master/skeleton")
-    kinect_skeleton = np.load(files["filepath"])
+    n_shape = 10
+
+    k_loader = KinectResultLoader('/media/nesc525/perple/2021-08-18_10-49-44-T')
+    files = k_loader.select_item(298, "id")
+    kinect_skeleton = np.load(files["kinect/master/skeleton"]["filepath"])
+    kinect_pcls = np.vstack(np.load(files['kinect/master/pcls']["filepath"]))
 
     bridge = JointsBridge()
-    bridge.load_kinect_joints(kinect_skeleton[0])
-    bridge.kinect_joints_transfer_coordinates()
-    keypoints_gt = bridge.update_smpl_joints_from_kinect_joints()
-    keypoints_gt = bridge.normalization(keypoints_gt)
+    keypoints_gt, pcl_gt, origin_scale = bridge.smpl_from_kinect(kinect_skeleton[0], kinect_pcls)
 
-    # pose_pca = np.random.uniform(-0.2, 0.2, size=n_pose)
-    # shape = np.random.normal(size=n_shape)
-    mesh = KinematicModel(config.SMPL_MODEL_1_0_PATH, armatures.SMPLArmature, scale=1)
-
-    ########################## solving example ############################
+    mesh = KinematicModel(config.SMPL_MODEL_1_0_MALE_PATH, armatures.SMPLArmature, scale=1)
 
     wrapper = KinematicPCAWrapper(mesh, n_pose=n_pose)
-    solver = Solver(verbose=True, max_iter=2000)
+    solver = Solver(wrapper, max_iter=int(10e7))
 
-    # mesh_gt, keypoints_gt = \
-    # mesh.set_params(pose_pca=pose_pca, pose_glb=pose_glb, shape=shape)
-    # pointcloud_gt = Pointclouds(sample_points_from_meshes(mesh_gt, num_samples=1000))
-    pointcloud_gt = None
-    params_est = solver.solve_full(wrapper, pointcloud_gt, keypoints_gt)
+    # pointcloud_gt = None
+    params_est = solver.solve_full(keypoints_gt, pcl_gt, origin_scale, verbose=5)
 
     shape_est, pose_pca_est, pose_glb_est = wrapper.decode(params_est)
-
-    # print('----------------------------------------------------------------------')
-    # print('ground truth parameters')
-    # print('pose pca coefficients:', pose_pca)
-    # print('pose global rotation:', pose_glb)
-    # print('shape: pca coefficients:', shape)
 
     print('----------------------------------------------------------------------')
     print('estimated parameters')
@@ -112,14 +94,8 @@ def minimal_test():
     print('pose global rotation:', pose_glb_est)
     print('shape: pca coefficients:', shape_est)
 
-    # mesh.set_params(pose_pca=pose_pca)
-    # mesh.show_obj('gt')
-    # mesh.save_obj(os.path.join(config.SAVE_PATH, './gt.obj'))
     mesh.set_params(pose_pca=pose_pca_est)
-    mesh.show_obj('est')
-    mesh.save_obj(os.path.join(config.SAVE_PATH, './est_1.obj'))
-
-    print('ground truth and estimated meshes are saved into gt.obj and est.obj')
+    mesh.save_obj(os.path.join(config.SAVE_PATH, './esttm={}.obj'.format(ymdhms_time())))
 
 
 def result_loader_test(file_path):
@@ -148,15 +124,15 @@ if __name__ == "__main__":
     # from visualization import pcd_visualization
     # from multiprocessing import Process
     # parent_path = "/media/nesc525/perple/2021-08-09_19-47-45"
-    # v_front = Process(target=pcd_visualization, args=(parent_path, "master"))
-    # v_left = Process(target=pcd_visualization, args=(parent_path, "master"))
-    # v_right = Process(target=pcd_visualization, args=(parent_path, "master"))
-    # v_front.start()
-    # # v_left.start()
-    # # v_right.start()
-    # v_front.join()
-    # # v_left.join()
-    # # v_right.join()
+    # visual_front = Process(target=pcd_visualization, args=(parent_path, "master"))
+    # visual_left = Process(target=pcd_visualization, args=(parent_path, "master"))
+    # visual_right = Process(target=pcd_visualization, args=(parent_path, "master"))
+    # visual_front.start()
+    # visual_left.start()
+    # visual_right.start()
+    # visual_front.join()
+    # visual_left.join()
+    # visual_right.join()
 
     # pcd_visualization("/media/nesc525/perple/2021-08-09_20-28-20", "master")
     # pcd_visualization("/home/nesc525/chen/3DSVC/__test__/2021-08-06 14:09:37")

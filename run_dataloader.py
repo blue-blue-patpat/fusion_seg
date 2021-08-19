@@ -100,8 +100,7 @@ def run():
     from dataloader.utils import MultiSubClient, ymdhms_time, print_log
     from dataloader.kinect_loader import KinectSubscriber, KinectMKVSubscriber, KinectSkeletonSubscriber
     import argparse
-    import matplotlib.pyplot as plt
-    parser = argparse.ArgumentParser(usage='"start_dataloader.py -h" to show help.')
+    parser = argparse.ArgumentParser(usage='"run_dataloader.py -h" to show help.')
     parser.add_argument('-e', '--env', dest='env', type=str, choices=[
                         'dev', 'prod'], default='dev', help='Environment, default "dev". dev: save in ./default; prod: save by timestamp')
     parser.add_argument('-p', '--savepath', dest='save_path', type=str,
