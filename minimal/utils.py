@@ -1,6 +1,7 @@
 from typing import Tuple, List, Dict, Optional, Callable
 import math
 import os
+import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from livelossplot import PlotLosses

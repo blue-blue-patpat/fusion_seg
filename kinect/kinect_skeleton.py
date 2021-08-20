@@ -36,11 +36,8 @@ def extract_skeleton(parent_path, *devices):
         for frame in json_data["frames"]:
             bodies = []
             for body in frame["bodies"]:
-                bodies.append(body["joint_positions"])
+                bodies.append(np.hstack((np.asarray(body["joint_positions"]), np.asarray(body["joint_orientations"]))))
             if bodies:
-                # kinect_item = kr.select_by_id(frame["frame_id"])["kinect/{}/color".format(device)]
-                # dir, _ = os.path.split(kinect_item["filepath"])
-                # filename, extension = os.path.splitext(_)
                 filename = "id={}_skid={}_st={}_dt={}".format(frame["frame_id"], i, float(params["starttm"])+frame["timestamp_usec"]/1000000, float(params["tasktm"])+frame["timestamp_usec"])
                 save_path = os.path.join(file_path, "skeleton", filename)
                 
