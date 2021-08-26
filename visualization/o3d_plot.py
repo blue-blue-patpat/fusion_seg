@@ -1,10 +1,9 @@
-from visualization.utils import O3DStreamPlot, o3d_coord, o3d_pcl, o3d_skeleton
+from visualization.utils import O3DStreamPlot, o3d_coord, o3d_pcl, o3d_skeleton, pcl_filter
 import numpy as np
 import open3d as o3d
 from itertools import compress
-from dataloader.result_loader import KinectResultLoader, ArbeResultLoader
-import os
-import time
+from dataloader.result_loader import KinectResultLoader, ArbeResultLoader, OptitrackResultLoader
+
 
 class SkelArbeManager():
     def __init__(self, result_path, *devices) -> None:
@@ -60,29 +59,21 @@ class KinectArbeStreamPlot(O3DStreamPlot):
             rotation = np.array([[1,0,0],
                                 [0,0,-1],
                                 [0,1,0]])
-            translation = np.array([0, -0.05, 0.2]).T
-            skeleton_pcl = kinect_skeleton.dot(rotation) + translation
+            translation = np.array([0, 0, 0.2]).T
+            skeleton_pcl = kinect_skeleton @ rotation + translation
 
             # filter pcl with naive bounding box
-            k_max = skeleton_pcl.max(axis=0) + 0.5
-            k_min = skeleton_pcl.min(axis=0) - 0.5
-            all_arbe_pcl = arbe_arr[:,:3]
-            a_in_k = (all_arbe_pcl < k_max) & (all_arbe_pcl > k_min)
-
-            filter_list = []
-            for row in a_in_k:
-                filter_list.append(False if False in row else True)
-            arbe_pcl = np.array(list(compress(all_arbe_pcl, filter_list)))
+            arbe_pcl = pcl_filter(skeleton_pcl, arbe_arr[:,:3], 0.5)
 
             # init lines
-            lines = np.array([[0,1],[1,2],[2,3],[2,4],[4,5],[5,6],[6,7],[7,8],
+            lines = np.asarray([[0,1],[1,2],[2,3],[2,4],[4,5],[5,6],[6,7],[7,8],
                                 [8,9],[7,10],[2,11],[11,12],[12,13],[13,14],[14,15],
                                 [15,16],[14,17],[0,18],[18,19],[19,20],[20,21],[0,22],
                                 [22,23],[23,24],[24,25],[3,26],[26,27],[26,28],[26,29],
                                 [26,30],[26,31]])
             if person_count > 1:
                 for p in range(1, person_count):
-                    lines = np.vstack((lines, lines+p*31+1))
+                    lines = np.vstack((lines, lines + p*32))
 
             lines_colors = np.array([[0, 0, 1] for j in range(len(lines))])
             
@@ -95,6 +86,82 @@ class KinectArbeStreamPlot(O3DStreamPlot):
                 kinect_pcl=dict(
                     pcl=skeleton_pcl,
                     color=[0,0,1]
+                ),
+                arbe_pcl=dict(
+                    pcl=arbe_pcl,
+                    color=[0,1,0]
+                ),
+            )
+
+
+class OptiArbeManager():
+    def __init__(self, result_path) -> None:
+        self.opti_loader = OptitrackResultLoader(result_path)
+        self.arbe_loader = ArbeResultLoader(result_path)
+
+    def generator(self):
+        for i in range(len(self.arbe_loader)):
+            arbe_row = self.arbe_loader[i]
+            opti_row = self.opti_loader["optitrack"].select_item(arbe_row["arbe"]["tm"], "tm", False)
+            yield opti_row["optitrack"], arbe_row["arbe"]
+
+
+class OptitrackArbeStreamPlot(O3DStreamPlot):
+    def __init__(self, input_path: str, *args, **kwargs) -> None:
+        super().__init__(width=800, *args, **kwargs)
+        self.input_path = input_path
+
+    def init_updater(self):
+        self.plot_funcs = dict(
+            opti_skeleton=o3d_skeleton,
+            arbe_pcl=o3d_pcl,
+        )
+
+    def generator(self):
+        input_manager = OptiArbeManager(self.input_path)
+        for opti_row, arbe_row in input_manager.generator():
+            # load numpy from file
+            opti_arr_dict = np.load(opti_row["filepath"])
+            arbe_arr = np.load(arbe_row["filepath"])
+
+            person_count = opti_arr_dict["markers"].shape[0]
+            markers_pcl = opti_arr_dict["markers"][:,:,:3].reshape(-1,3)
+            bones_pcl = opti_arr_dict["bones"][:,:,:3].reshape(-1,3)
+
+            # transform
+            # TODO: update transaction accorging to skeleton
+            rotation = np.array([[1,0,0],
+                                [0,0,-1],
+                                [0,1,0]])
+            translation = np.array([0, 0, 0.2]).T
+            opti_markers = markers_pcl @ rotation + translation
+            opti_bones = bones_pcl @ rotation + translation
+
+            # filter pcl with naive bounding box
+            arbe_pcl = pcl_filter(opti_markers, arbe_arr[:,:3], 0.5)
+
+            # init lines
+            # TODO: update the lines
+            lines = np.asarray([[0,1],[1,2],[2,3],[2,4],[4,5],[5,6],[6,7],[7,8],
+                                [8,9],[7,10],[2,11],[11,12],[12,13],[13,14],[14,15],
+                                [15,16],[14,17],[0,18],[18,19],[19,20],[20,21],[0,22],
+                                [22,23],[23,24],[24,25],[3,26],[26,27],[26,28],[26,29],
+                                [26,30],[26,31]])
+            if person_count > 1:
+                for p in range(1, person_count):
+                    lines = np.vstack((lines, lines + p*37))
+
+            lines_colors = np.array([[0, 0, 1] for j in range(len(lines))])
+            
+            yield dict(
+                opti_markers=dict(
+                    markers=opti_markers,
+                    lines=lines,
+                    lines_colors=lines_colors
+                ),
+                opti_bones=dict(
+                    bones=opti_bones,
+                    colors=[1,0,0]
                 ),
                 arbe_pcl=dict(
                     pcl=arbe_pcl,

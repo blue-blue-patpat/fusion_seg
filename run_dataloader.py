@@ -41,10 +41,7 @@ def run_kinect_loader_multi(client=None, **kwargs):
     import os
     from dataloader.utils import MultiSubClient, print_log
     from dataloader.kinect_loader import KinectSubscriber, KinectSkeletonSubscriber, _get_device_ids, _get_config
-    
-    MAS = "000326312112"
-    SUB1 = "000053612112"
-    SUB2 = "000176712112"
+    from kinect.config import MAS, SUB1, SUB2
 
     if client is None:
         client = MultiSubClient()

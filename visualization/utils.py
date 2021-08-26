@@ -1,6 +1,7 @@
 import time
 from typing import Callable, Dict, Generator, Iterable, Union, overload
 import numpy as np
+from numpy.core.records import array
 from numpy.lib.function_base import copy
 import open3d as o3d
 from pytorch3d.structures import Meshes
@@ -15,18 +16,19 @@ def o3d_plot(o3d_items: list, title="", show_coord=True):
     o3d.visualization.draw_geometries(_items, title)
 
 
-def o3d_coord():
-    return o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+def o3d_coord(size=0.5, origin=[0, 0, 0]):
+    return o3d.geometry.TriangleMesh.create_coordinate_frame(size=size, origin=origin)
 
 
-def o3d_pcl(pcl: np.ndarray = None, color: list = [1,0,0], last_update = None):
+def o3d_pcl(pcl: np.ndarray = None, color: list = None, last_update = None):
     _pcl = last_update
     if _pcl is None:
         _pcl = o3d.geometry.PointCloud()
 
     if pcl is not None:
-        _pcl.points = o3d.utility.Vector3dVector(pcl.reshape(-1,3))
-        _pcl.paint_uniform_color(color)
+        _pcl.points = o3d.utility.Vector3dVector(pcl)
+        if color is not None:
+            _pcl.paint_uniform_color(color)
     return _pcl
 
 
@@ -71,6 +73,22 @@ def o3d_mesh(mesh: Union[Meshes, Iterable] = None, color: list = [1,0,0],
         _mesh.paint_uniform_color(color)
         _mesh.compute_vertex_normals()
     return _mesh
+
+
+def pcl_filter(pcl_a, pcl_b, bound=0.5):
+    """
+    Filter out the pcls of pcl_b that is not in the bounding_box of pcl_a
+    """
+    from itertools import compress
+
+    upper_bound = pcl_a.max(axis=0) + bound
+    lower_bound = pcl_a.min(axis=0) - bound
+    pcl_in_bound = (pcl_b < upper_bound) & (pcl_b > lower_bound)
+
+    filter_list = []
+    for row in pcl_in_bound:
+        filter_list.append(False if False in row else True)
+    return np.array(list(compress(pcl_b, filter_list)))
 
 
 class O3DItemUpdater():

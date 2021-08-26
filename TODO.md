@@ -61,7 +61,15 @@
 - [x] kinect skel & pcl transform
 - [x] pass test with T-pose data 2021/08/19 xiangyu
 
-## visualization/kinect_mkv.py
+## visualization/utils.py
+
+### features
+- [x] open3d wrapper: pcl, skeleton, mesh 2021/08/21 xiangyu
+- [x] open3d single plot wrapper 2021/08/21 xiangyu
+- [x] open3d stream plot 2021/08/21 xiangyu
+- [x] pass test 2021/08/21
+
+## kinect/kinect_mkv.py
 
 ### features
 - [x] visualize mkv 2021/08/03 xiangyu

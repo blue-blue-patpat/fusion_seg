@@ -87,6 +87,18 @@ class ArbeResultLoader(ResultLoader):
         self.run()
 
 
+class OptitrackResultLoader(ResultLoader):
+    def __init__(self, result_path, params=None) -> None:
+        super().__init__(result_path)
+        if params is None:
+            self.params = [
+                dict(tag="optitrack", ext=".npy"),
+            ]
+        else:
+            self.params = params
+        self.run()
+
+
 class RealSenseResultLoader(ResultLoader):
     def __init__(self, result_path, params=None) -> None:
         super().__init__(result_path)

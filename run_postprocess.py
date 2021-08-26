@@ -34,13 +34,12 @@ def visualize():
 def run():
     import argparse
     parser = argparse.ArgumentParser(usage='"run_postptocess.py -h" to show help.')
-    parser.add_argument('-p', '--path', dest='root_path', type=str,
-                        default='./__test__/default', help='File Root Path, default "./__test__/default"')
+    parser.add_argument('-p', '--path', dest='root_path', type=str, help='File Root Path, default "./__test__/default"')
     parser.add_argument('-d', '--device', dest='device', type=str,
                         default='master,sub1,sub2', help='Process Devices, default "master,sub1,sub2"')
     args = parser.parse_args()
 
-    postprocess(args.root_path, args.device.split(','))
+    postprocess(args.root_path, *args.device.split(','))
 
 
 if __name__ == '__main__':

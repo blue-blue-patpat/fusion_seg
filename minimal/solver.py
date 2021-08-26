@@ -227,6 +227,7 @@ class Solver:
 
         return d.ravel()
 
+
 def keypoints_distance(kpts_updated, kpts_target, activate_distance):
     d = (kpts_updated - kpts_target)
     _filter = np.linalg.norm(d, axis=1) < activate_distance

@@ -23,7 +23,6 @@ def extract_skeleton(parent_path, *devices):
             json_data = json.load(f)
         with open(os.path.join(file_path, "info.txt"), 'r') as f:
             params = dict([param.split('=') for param in f.readline().split('_')])
-        # kr = KinectResultLoader(parent_path, [dict(tag="kinect/{}/color".format(device), ext=".png")], device=device)
         info = [0, 0]
         pool = Pool()
 
@@ -48,6 +47,3 @@ def extract_skeleton(parent_path, *devices):
         pool.close()
         pool.join()
         print()
-
-if __name__ == "__main__":
-    extract_skeleton("/home/nesc525/chen/3DSVC/__test__/mkv")

@@ -46,7 +46,7 @@ class JointsBridge():
         self.k_jnts = (content + np.repeat([t], content.shape[0], axis=0)) @ R.T
         return self.k_jnts
     
-    def kinect_joints_transfer_coordinates(self, kinect_joints=None, pcl=None):
+    def kinect_joints_transfer_coordinates(self, kinect_joints=None, pcl=None): 
         if kinect_joints is None:
             kinect_joints = self.k_jnts
         if pcl is None:
@@ -69,7 +69,7 @@ class JointsBridge():
         def cos(a,b):
             return a/math.sqrt(a*a+b*b)
 
-        g=content[3,:]  #旋转r1到y轴
+        g=(content[4,:]+content[11,:])/2  #旋转r1到y轴
 
         h=[[1, 0, 0],   #绕x旋转矩阵
             [0, cos(g[1],g[2]), -cos(g[2],g[1])],
@@ -102,6 +102,47 @@ class JointsBridge():
         open3d.visualization.draw_geometries([point_cloud1,pt2]+[axis_pcd])
         '''
 
+    def smpl_joints_transfer_coordinates(self, smpl_joints: np.ndarray = None, pcl: np.ndarray = None):
+        """
+        :param smpl_joints: n*3 array
+        """
+        if smpl_joints is None:
+            smpl_joints = self.smpl_jnts
+        if pcl is None:
+            pcl = self.pcl
+        # tranfer
+        t = -np.array([smpl_joints[6]]) #坐标规范下6号点为原点
+
+        # apply transfer to all joints
+        smpl_joints = smpl_joints + np.repeat(t, smpl_joints.shape[0], 0)
+
+        def cos(a,b):
+            return a/math.sqrt(a*a+b*b)
+
+        g=smpl_joints[9,:]  #旋转r1到y轴
+
+        h=[[1, 0, 0],   #绕x旋转矩阵
+            [0, cos(g[1],g[2]), -cos(g[2],g[1])],
+            [0, cos(g[2],g[1]), cos(g[1],g[2])]]
+
+        i=np.dot(g,h)
+
+        j=[[cos(i[1], i[0]), -cos(i[0],i[1]),0], #绕z旋转矩阵
+            [cos(i[0],i[1]), cos(i[1],i[0]), 0],
+            [0, 0, 1]]
+
+        k=np.dot(h,j)
+        l=np.dot(smpl_joints,k)
+
+        m=[[cos(l[13,0],l[13,2]),0,cos(l[13,2],l[13,0])],  #绕y旋转矩阵
+            [0,1,0],
+            [-cos(l[13,2],l[13,0]),0,cos(l[13,0],l[13,2])]]
+        
+        self.smpl_jnts = np.dot(l,m)   #乘到最后是前三列最终
+        R = np.dot(k,m)    #matrix是最终旋转矩阵
+        self.pcl = np.dot(pcl + np.repeat(t, pcl.shape[0], 0), R)
+        return self.smpl_jnts, self.pcl
+
     def update_smpl_joints_from_kinect_joints(self, kinect_joints=None):
         if kinect_joints is None:
             kinect_joints = self.k_jnts
@@ -121,7 +162,7 @@ class JointsBridge():
             # 5_right knee      23_KNEE_RIGHT
             kinect_joints[23],
             # 6_upperback       0.75*2_SPINE_CHEST+0.25*1_SPINE_NAVAL
-            0.75 * kinect_joints[2] + 0.25 * kinect_joints[1],
+            0.65 * kinect_joints[2] + 0.35 * kinect_joints[1],
             # 7_left ankle      20_ANKLE_LEFT
             kinect_joints[20],
             # 8_right ankle     24_ANKLE_RIGHT
@@ -165,7 +206,7 @@ class JointsBridge():
             # ext_right toe tip     25_FOOT_RIGHT+0.3*(25_FOOT_RIGHT-24_ANKLE_RIGHT)
             kinect_joints[25] + 0.3*(kinect_joints[25]-kinect_joints[24]),
             # ext_head_top          27_NOSE+1.5*((28_EYE_LEFT-27_NOSE)+(30_EYE_RIGHT-27_NOSE))
-            kinect_joints[27] + 1.5*((kinect_joints[28]-kinect_joints[27]) + (kinect_joints[30]-kinect_joints[27]))
+            kinect_joints[3] + 1*((kinect_joints[29]-kinect_joints[3]) + (kinect_joints[31]-kinect_joints[3]))
         ])
         return self.smpl_jnts
 
