@@ -1,12 +1,6 @@
-from visualization.utils import o3d_plot, o3d_pcl, o3d_mesh
-import numpy as np
-import json
-from scipy.spatial.transform import Rotation
-import open3d as o3d
 import numpy as np
 import cv2
 import cv2.aruco as aruco
-import rmsd
 
 
 def calibrate_kinect(image, pcls, intrinsic_mtx=None, distortion=None, aruco_size=0.8, show_result=False):

@@ -1,13 +1,13 @@
 import os
+import argparse
 import cv2
 import numpy as np
 import open3d as o3d
 from kinect.calib import calibrate_kinect
-from kinect.config import * 
+from kinect.config import MAS, SUB1, SUB2, INTRINSIC
 from dataloader.utils import clean_dir
 from dataloader.result_loader import KinectResultLoader
 from visualization.utils import o3d_plot, o3d_pcl, o3d_coord
-import argparse
 
 
 def compute_single_transform(color_frame: np.ndarray, pcl_frame: np.ndarray, intrinsic: np.ndarray, aruco_size: float):
@@ -22,9 +22,16 @@ def compute_single_transform(color_frame: np.ndarray, pcl_frame: np.ndarray, int
     """
     # R, t is rotation and translate matrix from world to camera
     R, t = calibrate_kinect(color_frame, pcl_frame, intrinsic_mtx=intrinsic, aruco_size=aruco_size)
-    pcl = o3d_pcl((np.linalg.inv(R) @ (pcl_frame.reshape(-1,3) - t).T/1000).T)
+    _R = np.linalg.inv(R)
+    _t = -_R @ t.T/1000
+    pcl = o3d_pcl(pcl_frame.reshape(-1,3)/1000 @ _R.T + _t)
     pcl.colors = o3d.utility.Vector3dVector(color_frame.reshape(-1, 3)/255)
-    return R, t, pcl
+    return _R, _t, pcl
+
+
+def run_kinect_viewer(kwargs: dict):
+    from kinect.aruco import detect_aruco
+    detect_aruco()
 
 
 def run_kinect_calib_offline(kwargs: dict):
@@ -97,7 +104,6 @@ def run_kinect_calib_online(kwargs):
         # skip not enabled devices
         if device not in devices_enabled:
             continue
-        results[device] = dict()
         results[device] = pool.apply_async(process, (devices_type[device], devices_id[idx])).get()
     pool.close()
     pool.join()
@@ -112,6 +118,25 @@ def run_kinect_calib_online(kwargs):
     o3d_plot([res["pcl"] for res in results.values()])    
     return results
 
+
+def run_optitrack_calib(kwargs):
+    from dataloader.result_loader import OptitrackCalibResultLoader
+    from optitrack.calib import read_csv, trans_matrix
+
+    output_path = os.path.join(kwargs["output"], "optitrack")
+    clean_dir(output_path)
+
+    loader = OptitrackCalibResultLoader(kwargs["input"])
+
+    coords = read_csv(loader.file_dict["calib/input"].iloc[0]["filepath"])
+    R, t = trans_matrix(coords)
+
+    np.savez(os.path.join(output_path, "transform"), R=R, t=t)
+
+    o3d_plot([o3d_pcl(coords @ R.T + t)], size=0.1)
+    return R, t
+
+
 def run_null():
     """
     Default run function
@@ -122,10 +147,18 @@ def run_null():
 def run():
     task_dict = dict(
         null=run_null,
+        # kinect viewer
+        kinect_viewer=run_kinect_viewer,
+        # kinect offline
         kinect_offline=run_kinect_calib_offline,
+        # kinect online
         kinect_online=run_kinect_calib_online,
         kinect=run_kinect_calib_online,
-        # optitrack=run_optitrack_calib,
+        k=run_kinect_calib_online,
+        # optitrack
+        optitrack=run_optitrack_calib,
+        opti=run_optitrack_calib,
+        o=run_optitrack_calib,
     )
     parser = argparse.ArgumentParser(usage='"run_calibration.py -h" to show help.')
     parser.add_argument('-t', '--task', dest='task', type=str,
@@ -138,7 +171,7 @@ def run():
                         default='', help='Addition args split by "#", default ""')
     
     args = parser.parse_args()
-    args_dict = dict([arg.split('=') for arg in args.addition.split('#')])
+    args_dict = dict([arg.split('=') for arg in args.addition.split('#') if '=' in arg])
     args_dict.update(dict(args._get_kwargs()))
     if args_dict["output"] == "":
         args_dict["output"] = os.path.join(args_dict["input"], "calib")

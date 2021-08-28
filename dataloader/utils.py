@@ -17,6 +17,7 @@ import time
 import ctypes
 import multiprocessing
 import rospy
+import numpy as np
 
 
 class MultiSubClient:
@@ -254,6 +255,12 @@ def filename_decoder(file_path) -> dict:
         params = [[filename, " "]]
     params.append(["filepath", os.path.abspath(file_path)])
     return dict(params)
+
+
+def extract_transform_mat(file_path: str) -> tuple:
+    mat_dict = np.load(file_path)
+    R, t = mat_dict["R"], mat_dict["t"]
+    return R, t
 
 
 class PrintableValue:

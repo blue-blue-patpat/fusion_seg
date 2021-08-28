@@ -8,9 +8,9 @@ from pytorch3d.structures import Meshes
 import torch
 
 
-def o3d_plot(o3d_items: list, title="", show_coord=True):
+def o3d_plot(o3d_items: list, title="", show_coord=True, **kwargs):
     if show_coord:
-        _items = o3d_items + [o3d_coord()]
+        _items = o3d_items + [o3d_coord(**kwargs)]
     else:
         _items = o3d_items
     o3d.visualization.draw_geometries(_items, title)
