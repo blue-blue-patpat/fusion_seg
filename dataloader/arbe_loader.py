@@ -80,10 +80,10 @@ class ArbeSubscriber(rospy.Subscriber):
         self.release_flag.value = True
 
 
-def arbe_process(msg, ts, save_path, infodata, dt_base):
+def arbe_process(msg, file_path, infodata):
     # _msg_to_dataframe(msg).to_csv(os.path.join(save_path, '{}.csv'.format(ts)))
     data = np.array(_msg_to_dataframe(msg))
-    np.save(os.path.join(save_path, 'id={}_st={}_dt={}'.format(infodata[1], ts, dt_base + float(data[0][-1]) / 1000)), data)
+    np.save(file_path, data)
     infodata[0] += 1
 
 
@@ -116,7 +116,8 @@ def arbe_loader_callback(msg, args):
         f.close()
     
     # add task
-    args["pool"].apply_async(arbe_process, (msg, st, save_path, args["info"]["data"], args["dt_base"]))
+    file_path = os.path.join(save_path, 'id={}_st={}_dt={}'.format(args["info"]["data"][1], st, args["dt_base"] + float(data[0][-1]) / 1000))
+    args["pool"].apply_async(arbe_process, (msg, file_path, args["info"]["data"]))
     print_log("[{}] {} frames captured.".format(
         args['name'], args["info"]["data"][1]), args["log_obj"])
 

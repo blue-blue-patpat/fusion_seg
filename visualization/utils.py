@@ -1,11 +1,8 @@
 import time
 from typing import Callable, Dict, Generator, Iterable, Union, overload
 import numpy as np
-from numpy.core.records import array
-from numpy.lib.function_base import copy
 import open3d as o3d
 from pytorch3d.structures import Meshes
-import torch
 
 
 def o3d_plot(o3d_items: list, title="", show_coord=True, **kwargs):
@@ -20,7 +17,7 @@ def o3d_coord(size=0.5, origin=[0, 0, 0]):
     return o3d.geometry.TriangleMesh.create_coordinate_frame(size=size, origin=origin)
 
 
-def o3d_pcl(pcl: np.ndarray = None, color: list = None, last_update = None):
+def o3d_pcl(pcl: np.ndarray = None, color: list = None, colors: list = None, last_update = None):
     _pcl = last_update
     if _pcl is None:
         _pcl = o3d.geometry.PointCloud()
@@ -29,11 +26,13 @@ def o3d_pcl(pcl: np.ndarray = None, color: list = None, last_update = None):
         _pcl.points = o3d.utility.Vector3dVector(pcl)
         if color is not None:
             _pcl.paint_uniform_color(color)
+        if colors is not None:
+            _pcl.colors = o3d.utility.Vector3dVector(colors)
     return _pcl
 
 
 def o3d_skeleton(skeleton: np.ndarray = None, lines: np.ndarray = None,
-                 point_color: list = [1,0,0], lines_colors: list = None,
+                 color: list = [1,0,0], colors: list = None,
                  last_update = None):
     _lines = last_update
     if _lines is None:
@@ -43,9 +42,9 @@ def o3d_skeleton(skeleton: np.ndarray = None, lines: np.ndarray = None,
         _lines.points = o3d.utility.Vector3dVector(skeleton)
     if lines is not None:
         _lines.lines = o3d.utility.Vector2iVector(lines)
-        if lines_colors is None:
-            lines_colors = np.repeat([point_color], skeleton.shape[0], axis=0)
-        _lines.colors = o3d.utility.Vector3dVector(lines_colors)
+        if colors is None:
+            colors = np.repeat([color], skeleton.shape[0], axis=0)
+        _lines.colors = o3d.utility.Vector3dVector(colors)
     return _lines
 
 
@@ -107,6 +106,7 @@ class O3DStreamPlot():
     def __init__(self, width=1600, height=1200, with_coord=True) -> None:
         self.view = o3d.visualization.Visualizer()
         self.view.create_window(width=width, height=height)
+        self.ctr = self.view.get_view_control()
 
         self.with_coord = with_coord
         self.first_render = True
@@ -128,11 +128,14 @@ class O3DStreamPlot():
                 self.view.add_geometry(o3d_coord())
             self.updater_dict[updater_key] = updater
 
+    def init_show(self):
+        self.view.reset_view_point(True)
+        self.first_render = False
+
     def update_plot(self):
         self.view.update_geometry(None)
         if self.first_render:
-            self.view.reset_view_point(True)
-            self.first_render = False
+            self.init_show()
         self.view.poll_events()
         self.view.update_renderer()
 
@@ -141,6 +144,7 @@ class O3DStreamPlot():
             gen = self.generator()
         tick = time.time()
         duration = 1/fps
+        # try:
         for update_dict in gen:
             for updater_key, update_params in update_dict.items():
                 if updater_key not in self.updater_dict.keys():
@@ -150,6 +154,12 @@ class O3DStreamPlot():
             while time.time() - tick < duration:
                 pass
             tick = time.time()
+        # except:
+        #     self.close_view()
+
+    def close_view(self):
+        self.view.close()
+        self.view.destroy_window()
 
     def generator(self):
         raise RuntimeError("'O3DStreamPlot.generator' method should be overriden")

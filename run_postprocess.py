@@ -4,6 +4,7 @@ from kinect.kinect_mkv import extract_mkv
 from kinect.kinect_skeleton import extract_skeleton
 from dataloader.result_loader import KinectMKVtLoader
 import os
+from optitrack.optitrack_loader import csv_parser
 
 
 def postprocess(root_path, *devices):
@@ -23,6 +24,8 @@ def postprocess(root_path, *devices):
     mkvs = KinectMKVtLoader(root_path, params)
     mkv_list = [m.iloc[0,1] for m in mkvs.file_dict.values()]
     pool.map_async(extract_mkv, mkv_list)
+    if os.path.isfile(root_path + "/optitrack/out.csv"):
+        csv_parser(root_path + "/optitrack/out.csv")
     pool.close()
     pool.join()
 

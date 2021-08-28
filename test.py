@@ -1,25 +1,4 @@
-def data_aling_test():
-    from dataloader import align
-    df = align('./dataloader/__test__/gt', './dataloader/__test__/camera',
-               './dataloader/__test__/radar', './dataloader/__test__/output/test.csv', abspath=False)
-    print(df)
-
-
-def coord_trans_test():
-    import numpy as np
-    from calib import coord_trans
-    coords = coord_trans.read_static_ts('./calib/__test__/radar1.ts')
-    # set or view board params here
-    print(coord_trans.set_params())
-
-    # compute transform matrix, print T, R param
-    R, t = coord_trans.trans_matrix(coords)
-    print(R, t)
-    orig_coord = np.array([1000, 1500, 900])
-
-    # transform a coordinate
-    trans_coord = coord_trans.trans_coord(orig_coord, R, t)
-    print(trans_coord)
+from optitrack.optitrack_loader import csv_parser
 
 
 def minimal_test():
@@ -76,14 +55,9 @@ def minimal_test():
 
 if __name__ == "__main__":
     # minimal_test()
-    # result_manager_test('/home/nesc525/chen/3DSVC/__test__/2021-08-05 17:21:35')
-    # result_loader_test('./__test__/mkv/')
+    # from visualization.o3d_plot import OptitrackArbeStreamPlot
 
-    # from kinect.kinect_mkv import extract_mkv
-    # extract_mkv("/media/nesc525/perple/2021-08-09_20-28-20/kinect/sub2/tasktm=1628512119.258128.mkv", False) 
-
-    from kinect.kinect_skeleton import extract_skeleton
-    import numpy as np
-    # extract_skeleton("/home/nesc525/chen/3DSVC/__test__/mkv", "master")
-    p = np.load("/home/nesc525/chen/3DSVC/__test__/mkv/kinect/master/skeleton/id=162_skid=0_st=1628392680.0206017_dt=1635153973.2593017.npy")
-    print(p.shape)
+    # plot = OptitrackArbeStreamPlot('/media/nesc525/perple/2021-08-28_17-29-16')
+    # plot.show()
+    # csv_parser("/media/nesc525/perple/2021-08-28_17-29-16/optitrack/out.csv")
+    csv_parser("/home/nesc525/ftp/data/Take 2021-08-28 04.48.15 PM.csv")

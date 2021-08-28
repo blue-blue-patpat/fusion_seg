@@ -5,6 +5,7 @@ import os
 
 def csv_parser(csv_path):
     df = pandas.read_csv(csv_path)
+    # df.fillna('0')
     file_path, _ = os.path.split(csv_path)
     # transform time to timestamp
     timestamp = time.mktime(time.strptime(df.columns[3][5:], "%Y-%m-%d %I.%M.%S %p"))
@@ -21,6 +22,3 @@ def csv_parser(csv_path):
         tm = start_time + float(df.iloc[i+6, 1])
         filename = "{}/id={}_tm={}".format(file_path, i, tm)
         np.savez(filename, markers=markers_array[i].reshape(-1,37,3), bones=bones_array[i].reshape(-1,21,7))
-
-if __name__ == "__main__":
-    csv_parser("/home/nesc525/chen/3DSVC/ignoredata/optitrack_files/Take 2021-08-17 09.24.57 PM.csv")

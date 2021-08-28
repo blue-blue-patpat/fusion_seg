@@ -46,7 +46,7 @@ def optitrack_transform_mat(root_path: str):
     )
 
 
-def compute_transform(root_path: str):
+def to_radar_transform_mat(root_path: str):
     """
     Compute device coordinate to radar coordinate transform matrixes
 

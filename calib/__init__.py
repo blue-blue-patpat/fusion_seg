@@ -10,5 +10,3 @@
 """
 
 # import lib
-from calib import coord_trans
-from calib import msy

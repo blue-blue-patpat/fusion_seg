@@ -104,7 +104,7 @@ class OptitrackResultLoader(ResultLoader):
         super().__init__(result_path)
         if params is None:
             self.params = [
-                dict(tag="optitrack", ext=".npy"),
+                dict(tag="optitrack", ext=".npz"),
             ]
         else:
             self.params = params

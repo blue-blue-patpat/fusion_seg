@@ -1,10 +1,7 @@
 from cv2 import transform
-import kinect
-from torch._C import R
 from visualization.utils import O3DStreamPlot, o3d_coord, o3d_pcl, o3d_skeleton, pcl_filter
 import numpy as np
 import open3d as o3d
-from itertools import compress
 from dataloader.result_loader import KinectResultLoader, ArbeResultLoader, OptitrackResultLoader
 from kinect.config import EXTRINSIC_MAS_ARBE, KINECT_SKELETON_LINES
 
@@ -27,7 +24,7 @@ class SkelArbeManager():
         param = "kinect/{}/skeleton".format(device)
         for i in range(len(self.a_loader)):
             a_row = self.a_loader[i]
-            k_row = self.k_loader_dict[device].select_item(a_row["arbe"]["tm"], "st", False)
+            k_row = self.k_loader_dict[device].select_item(a_row["arbe"]["st"], "st", False)
             # k_row = self.k_loader_dict[device].select_by_skid(i)
             # a_row = self.a_loader.select_item(k_row[param]["st"], "tm", False)
             yield k_row[param], a_row["arbe"]
@@ -71,13 +68,13 @@ class KinectArbeStreamPlot(O3DStreamPlot):
                 for p in range(1, person_count):
                     lines = np.vstack((lines, lines + p*32))
 
-            lines_colors = np.array([[0, 0, 1] for j in range(len(lines))])
+            colors = np.array([[0, 0, 1] for j in range(len(lines))])
             
             yield dict(
                 kinect_skeleton=dict(
                     skeleton=skeleton_pcl,
                     lines=lines,
-                    lines_colors=lines_colors
+                    colors=colors
                 ),
                 kinect_pcl=dict(
                     pcl=skeleton_pcl,
@@ -91,19 +88,29 @@ class KinectArbeStreamPlot(O3DStreamPlot):
 
 
 class KinectRealtimeStreamPlot(O3DStreamPlot):
-    
     def __init__(self, input_path: str, devices: list = ['master'], *args, **kwargs) -> None:
         from kinect.config import MAS, SUB1, SUB2, INTRINSIC
-        super().__init__(width=800, *args, **kwargs)
         self.input_path = input_path
         self.devices = devices
         self.devices_type = dict(master="mas", sub1="sub", sub2="sub")
         self.devices_id = dict(master=MAS, sub1=SUB1, sub2=SUB2)
+        super().__init__(width=2000, *args, **kwargs)
 
     def init_updater(self):
         self.plot_funcs = {}
         for device_name in self.devices:
             self.plot_funcs[device_name] = o3d_pcl
+
+    def init_show(self):
+        super().init_show()
+        self.ctr.set_up(np.array([[0],[0],[1]]))
+        self.ctr.set_front(np.array([[0],[1],[0]]))
+        self.ctr.set_zoom(0.3)
+
+    def close_view(self):
+        for device_name in self.devices:
+            self.started_devices[device_name].close()
+        super().close_view()
 
     def generator(self, root_path: str = None):
         from multiprocessing.dummy import Pool
@@ -113,37 +120,34 @@ class KinectRealtimeStreamPlot(O3DStreamPlot):
         from calib.utils import kinect_transform_mat
 
         if root_path is None:
-            root_path = "./__test__/default"
+            root_path = self.input_path
 
-        started_devices = {}
+        self.started_devices = {}
+
+        device_ids = _get_device_ids()
 
         for device_name in self.devices:
-            started_devices[device_name] = PyK4A(config=_get_config(self.device_type[device_name]), device_id=_get_device_ids()[self.devices_id[device_name]])
-            started_devices[device_name].start()
+            self.started_devices[device_name] = PyK4A(config=_get_config(self.devices_type[device_name]), device_id=device_ids[self.devices_id[device_name]])
+            self.started_devices[device_name].open()
+            self.started_devices[device_name].start()
 
         def process(device, R, t):
-            # skip first 60 frames
-            for i in range(60):
-                device.get_capture()
-            
             capture = device.get_capture()
-            # device.close()
             color_frame, pcl_frame = cv2.cvtColor(capture.color, cv2.COLOR_BGRA2RGB), capture.transformed_depth_point_cloud
-            pcl = o3d_pcl(pcl_frame.reshape(-1,3)/1000 @ R.T + t)
-            pcl.colors = o3d.utility.Vector3dVector(color_frame.reshape(-1, 3)/255)
-            return pcl
+            pcl = pcl_frame.reshape(-1,3)/1000 @ R.T + t
+            colors = color_frame.reshape(-1, 3)/255
+            return dict(pcl=pcl, colors=colors)
 
-        transform_mats = kinect_transform_mat()["kinect_{}".format(device_name)]
-
-        R = transform_mats["R"]
-        t = transform_mats["t"]
+        transform_mats = kinect_transform_mat(root_path)
 
         pool = Pool()
         
         while True:
             results = {}
             for device_name in self.devices:
-                results[device_name] = dict(pcl=pool.apply_async(process, (started_devices[device_name], R, t)).get())
+                R = transform_mats["kinect_{}".format(device_name)]["R"]
+                t = transform_mats["kinect_{}".format(device_name)]["t"]
+                results[device_name] = pool.apply_async(process, (self.started_devices[device_name], R, t)).get()
             yield results
 
 
@@ -153,9 +157,9 @@ class OptiArbeManager():
         self.arbe_loader = ArbeResultLoader(result_path)
 
     def generator(self):
-        for i in range(len(self.arbe_loader)):
+        for i in range(30, len(self.arbe_loader)):
             arbe_row = self.arbe_loader[i]
-            opti_row = self.opti_loader["optitrack"].select_item(arbe_row["arbe"]["tm"], "tm", False)
+            opti_row = self.opti_loader.select_item(arbe_row["arbe"]["st"], "tm", False)
             yield opti_row["optitrack"], arbe_row["arbe"]
 
 
@@ -163,16 +167,22 @@ class OptitrackArbeStreamPlot(O3DStreamPlot):
     def __init__(self, input_path: str, *args, **kwargs) -> None:
         super().__init__(width=800, *args, **kwargs)
         self.input_path = input_path
-        self.calib_mtx = np.load(self.input_path + "/calib/optitrack/transform.npz")
 
     def init_updater(self):
         self.plot_funcs = dict(
-            opti_skeleton=o3d_skeleton,
+            opti_markers=o3d_skeleton,
+            opti_bones=o3d_pcl,
             arbe_pcl=o3d_pcl,
         )
 
     def generator(self):
+        from calib.utils import optitrack_transform_mat
         input_manager = OptiArbeManager(self.input_path)
+        transform_mats = optitrack_transform_mat(self.input_path)
+
+        R_opti_T = transform_mats["optitrack"]["R"].T
+        t_opti = transform_mats["optitrack"]["t"]
+
         for opti_row, arbe_row in input_manager.generator():
             # load numpy from file
             opti_arr_dict = np.load(opti_row["filepath"])
@@ -183,8 +193,8 @@ class OptitrackArbeStreamPlot(O3DStreamPlot):
             bones_pcl = opti_arr_dict["bones"][:,:,:3].reshape(-1,3)
 
             # transform
-            opti_markers = markers_pcl @ self.calib_mtx["R"] + self.calib_mtx["t"]
-            opti_bones = bones_pcl @ self.calib_mtx["R"] + self.calib_mtx["t"]
+            opti_markers = markers_pcl @ R_opti_T + t_opti
+            opti_bones = bones_pcl @ R_opti_T + t_opti
 
             # filter pcl with naive bounding box
             arbe_pcl = pcl_filter(opti_markers, arbe_arr[:,:3], 0.5)
@@ -200,13 +210,13 @@ class OptitrackArbeStreamPlot(O3DStreamPlot):
                 for p in range(1, person_count):
                     lines = np.vstack((lines, lines + p*37))
 
-            lines_colors = np.array([[0, 0, 1] for j in range(len(lines))])
+            colors = np.array([[0, 0, 1] for j in range(len(lines))])
             
             yield dict(
                 opti_markers=dict(
                     markers=opti_markers,
                     lines=lines,
-                    lines_colors=lines_colors
+                    colors=colors
                 ),
                 opti_bones=dict(
                     bones=opti_bones,

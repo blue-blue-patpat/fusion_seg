@@ -80,36 +80,37 @@ def run_kinect_calib_online(kwargs):
     clean_dir(output_path)
 
     aruco_size = float(kwargs.get("aruco_size", 0.8))
-    
-    def process(device_type, device_id):
-        device = PyK4A(config=_get_config(device_type), device_id=device_id)
-        device.start()
-        
-        # skip first 60 frames
-        for i in range(60):
-            device.get_capture()
-        
-        capture = device.get_capture()
-        # device.close()
-        return cv2.cvtColor(capture.color, cv2.COLOR_BGRA2RGB), capture.transformed_depth_point_cloud
 
     devices = dict(master=MAS, sub1=SUB1, sub2=SUB2)
     devices_id = _get_device_ids()
     devices_enabled = kwargs.get("devices", "master_sub1_sub2").split('_')
     devices_type = dict(master="mas", sub1="sub", sub2="sub")
 
-    pool = Pool()
-    results = dict()
+    started_devices = dict()
     for device, idx in devices.items():
         # skip not enabled devices
         if device not in devices_enabled:
             continue
-        results[device] = pool.apply_async(process, (devices_type[device], devices_id[idx])).get()
-    pool.close()
-    pool.join()
+        started_devices[device] = PyK4A(config=_get_config(devices_type[device]), device_id=devices_id[idx])
+        started_devices[device].start()
 
-    for device, result in results.items():
-        color_frame, pcl_frame = result
+    results = dict()
+
+    for i in range(60):
+        for device, idx in devices.items():
+            if device not in devices_enabled:
+                continue
+            # skip first 60 frames
+            started_devices[device].get_capture()
+            # skip not enabled devices
+
+    for device, idx in devices.items():
+        if device not in devices_enabled:
+            continue
+        capture = started_devices[device].get_capture()
+
+        color_frame, pcl_frame = cv2.cvtColor(capture.color, cv2.COLOR_BGRA2RGB), capture.transformed_depth_point_cloud
+
         R, t, pcl = compute_single_transform(color_frame, pcl_frame, INTRINSIC[idx], aruco_size)
         results[device] = dict(R=R, t=t, pcl=pcl)
         o3d.io.write_point_cloud(os.path.join(output_path, "{}.ply".format(device)), pcl)
