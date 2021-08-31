@@ -1,4 +1,6 @@
-from optitrack.optitrack_loader import csv_parser
+from kinect.kinect_mkv import extract_mkv
+from dataloader.utils import clean_dir
+from optitrack.optitrack_loader import parse_opti_csv
 
 
 def minimal_test():
@@ -55,9 +57,26 @@ def minimal_test():
 
 if __name__ == "__main__":
     # minimal_test()
-    # from visualization.o3d_plot import OptitrackArbeStreamPlot
+    from visualization.o3d_plot import OptitrackArbeStreamPlot
 
-    # plot = OptitrackArbeStreamPlot('/media/nesc525/perple/2021-08-28_17-29-16')
+    # plot = OptitrackArbeStreamPlot('/media/nesc525/perple/2021-08-28_17-29-16', angle_of_view=[0,-1,0,1])
     # plot.show()
-    # csv_parser("/media/nesc525/perple/2021-08-28_17-29-16/optitrack/out.csv")
-    csv_parser("/home/nesc525/ftp/data/Take 2021-08-28 04.48.15 PM.csv")
+
+    parse_opti_csv("/media/nesc525/perple/2021-08-30_10-32-25/optitrack/out.csv")
+    # extract_mkv("/media/nesc525/perple/arbe_test/kinect/master/out.mkv")
+    
+    # from visualization.o3d_plot import OptitrackArbeStreamPlot
+    # from multiprocessing import Pool
+
+    # def process(path, angle_of_view=[0,-1,0,1]):
+    #     plot = OptitrackArbeStreamPlot(path, angle_of_view)
+    #     plot.show()
+
+    # root_path = "/media/nesc525/perple/2021-08-30_10-32-25"
+    # process(root_path)
+    # pool = Pool()
+    # pool.apply_async(process, (root_path, [0,-1,0,1]))
+    # pool.apply_async(process, (root_path, [1,1,0,2]))
+    # pool.apply_async(process, (root_path, [-1,1,0,2]))
+    # pool.close()
+    # pool.join()

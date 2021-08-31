@@ -29,6 +29,14 @@ def compute_single_transform(color_frame: np.ndarray, pcl_frame: np.ndarray, int
     return _R, _t, pcl
 
 
+def run_kinect_calib_cpp(filepath):
+    import json
+    with open(filepath,'r',encoding='utf8')as f:
+        json_data = json.load(f)
+    trans_mat = np.asarray(list(json_data['value0']['matrix'].values()), np.float64).reshape(4,4)
+    return trans_mat
+
+
 def run_kinect_viewer(kwargs: dict):
     from kinect.aruco import detect_aruco
     detect_aruco()

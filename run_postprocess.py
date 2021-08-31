@@ -1,10 +1,11 @@
 from multiprocessing.dummy import Pool
+import optitrack
 from time import sleep
 from kinect.kinect_mkv import extract_mkv
 from kinect.kinect_skeleton import extract_skeleton
-from dataloader.result_loader import KinectMKVtLoader
+from dataloader.result_loader import KinectMKVtLoader, OptitrackCSVLoader
 import os
-from optitrack.optitrack_loader import csv_parser
+from optitrack.optitrack_loader import parse_opti_csv
 
 
 def postprocess(root_path, *devices):
@@ -22,10 +23,14 @@ def postprocess(root_path, *devices):
         params.append(dict(tag="kinect/{}".format(device), ext=".mkv"))
         pool.apply_async(process, (device,))
     mkvs = KinectMKVtLoader(root_path, params)
-    mkv_list = [m.iloc[0,1] for m in mkvs.file_dict.values()]
+    mkv_list = [m.loc[0,"filepath"] for m in mkvs.file_dict.values()]
     pool.map_async(extract_mkv, mkv_list)
-    if os.path.isfile(root_path + "/optitrack/out.csv"):
-        csv_parser(root_path + "/optitrack/out.csv")
+    try:
+        csv_file = OptitrackCSVLoader(root_path)
+        if len(csv_file):
+            parse_opti_csv(csv_file.file_dict["optitrack"].loc[0,"filepath"])
+    except:
+        pass
     pool.close()
     pool.join()
 

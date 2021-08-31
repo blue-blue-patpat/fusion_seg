@@ -22,7 +22,7 @@ class SkelArbeManager():
             print("No {}".format(device))
             exit(1)
         param = "kinect/{}/skeleton".format(device)
-        for i in range(len(self.a_loader)):
+        for i in range(30, len(self.a_loader)):
             a_row = self.a_loader[i]
             k_row = self.k_loader_dict[device].select_item(a_row["arbe"]["st"], "st", False)
             # k_row = self.k_loader_dict[device].select_by_skid(i)
@@ -31,17 +31,24 @@ class SkelArbeManager():
 
 
 class KinectArbeStreamPlot(O3DStreamPlot):
-    def __init__(self, input_path: str, devices: list = ['master'], *args, **kwargs) -> None:
+    def __init__(self, input_path: str, devices: list = ['master'], angle_of_view=[0,-1,0,1], *args, **kwargs) -> None:
         super().__init__(width=800, *args, **kwargs)
         self.input_path = input_path
         self.devices = devices
+        self.angle_of_view = angle_of_view
 
     def init_updater(self):
         self.plot_funcs = dict(
             kinect_skeleton=o3d_skeleton,
             kinect_pcl=o3d_pcl,
-            arbe_pcl=o3d_pcl,
+            arbe_pcls=o3d_pcl,
         )
+    
+    def init_show(self):
+        super().init_show()
+        self.ctr.set_up(np.array([0, 0, 1]))
+        self.ctr.set_front(np.array(self.angle_of_view[:3]))
+        self.ctr.set_zoom(self.angle_of_view[3])
 
     def generator(self, device: str = None):
         if device is None:
@@ -80,7 +87,7 @@ class KinectArbeStreamPlot(O3DStreamPlot):
                     pcl=skeleton_pcl,
                     color=[0,0,1]
                 ),
-                arbe_pcl=dict(
+                arbe_pcls=dict(
                     pcl=arbe_pcl,
                     color=[0,1,0]
                 ),
@@ -164,19 +171,26 @@ class OptiArbeManager():
 
 
 class OptitrackArbeStreamPlot(O3DStreamPlot):
-    def __init__(self, input_path: str, *args, **kwargs) -> None:
+    def __init__(self, input_path: str, angle_of_view=[0,-1,0,2], *args, **kwargs) -> None:
         super().__init__(width=800, *args, **kwargs)
         self.input_path = input_path
+        self.angle_of_view = angle_of_view
 
     def init_updater(self):
         self.plot_funcs = dict(
-            opti_markers=o3d_skeleton,
-            opti_bones=o3d_pcl,
-            arbe_pcl=o3d_pcl,
-        )
+            opti_marker=o3d_skeleton,
+            # opti_bone=o3d_pcl,
+            arbe_pcls=o3d_pcl)
 
+    def init_show(self):
+        super().init_show()
+        self.ctr.set_up(np.array([0, 0, 1]))
+        self.ctr.set_front(np.array(self.angle_of_view[:3]))
+        self.ctr.set_zoom(self.angle_of_view[3])
+        
     def generator(self):
         from calib.utils import optitrack_transform_mat
+        from optitrack.config import marker_lines
         input_manager = OptiArbeManager(self.input_path)
         transform_mats = optitrack_transform_mat(self.input_path)
 
@@ -194,18 +208,22 @@ class OptitrackArbeStreamPlot(O3DStreamPlot):
 
             # transform
             opti_markers = markers_pcl @ R_opti_T + t_opti
-            opti_bones = bones_pcl @ R_opti_T + t_opti
+            # opti_bones = bones_pcl @ R_opti_T + t_opti
 
             # filter pcl with naive bounding box
             arbe_pcl = pcl_filter(opti_markers, arbe_arr[:,:3], 0.5)
 
             # init lines
-            # TODO: update the lines
-            lines = np.asarray([[0,1],[1,2],[2,3],[2,4],[4,5],[5,6],[6,7],[7,8],
-                                [8,9],[7,10],[2,11],[11,12],[12,13],[13,14],[14,15],
-                                [15,16],[14,17],[0,18],[18,19],[19,20],[20,21],[0,22],
-                                [22,23],[23,24],[24,25],[3,26],[26,27],[26,28],[26,29],
-                                [26,30],[26,31]])
+            #0：waist left front 1: waist right front 2: wrist left back 3: wrist right back
+            #4: back top 5: chest 6: back left 7: back right 8: head top 9: head front 
+            #10: head side 11: left shoulder back 12: left shoulder top 13: left elbow out
+            #14: LUARMHigh 15: left hand out 16: left wrist out 17: left wrist in
+            #18: right shoulder back 19: right shoulder top 20: right elbow out
+            #21: RUARMHigh 22: right hand out 23: right wrist out 24: right wrist in
+            #25: left knee out 26: LThigh 27: left ankle out 28: leftshin 29: LToeOut
+            #30: LToeIn 31: right knee out 32: RThigh 33: right ankle out 34: rightshin
+            #35: right toe out 36 right toe in
+            lines = marker_lines
             if person_count > 1:
                 for p in range(1, person_count):
                     lines = np.vstack((lines, lines + p*37))
@@ -213,16 +231,17 @@ class OptitrackArbeStreamPlot(O3DStreamPlot):
             colors = np.array([[0, 0, 1] for j in range(len(lines))])
             
             yield dict(
-                opti_markers=dict(
-                    markers=opti_markers,
+                opti_marker=dict(
+                    skeleton=opti_markers,
+                    color=[0,0,1],
                     lines=lines,
                     colors=colors
                 ),
-                opti_bones=dict(
-                    bones=opti_bones,
-                    colors=[1,0,0]
-                ),
-                arbe_pcl=dict(
+                # opti_bone=dict(
+                #     pcl=opti_bones,
+                #     color=[1,0,0]
+                # ),
+                arbe_pcls=dict(
                     pcl=arbe_pcl,
                     color=[0,1,0]
                 ),

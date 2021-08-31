@@ -178,3 +178,14 @@ class KinectJsonLoader(ResultLoader):
         else:
             self.params = params
         self.run()
+
+class OptitrackCSVLoader(ResultLoader):
+    def __init__(self, result_path, params=None) -> None:
+        super().__init__(result_path)
+        if params is None:
+            self.params = [
+                dict(tag="optitrack", ext=".csv"),
+            ]
+        else:
+            self.params = params
+        self.run()

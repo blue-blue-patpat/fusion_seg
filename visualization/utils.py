@@ -22,7 +22,7 @@ def o3d_pcl(pcl: np.ndarray = None, color: list = None, colors: list = None, las
     if _pcl is None:
         _pcl = o3d.geometry.PointCloud()
 
-    if pcl is not None:
+    if pcl is not None and pcl.size != 0:
         _pcl.points = o3d.utility.Vector3dVector(pcl)
         if color is not None:
             _pcl.paint_uniform_color(color)
