@@ -234,7 +234,7 @@ class KinectSubscriber(Process):
         # Designating image saving paths
         clean_dir(os.path.join(self.save_path, "color"))
         clean_dir(os.path.join(self.save_path, "depth"))
-        clean_dir(os.path.join(self.save_path, "point"))
+        clean_dir(os.path.join(self.save_path, "pcls"))
         frame_list = []
         frame_count = 0
         self.device.start()
@@ -250,9 +250,9 @@ class KinectSubscriber(Process):
         def process(frame, save_path, filename, infodata):
             path_color = os.path.join(save_path, "color", "{}.png".format(filename))
             path_depth = os.path.join(save_path, "depth", "{}.png".format(filename))
-            # # path_point = os.path.join(save_path, "point", filename)
+            path_point = os.path.join(save_path, "pcls", filename)
 
-            # # np.save(path_point, frame.depth_point_cloud)
+            np.save(path_point, frame.transformed_depth_point_cloud)
             # np.save(path_color, frame.color)
             # np.save(path_depth, frame.depth)
             cv.imwrite(path_color, frame.color)

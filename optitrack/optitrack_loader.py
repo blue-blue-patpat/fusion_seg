@@ -21,5 +21,5 @@ def parse_opti_csv(csv_path):
 
     for i in range(num_of_frames):
         tm = start_time + float(df.iloc[i+4, 1])
-        filename = "{}/id={}_tm={}".format(file_path, i, tm)
+        filename = "{}/id={}_st={}".format(file_path, i, tm)
         np.savez(filename, markers=markers_array[i].reshape(-1,37,3), bones=bones_array[i].reshape(-1,21,7))

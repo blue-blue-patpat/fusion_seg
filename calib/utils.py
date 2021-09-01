@@ -35,6 +35,17 @@ def kinect_transform_mat(root_path: str):
     )
 
 
+def get_cpp_matrix(root_path, devices:list=["master","sub1","sub2"]):
+    import json
+    trans_mat = {}
+    num_dict = {"master":0, "sub1":1, "sub2":2}
+    for d in devices:
+        with open(root_path+'/calib/kinect/matrix{}.json'.format(num_dict[d]),'r',encoding='utf8') as f:
+            json_data = json.load(f)
+        trans_mat[d] = np.asarray(list(json_data['value0']['matrix'].values()), np.float64).reshape(4,4)
+    return trans_mat
+
+
 def optitrack_transform_mat(root_path: str):
     input_path = os.path.join(root_path, "calib/optitrack")
     R_opti_to_radar, t_opti_to_radar = extract_transform_mat(os.path.join(input_path, "transform.npz"))

@@ -106,25 +106,36 @@ def run_kinect_calib_online(kwargs):
 
     for i in range(60):
         for device, idx in devices.items():
+            # skip not enabled devices
             if device not in devices_enabled:
                 continue
             # skip first 60 frames
             started_devices[device].get_capture()
-            # skip not enabled devices
 
-    for device, idx in devices.items():
-        if device not in devices_enabled:
-            continue
-        capture = started_devices[device].get_capture()
+    print("[Kinect Calibrate Online] Start calibration...")
+    has_result = False
 
-        color_frame, pcl_frame = cv2.cvtColor(capture.color, cv2.COLOR_BGRA2RGB), capture.transformed_depth_point_cloud
+    while not has_result:
+        try:
+            for device, idx in devices.items():
+                if device not in devices_enabled:
+                    continue
+                capture = started_devices[device].get_capture()
 
-        R, t, pcl = compute_single_transform(color_frame, pcl_frame, INTRINSIC[idx], aruco_size)
-        results[device] = dict(R=R, t=t, pcl=pcl)
-        o3d.io.write_point_cloud(os.path.join(output_path, "{}.ply".format(device)), pcl)
-        np.savez(os.path.join(output_path, "{}".format(device)), R=R, t=t)
+                color_frame, pcl_frame = cv2.cvtColor(capture.color, cv2.COLOR_BGRA2RGB), capture.transformed_depth_point_cloud
 
-    o3d_plot([res["pcl"] for res in results.values()])    
+                R, t, pcl = compute_single_transform(color_frame, pcl_frame, INTRINSIC[idx], aruco_size)
+                results[device] = dict(R=R, t=t, pcl=pcl)
+                o3d.io.write_point_cloud(os.path.join(output_path, "{}.ply".format(device)), pcl)
+                np.savez(os.path.join(output_path, "{}".format(device)), R=R, t=t)
+            o3d_plot([res["pcl"] for res in results.values()])
+            confirm_info = input("Do you want to save current result?\n[y/n]\n")
+            if 'y' in confirm_info:
+                has_result = True
+        except Exception as e:
+            print(e)
+            print("[Kinect Calibrate Online] Retry calibration...")
+
     return results
 
 

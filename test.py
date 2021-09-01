@@ -57,12 +57,12 @@ def minimal_test():
 
 if __name__ == "__main__":
     # minimal_test()
-    from visualization.o3d_plot import OptitrackArbeStreamPlot
+    from visualization.o3d_plot import OptitrackArbeStreamPlot, KinectCppOfflineStreamPlot
 
     # plot = OptitrackArbeStreamPlot('/media/nesc525/perple/2021-08-28_17-29-16', angle_of_view=[0,-1,0,1])
     # plot.show()
 
-    parse_opti_csv("/media/nesc525/perple/2021-08-30_10-32-25/optitrack/out.csv")
+    # parse_opti_csv("/media/nesc525/perple/2021-08-30_10-32-25/optitrack/out.csv")
     # extract_mkv("/media/nesc525/perple/arbe_test/kinect/master/out.mkv")
     
     # from visualization.o3d_plot import OptitrackArbeStreamPlot
@@ -71,12 +71,6 @@ if __name__ == "__main__":
     # def process(path, angle_of_view=[0,-1,0,1]):
     #     plot = OptitrackArbeStreamPlot(path, angle_of_view)
     #     plot.show()
-
-    # root_path = "/media/nesc525/perple/2021-08-30_10-32-25"
-    # process(root_path)
-    # pool = Pool()
-    # pool.apply_async(process, (root_path, [0,-1,0,1]))
-    # pool.apply_async(process, (root_path, [1,1,0,2]))
-    # pool.apply_async(process, (root_path, [-1,1,0,2]))
-    # pool.close()
-    # pool.join()
+    root_path = '/media/nesc525/perple/2021-08-30_10-32-25'
+    plot = KinectCppOfflineStreamPlot(root_path, start_frame=1000)
+    plot.show()

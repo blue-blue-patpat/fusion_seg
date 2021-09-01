@@ -1,5 +1,4 @@
-from cv2 import transform
-from visualization.utils import O3DStreamPlot, o3d_coord, o3d_pcl, o3d_skeleton, pcl_filter
+from visualization.utils import O3DStreamPlot, o3d_coord, o3d_pcl, o3d_plot, o3d_skeleton, pcl_filter
 import numpy as np
 import open3d as o3d
 from dataloader.result_loader import KinectResultLoader, ArbeResultLoader, OptitrackResultLoader
@@ -158,6 +157,67 @@ class KinectRealtimeStreamPlot(O3DStreamPlot):
             yield results
 
 
+class KinectCppOfflineStreamPlot(O3DStreamPlot):
+    def __init__(self, input_path: str, devices: list = ['master','sub1','sub2'], start_frame = 30, *args, **kwargs) -> None:
+        from kinect.config import MAS, SUB1, SUB2, INTRINSIC
+        self.input_path = input_path
+        self.devices = devices
+        self.devices_type = dict(master="mas", sub1="sub", sub2="sub")
+        self.devices_id = dict(master=MAS, sub1=SUB1, sub2=SUB2)
+        self.start_frame = start_frame
+        super().__init__(*args, **kwargs)
+
+    def init_updater(self):
+        self.plot_funcs = {}
+        for device_name in self.devices:
+            self.plot_funcs[device_name] = o3d_pcl
+
+    def init_show(self):
+        super().init_show()
+        self.ctr.set_up(np.array([[0],[0],[1]]))
+        self.ctr.set_front(np.array([[0],[1],[0]]))
+        self.ctr.set_zoom(1)
+
+    def generator(self, root_path: str = None):
+        from multiprocessing.dummy import Pool
+        import cv2
+        from calib.utils import get_cpp_matrix
+        from dataloader.result_loader import KinectResultLoader
+
+        if root_path is None:
+            root_path = self.input_path
+
+        transform_mats = get_cpp_matrix(root_path, self.devices)
+        loaders = {}
+        for device in self.devices:
+            param = []
+            param.append(dict(tag="kinect/{}/color".format(device), ext=".png"))
+            param.append(dict(tag="kinect/{}/pcls".format(device), ext=".npy"))
+            loader = KinectResultLoader(root_path, param)
+            loaders[device] = loader
+        for i in range(self.start_frame, min(len(v) for v in loaders.values())):
+            result = {}
+            frames = []
+            for j, dev in enumerate(self.devices):
+                if j == 0:
+                    frames.append(loaders[dev].select_by_id(i))
+                else:
+                    frames.append(loaders[dev].select_item(frames[0]["kinect/{}/pcls".format(self.devices[0])]["dt"], "dt", False))
+
+            for d in range(len(self.devices)):
+                pcl = np.load(frames[d]["kinect/{}/pcls".format(self.devices[d])]["filepath"]).reshape(-1,3)/1000
+                color = cv2.imread(frames[d]["kinect/{}/color".format(self.devices[d])]["filepath"])
+                result[self.devices[d]] = o3d_pcl(pcl, colors=np.fliplr(color.reshape(-1, 3)/255)).transform(transform_mats[self.devices[d]])
+                # o3d_pcls = o3d_pcl(pcl, colors=np.fliplr(color.reshape(-1, 3)/255)).transform(transform_mats[device])
+                # result[device] = dict(pcl=np.asarray(o3d_pcls.points), colors=np.asarray(o3d_pcls.colors))
+            yield result
+
+    def show(self):
+        gen = self.generator()
+        for update_dict in gen:
+            o3d_plot(list(update_dict.values()))
+
+
 class OptiArbeManager():
     def __init__(self, result_path) -> None:
         self.opti_loader = OptitrackResultLoader(result_path)
@@ -204,7 +264,7 @@ class OptitrackArbeStreamPlot(O3DStreamPlot):
 
             person_count = opti_arr_dict["markers"].shape[0]
             markers_pcl = opti_arr_dict["markers"][:,:,:3].reshape(-1,3)
-            bones_pcl = opti_arr_dict["bones"][:,:,:3].reshape(-1,3)
+            # bones_pcl = opti_arr_dict["bones"][:,:,:3].reshape(-1,3)
 
             # transform
             opti_markers = markers_pcl @ R_opti_T + t_opti
@@ -214,21 +274,11 @@ class OptitrackArbeStreamPlot(O3DStreamPlot):
             arbe_pcl = pcl_filter(opti_markers, arbe_arr[:,:3], 0.5)
 
             # init lines
-            #0：waist left front 1: waist right front 2: wrist left back 3: wrist right back
-            #4: back top 5: chest 6: back left 7: back right 8: head top 9: head front 
-            #10: head side 11: left shoulder back 12: left shoulder top 13: left elbow out
-            #14: LUARMHigh 15: left hand out 16: left wrist out 17: left wrist in
-            #18: right shoulder back 19: right shoulder top 20: right elbow out
-            #21: RUARMHigh 22: right hand out 23: right wrist out 24: right wrist in
-            #25: left knee out 26: LThigh 27: left ankle out 28: leftshin 29: LToeOut
-            #30: LToeIn 31: right knee out 32: RThigh 33: right ankle out 34: rightshin
-            #35: right toe out 36 right toe in
             lines = marker_lines
             if person_count > 1:
                 for p in range(1, person_count):
                     lines = np.vstack((lines, lines + p*37))
-
-            colors = np.array([[0, 0, 1] for j in range(len(lines))])
+            colors = np.asarray([[0,0,1]] * len(lines))
             
             yield dict(
                 opti_marker=dict(

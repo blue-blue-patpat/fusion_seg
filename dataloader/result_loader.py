@@ -166,6 +166,7 @@ class KinectMKVtLoader(ResultLoader):
             self.params = params
         self.run()
 
+
 class KinectJsonLoader(ResultLoader):
     def __init__(self, result_path, params=None) -> None:
         super().__init__(result_path)
@@ -178,6 +179,7 @@ class KinectJsonLoader(ResultLoader):
         else:
             self.params = params
         self.run()
+
 
 class OptitrackCSVLoader(ResultLoader):
     def __init__(self, result_path, params=None) -> None:

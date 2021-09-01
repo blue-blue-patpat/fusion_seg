@@ -8,9 +8,13 @@ class JointsBridge():
         self.smpl_jnts = np.zeros((28, 3))
 
     def smpl_from_kinect(self, jnts, pcl=np.array([[0,0,0]])):
+        '''
         self.kinect_joints_transfer_coordinates(jnts, pcl)
         self.filter_pcl()
-        self.update_smpl_joints_from_kinect_joints()
+        '''
+        self.update_smpl_joints_from_kinect_joints(jnts)
+        self.smpl_joints_transfer_coordinates(self.smpl_jnts,pcl)
+        self.filter_pcl()
         return self.normalization()
 
     def filter_pcl(self, kinect_joints=None, pcl=None) -> np.ndarray:
@@ -102,7 +106,7 @@ class JointsBridge():
         open3d.visualization.draw_geometries([point_cloud1,pt2]+[axis_pcd])
         '''
 
-    def smpl_joints_transfer_coordinates(self, smpl_joints: np.ndarray = None, pcl: np.ndarray = None):
+    def smpl_joints_transfer_coordinates(self, smpl_joints=None, pcl=None):
         """
         :param smpl_joints: n*3 array
         """
@@ -220,4 +224,5 @@ class JointsBridge():
         x_norm = np.repeat(origin_scale, 3)
         self.smpl_jnts = jnts / x_norm
         self.pcl = pcl/x_norm
+        #self.smpl_jnts,self.pcl=self.smpl_joints_transfer_coordinates(self.smpl_jnts)
         return self.smpl_jnts, self.pcl, origin_scale

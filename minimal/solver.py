@@ -163,38 +163,26 @@ class Solver:
                 vertices, faces= mesh_updated.verts_packed().cpu(), mesh_updated.faces_packed().cpu()
                 losses.update_loss_curve(mesh=(vertices, faces), pcls=pcls_target)
                 # print("[{}] : idx={}\tperiod={:.2f}\tloss={:.4f}\t{}".format(ymdhms_time() , i, 0, losses[-1], losses.str_losses(-1)))
-        return np.hstack(self.pose_params, self.shape_params)
+        self.params = np.hstack(self.pose_params, self.shape_params)
+        return self.params
 
-    def solve_from_dir(self, input_path, output_path, device="master", vbs=[True, False]):
-        from dataloader.result_loader import KinectResultLoader
+    def solve_stream(self, stream_source, vbs=[True, False]):
         from minimal.bridge import JointsBridge
-        pcls_tag = "kinect/{}/pcls".format(device)
-        skeleton_tag = "kinect/{}/skeleton".format(device)
-        T_tag = "kinect/{}/T".format(device)
+        
         jnts_brg = JointsBridge()
 
-        T_pcl = np.load(os.path.join(T_tag, "pcls.npy"))
-        T_skeleton = np.load(os.path.join(T_tag, "skeleton.npy"))
-
-        _jnts, _pcl = jnts_brg.smpl_from_kinect(T_skeleton[0], T_pcl)
+        T_skeleton, T_pcl = next(stream_source)
+        _jnts, _pcl = jnts_brg.smpl_from_kinect(T_skeleton, T_pcl)
 
         # solve init shape
-        self.solve_full(_pcl, _jnts, verbose=vbs[0])
+        params = self.solve_full(_pcl, _jnts, verbose=vbs[0])
 
-        rl = KinectResultLoader(input_path,
-                                params=[dict(tag=pcls_tag, ext=".npy"),
-                                        dict(tag=skeleton_tag, ext=".npy")])
-        for item in rl.generator_by_skeleton():
-            pcl = np.load(item[pcls_tag]["filepath"])
-            skeleton = np.load(item[skeleton_tag]["filepath"])
+        # TODO: save result
 
-            # only process skeleton 0
-            _jnts, _pcl = jnts_brg.smpl_from_kinect(skeleton[0], pcl)
+        for skeleton, pcl in stream_source:
+            _jnts, _pcl = jnts_brg.smpl_from_kinect(skeleton, pcl)
 
             params = self.solve_pose(_pcl, _jnts, verbose=vbs[1])
-            info_source = item[skeleton_tag]
-            np.save(os.path.join(output_path, "id={}_st={}_dt={}.npy".format(info_source["id"], info_source["st"], info_source["dt"])))
-
 
     def get_derivative(self, params, n):
         """
@@ -226,6 +214,9 @@ class Solver:
         d = (res1 - res2) / (2 * self.eps)
 
         return d.ravel()
+
+    def save_model(self, file_path):
+        pass
 
 
 def keypoints_distance(kpts_updated, kpts_target, activate_distance):

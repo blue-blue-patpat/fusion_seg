@@ -45,20 +45,40 @@ def calibrate_kinect(image, pcls, intrinsic_mtx=None, distortion=None, aruco_siz
 
 
 def get_point_from_pcl(pcl: np.ndarray, h_idx, w_idx) -> np.ndarray:
+    # init flag array
+    checked_hw = np.zeros(pcl.shape[:2])
+
+    # make sure index is int
     w_idx = int(w_idx)
     h_idx = int(h_idx)
+
+    # if index exceeds range, return [0,0,0]
     if h_idx >= pcl.shape[0] or w_idx >= pcl.shape[1]:
         return [0,0,0]
-    if pcl[w_idx, h_idx].all():
-        return pcl[w_idx, h_idx]
-    else:
-        candidate_idxs = [
-            (h_idx, w_idx-1),
-            (h_idx, w_idx+1),
-            (h_idx-1, w_idx),
-            (h_idx+1, w_idx)
+    
+    # init candidate indexes list
+    candidate_idxs = [
+        (h_idx, w_idx),
+    ]
+
+    # BFS the whole pcl array
+    step = 0
+    while len(candidate_idxs) > 0:
+        _h, _w = candidate_idxs.pop(0)
+        if checked_hw[_w, _h] == 1:
+            continue
+
+        point = pcl[_w, _h]
+        checked_hw[w_idx, h_idx] = 1
+
+        if point.any():
+            print("[Point From PCL] Return after {} steps, input idxs {}, result idxs {}".format(step, (h_idx, w_idx), (_h, _w)))
+            return point
+        _candidate_idxs = [
+            (_h, _w-1),
+            (_h, _w+1),
+            (_h-1, _w),
+            (_h+1, _w)
         ]
-        for idxs in candidate_idxs:
-            point = get_point_from_pcl(pcl, *idxs)
-            if point.all():
-                return point
+        candidate_idxs += _candidate_idxs
+        step += 1
