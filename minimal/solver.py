@@ -28,7 +28,7 @@ class Solver:
 
         self.params = []
 
-    def solve_full(self, kpts_target, pcls_target, origin_scale, init=None, losses_with_weights=None,
+    def solve_full(self, kpts_target, pcls_target, scale, init=None, losses_with_weights=None,
                     mse_threshold=1e-8, loss_threshold=1e-8, u=1e-3, v=1.5, verbose=False):
         if init is None:
             init = np.zeros(self.model.n_params)
@@ -56,7 +56,7 @@ class Solver:
             mesh_updated, kpts_updated = self.model.run(params)
 
             # compute keypoints loss
-            loss_kpts, residual = keypoints_distance(kpts_updated, kpts_target, activate_distance=40/origin_scale)
+            loss_kpts, residual = keypoints_distance(kpts_updated, kpts_target, activate_distance=40/scale)
             # residual = (kpts_updated - kpts_target).reshape(kpts_updated.size, 1)
             # loss_kpts = np.mean(np.square(residual))
             losses.update_loss("kpts_losses", loss_kpts)
@@ -166,23 +166,37 @@ class Solver:
         self.params = np.hstack(self.pose_params, self.shape_params)
         return self.params
 
-    def solve_stream(self, stream_source, vbs=[True, False]):
+    def solve_stream(self, stream_source, root_path, vbs=[True, False]):
         from minimal.bridge import JointsBridge
-        
+        from dataloader.utils import clean_dir
+
+        save_path = os.path.join(root_path, "minimal")
+
+        # save to $root_path$/minimal/(param,obj,trans)
+        clean_dir(save_path + "param")
+        clean_dir(save_path + "obj")
+        clean_dir(save_path + "trans")
+
         jnts_brg = JointsBridge()
 
-        T_skeleton, T_pcl = next(stream_source)
+        T_skeleton, T_pcl, filename = next(stream_source)
         _jnts, _pcl = jnts_brg.smpl_from_kinect(T_skeleton, T_pcl)
 
         # solve init shape
-        params = self.solve_full(_pcl, _jnts, verbose=vbs[0])
+        self.solve_full(_pcl, _jnts, jnts_brg.scale, verbose=vbs[0])
 
-        # TODO: save result
+        self.save_param(os.path.join(save_path, "param", filename))
+        self.save_model(os.path.join(save_path, "obj", filename+".obj"))
+        jnts_brg.save_revert_transform(os.path.join(save_path, "trans", filename))
 
-        for skeleton, pcl in stream_source:
+        for skeleton, pcl, filename in stream_source:
             _jnts, _pcl = jnts_brg.smpl_from_kinect(skeleton, pcl)
 
-            params = self.solve_pose(_pcl, _jnts, verbose=vbs[1])
+            self.solve_pose(_pcl, _jnts, jnts_brg.scale, verbose=vbs[1])
+            
+            self.save_param(os.path.join(save_path, "param", filename))
+            self.save_model(os.path.join(save_path, "obj", filename+".obj"))
+            jnts_brg.save_revert_transform(os.path.join(save_path, "trans", filename))
 
     def get_derivative(self, params, n):
         """
@@ -215,8 +229,11 @@ class Solver:
 
         return d.ravel()
 
+    def save_param(self, file_path):
+        np.savez(file_path, pose=self.pose_params, shape=self.shape_params)
+
     def save_model(self, file_path):
-        pass
+        self.model.core.save_obj(file_path)
 
 
 def keypoints_distance(kpts_updated, kpts_target, activate_distance):

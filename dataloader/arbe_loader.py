@@ -95,7 +95,7 @@ def arbe_loader_callback(msg, args):
     :param args: dict(dataframe, name, task_queue)
     :return: None
     """
-    st = rospy.get_time()
+    st = time.time()
     # callback may be triggered before __init__ completes. if pool is not started yet, ignore current frame
     if args.get("pool", None) is None:
         args["start_tm"] = time.time()

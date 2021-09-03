@@ -21,7 +21,7 @@ class SkelArbeManager():
             print("No {}".format(device))
             exit(1)
         param = "kinect/{}/skeleton".format(device)
-        for i in range(30, len(self.a_loader)):
+        for i in range(90, len(self.a_loader)):
             a_row = self.a_loader[i]
             k_row = self.k_loader_dict[device].select_item(a_row["arbe"]["st"], "st", False)
             # k_row = self.k_loader_dict[device].select_by_skid(i)
@@ -157,14 +157,15 @@ class KinectRealtimeStreamPlot(O3DStreamPlot):
             yield results
 
 
-class KinectCppOfflineStreamPlot(O3DStreamPlot):
-    def __init__(self, input_path: str, devices: list = ['master','sub1','sub2'], start_frame = 30, *args, **kwargs) -> None:
+class KinectOfflineStreamPlotCpp(O3DStreamPlot):
+    def __init__(self, input_path: str, devices=['master','sub1','sub2'], start_frame=30, tag="st", *args, **kwargs) -> None:
         from kinect.config import MAS, SUB1, SUB2, INTRINSIC
         self.input_path = input_path
         self.devices = devices
         self.devices_type = dict(master="mas", sub1="sub", sub2="sub")
         self.devices_id = dict(master=MAS, sub1=SUB1, sub2=SUB2)
         self.start_frame = start_frame
+        self.tag = tag
         super().__init__(*args, **kwargs)
 
     def init_updater(self):
@@ -175,42 +176,55 @@ class KinectCppOfflineStreamPlot(O3DStreamPlot):
     def init_show(self):
         super().init_show()
         self.ctr.set_up(np.array([[0],[0],[1]]))
-        self.ctr.set_front(np.array([[0],[1],[0]]))
+        self.ctr.set_front(np.array([[0],[-1],[0]]))
         self.ctr.set_zoom(1)
 
     def generator(self, root_path: str = None):
-        from multiprocessing.dummy import Pool
         import cv2
-        from calib.utils import get_cpp_matrix
+        from run_calibration import run_kinect_calib_cpp
         from dataloader.result_loader import KinectResultLoader
 
         if root_path is None:
             root_path = self.input_path
 
-        transform_mats = get_cpp_matrix(root_path, self.devices)
-        loaders = {}
-        for device in self.devices:
-            param = []
-            param.append(dict(tag="kinect/{}/color".format(device), ext=".png"))
-            param.append(dict(tag="kinect/{}/pcls".format(device), ext=".npy"))
-            loader = KinectResultLoader(root_path, param)
-            loaders[device] = loader
-        for i in range(self.start_frame, min(len(v) for v in loaders.values())):
-            result = {}
-            frames = []
-            for j, dev in enumerate(self.devices):
-                if j == 0:
-                    frames.append(loaders[dev].select_by_id(i))
-                else:
-                    frames.append(loaders[dev].select_item(frames[0]["kinect/{}/pcls".format(self.devices[0])]["dt"], "dt", False))
+        transform_mats = run_kinect_calib_cpp(root_path, self.devices)
 
-            for d in range(len(self.devices)):
-                pcl = np.load(frames[d]["kinect/{}/pcls".format(self.devices[d])]["filepath"]).reshape(-1,3)/1000
-                color = cv2.imread(frames[d]["kinect/{}/color".format(self.devices[d])]["filepath"])
-                result[self.devices[d]] = o3d_pcl(pcl, colors=np.fliplr(color.reshape(-1, 3)/255)).transform(transform_mats[self.devices[d]])
-                # o3d_pcls = o3d_pcl(pcl, colors=np.fliplr(color.reshape(-1, 3)/255)).transform(transform_mats[device])
-                # result[device] = dict(pcl=np.asarray(o3d_pcls.points), colors=np.asarray(o3d_pcls.colors))
-            yield result
+        if self.tag == "id":
+            params = []
+            for device in self.devices:
+                params.append(dict(tag="kinect/{}/pcls".format(device), ext=".npy"))
+                params.append(dict(tag="kinect/{}/color".format(device), ext=".png"))
+            loader = KinectResultLoader(root_path, params)
+            for v in range(self.start_frame, len(loader)):
+                result = {}
+                pcl_frame = loader[v]
+                for dev in self.devices:
+                    pcl = np.load(pcl_frame["kinect/{}/pcls".format(dev)]["filepath"]).reshape(-1,3)/1000
+                    color = cv2.imread(pcl_frame["kinect/{}/color".format(dev)]["filepath"])
+                    result[dev] = o3d_pcl(pcl, colors=np.fliplr(color.reshape(-1, 3)/255)).transform(transform_mats[dev])
+                yield result
+
+        else:
+            pcl_params = []
+            color_params = []
+            for device in self.devices:
+                pcl_params.append(dict(tag="kinect/{}/pcls".format(device), ext=".npy"))
+                color_params.append(dict(tag="kinect/{}/color".format(device), ext=".png"))
+            pcl_loader = KinectResultLoader(root_path, pcl_params)
+            color_loader = KinectResultLoader(root_path, color_params)
+            for i in range(self.start_frame, len(pcl_loader)):
+            # for v in pcl_loader.file_dict["kinect/master/pcls"].loc[self.start_frame:, "st"]:
+                pcl_frame = pcl_loader.select_item(pcl_loader[i]["kinect/master/pcls"]["st"], "st", False)
+                result = {}
+
+                for dev in self.devices:
+                    pcl = np.load(pcl_frame["kinect/{}/pcls".format(dev)]["filepath"]).reshape(-1,3)/1000
+                    color_frame = color_loader.select_by_id(pcl_frame["kinect/{}/pcls".format(dev)]["id"])
+                    color = cv2.imread(color_frame["kinect/{}/color".format(dev)]["filepath"])
+                    result[dev] = o3d_pcl(pcl, colors=np.fliplr(color.reshape(-1, 3)/255)).transform(transform_mats[dev])
+                    # o3d_pcls = o3d_pcl(pcl, colors=np.fliplr(color.reshape(-1, 3)/255)).transform(transform_mats[device])
+                    # result[device] = dict(pcl=np.asarray(o3d_pcls.points), colors=np.asarray(o3d_pcls.colors))
+                yield result
 
     def show(self):
         gen = self.generator()
@@ -226,7 +240,7 @@ class OptiArbeManager():
     def generator(self):
         for i in range(30, len(self.arbe_loader)):
             arbe_row = self.arbe_loader[i]
-            opti_row = self.opti_loader.select_item(arbe_row["arbe"]["st"], "tm", False)
+            opti_row = self.opti_loader.select_item(arbe_row["arbe"]["st"], "st", False)
             yield opti_row["optitrack"], arbe_row["arbe"]
 
 

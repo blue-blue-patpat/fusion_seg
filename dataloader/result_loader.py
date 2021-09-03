@@ -39,12 +39,15 @@ class ResultLoader():
             res = dict(df[df[item_key]==value].iloc[0])
         else:
             # match closest
+            clfs_key = str(tag) + str(item_key)
             # persistent clf
-            if item_key not in self.clfs.keys():
+            if clfs_key not in self.clfs.keys():
                 X = np.array([df[item_key]]).T.astype(np.float64)
                 y = df.index
-                self.clfs[item_key] = KNeighborsClassifier(n_neighbors=1).fit(X, y)
-            res = dict(df.iloc[self.clfs[item_key].predict(np.array([[value]], dtype=np.float64))[0]])
+                if np.isnan(X).any():
+                    np.nan_to_num(X, False)
+                self.clfs[clfs_key] = KNeighborsClassifier(n_neighbors=1).fit(X, y)
+            res = dict(df.iloc[self.clfs[clfs_key].predict(np.array([[value]], dtype=np.float64))[0]])
         return res
 
     def select_by_id(self, idx):
@@ -141,8 +144,13 @@ class KinectResultLoader(ResultLoader):
         self.run()
 
     def select_by_skid(self, skid):
-        idx = self.select_item_in_tag(skid, "skid", "kinect/{}/skeleton".format(self.device))["id"]
-        return self.select_item(idx, "id")
+        idx = -1
+        try:
+            idx = self.select_item_in_tag(skid, "skid", "kinect/{}/skeleton".format(self.device))["id"]
+            return self.select_item(idx, "id")
+        except Exception as e:
+            print(idx, skid)
+            raise e
 
     def generator(self, item_key="id"):
         print("[KinectResultLoader] WARNING: May meet empty skeleton. Try generator_by_skeleton instead.")

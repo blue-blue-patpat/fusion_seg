@@ -18,6 +18,8 @@ def parse_opti_csv(csv_path):
 
     markers_array = np.asarray(markers_df, np.float64).reshape(num_of_frames,-1,3)
     bones_array = np.asarray(bones_df, np.float64).reshape(num_of_frames,-1,7)
+    if np.isnan(markers_array).any():
+        np.nan_to_num(markers_array, False)
 
     for i in range(num_of_frames):
         tm = start_time + float(df.iloc[i+4, 1])

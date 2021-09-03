@@ -37,7 +37,7 @@ def extract_skeleton(parent_path, *devices):
             for body in frame["bodies"]:
                 bodies.append(np.hstack((np.asarray(body["joint_positions"]), np.asarray(body["joint_orientations"]))))
             if bodies:
-                filename = "id={}_skid={}_st={}_dt={}".format(frame["frame_id"], i, float(params["starttm"])+frame["timestamp_usec"]/1000000, float(params["tasktm"])+frame["timestamp_usec"])
+                filename = "id={}_skid={}_st={}_dt={}".format(frame["frame_id"], i, float(params["starttm"])+frame["timestamp_usec"]/1000000, float(params["tasktm"])+frame["timestamp_usec"]/1000000)
                 save_path = os.path.join(file_path, "skeleton", filename)
                 
                 pool.apply_async(process, (save_path, bodies, info))

@@ -31,7 +31,7 @@ def stream_k_jnts_k_pcls(root_path):
         skeleton = np.load(item["kinect/master/skeleton"]["filepath"]) @ trans_mats["kinect_master"]["R"].T + trans_mats["kinect_master"]["t"]
 
         # only process skeleton 0
-        return skeleton, pcl
+        yield skeleton, pcl
 
 
 def stream_o_jnts_k_pcls(root_path, time_key = "st"):
@@ -53,6 +53,7 @@ def stream_o_jnts_k_pcls(root_path, time_key = "st"):
     
     trans_mats = to_radar_transform_mat(root_path)
 
+    i = 0
     for k_frame in k_loader.generator_by_skeleton():
         frame_time = k_frame["kinect/master/pcls"][time_key]
         o_frame = o_loader.select_item(frame_time, 'st', exact=False)
@@ -66,4 +67,4 @@ def stream_o_jnts_k_pcls(root_path, time_key = "st"):
         skeleton = np.load(o_frame["optitrack"]["filepath"]) @ trans_mats["optitrack"]["R"].T + trans_mats["optitrack"]["t"]
 
         # only process skeleton 0
-        return skeleton, pcl
+        yield skeleton, pcl, "id={}_{}={}".format(i, time_key, frame_time)

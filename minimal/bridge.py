@@ -70,27 +70,24 @@ class JointsBridge():
         point_cloud1.points = open3d.utility.Vector3dVector(content)
         point_cloud1.paint_uniform_color([1,0,0])
         '''
-        def cos(a,b):
-            return a/math.sqrt(a*a+b*b)
-
         g=(content[4,:]+content[11,:])/2  #旋转r1到y轴
 
         h=[[1, 0, 0],   #绕x旋转矩阵
-            [0, cos(g[1],g[2]), -cos(g[2],g[1])],
-            [0, cos(g[2],g[1]), cos(g[1],g[2])]]
+            [0, included_cos(g[1],g[2]), -included_cos(g[2],g[1])],
+            [0, included_cos(g[2],g[1]), included_cos(g[1],g[2])]]
 
         i=np.dot(g,h)
 
-        j=[[cos(i[1], i[0]), -cos(i[0],i[1]),0], #绕z旋转矩阵
-            [cos(i[0],i[1]), cos(i[1],i[0]), 0],
+        j=[[included_cos(i[1], i[0]), -included_cos(i[0],i[1]),0], #绕z旋转矩阵
+            [included_cos(i[0],i[1]), included_cos(i[1],i[0]), 0],
             [0, 0, 1]]
 
         k=np.dot(h,j)
         l=np.dot(content,k)
 
-        m=[[cos(l[4,0],l[4,2]),0,cos(l[4,2],l[4,0])],  #绕y旋转矩阵
+        m=[[included_cos(l[4,0],l[4,2]),0,included_cos(l[4,2],l[4,0])],  #绕y旋转矩阵
             [0,1,0],
-            [-cos(l[4,2],l[4,0]),0,cos(l[4,0],l[4,2])]]
+            [-included_cos(l[4,2],l[4,0]),0,included_cos(l[4,0],l[4,2])]]
         
         self.k_jnts = np.dot(l,m)   #乘到最后是前三列最终
         R = np.dot(k,m)    #matrix是最终旋转矩阵
@@ -115,36 +112,33 @@ class JointsBridge():
         if pcl is None:
             pcl = self.pcl
         # tranfer
-        t = -np.array([smpl_joints[6]]) #坐标规范下6号点为原点
+        self.t = -np.array([smpl_joints[6]]) #坐标规范下6号点为原点
 
         # apply transfer to all joints
-        smpl_joints = smpl_joints + np.repeat(t, smpl_joints.shape[0], 0)
-
-        def cos(a,b):
-            return a/math.sqrt(a*a+b*b)
+        smpl_joints = smpl_joints + np.repeat(self.t, smpl_joints.shape[0], 0)
 
         g=smpl_joints[9,:]  #旋转r1到y轴
 
         h=[[1, 0, 0],   #绕x旋转矩阵
-            [0, cos(g[1],g[2]), -cos(g[2],g[1])],
-            [0, cos(g[2],g[1]), cos(g[1],g[2])]]
+            [0, included_cos(g[1],g[2]), -included_cos(g[2],g[1])],
+            [0, included_cos(g[2],g[1]), included_cos(g[1],g[2])]]
 
         i=np.dot(g,h)
 
-        j=[[cos(i[1], i[0]), -cos(i[0],i[1]),0], #绕z旋转矩阵
-            [cos(i[0],i[1]), cos(i[1],i[0]), 0],
+        j=[[included_cos(i[1], i[0]), -included_cos(i[0],i[1]),0], #绕z旋转矩阵
+            [included_cos(i[0],i[1]), included_cos(i[1],i[0]), 0],
             [0, 0, 1]]
 
         k=np.dot(h,j)
         l=np.dot(smpl_joints,k)
 
-        m=[[cos(l[13,0],l[13,2]),0,cos(l[13,2],l[13,0])],  #绕y旋转矩阵
+        m=[[included_cos(l[13,0],l[13,2]),0,included_cos(l[13,2],l[13,0])],  #绕y旋转矩阵
             [0,1,0],
-            [-cos(l[13,2],l[13,0]),0,cos(l[13,0],l[13,2])]]
+            [-included_cos(l[13,2],l[13,0]),0,included_cos(l[13,0],l[13,2])]]
         
         self.smpl_jnts = np.dot(l,m)   #乘到最后是前三列最终
-        R = np.dot(k,m)    #matrix是最终旋转矩阵
-        self.pcl = np.dot(pcl + np.repeat(t, pcl.shape[0], 0), R)
+        self.R = np.dot(k,m)    #matrix是最终旋转矩阵
+        self.pcl = np.dot(pcl + np.repeat(self.t, pcl.shape[0], 0), self.R)
         return self.smpl_jnts, self.pcl
 
     def update_smpl_joints_from_kinect_joints(self, kinect_joints=None):
@@ -214,15 +208,90 @@ class JointsBridge():
         ])
         return self.smpl_jnts
 
+    def smpl_from_opti(self,opti_jnts):
+        self.smpl_jnts = np.array([
+            # SMPL              Kinect
+            # 0_pelvis          0.8*0_PELVIS+0.2*1_SPINE_NAVAL
+            0.8*(0.5*opti_jnts(4)+0.5*opti_jnts(5))+0.2*0.5*(0.2*opti_jnts(25)+0.4*(opti_jnts(0)+opti_jnts(2))+0.2*opti_jnts(31)+0.4*(opti_jnts(1)+opti_jnts(3))),
+            # 1_left leg root   18_HIP_LEFT
+            0.2*opti_jnts(25)+0.4*(opti_jnts(0)+opti_jnts(2)),
+            # 2_right leg root  22_HIP_RIGHT
+            0.2*opti_jnts(31)+0.4*(opti_jnts(1)+opti_jnts(3)),
+            # 3_lowerback       1_SPINE_NAVAL
+            0.25*(opti_jnts(0)+opti_jnts(1)+opti_jnts(2)+opti_jnts(3)),
+            # 4_left knee       19_KNEE_LEFT
+            opti_jnts(25),
+            # 5_right knee      23_KNEE_RIGHT
+            opti_jnts(31),
+            # 6_upperback       0.75*2_SPINE_CHEST+0.25*1_SPINE_NAVAL
+            0.25*(0.25*(opti_jnts(0)+opti_jnts(1)+opti_jnts(2)+opti_jnts(3)))+0.75*(0.5*(0.25*(opti_jnts(0)+opti_jnts(1)+opti_jnts(2)+opti_jnts(3))+0.5*(0.4 * opti_jnts(6) + 0.3 * opti_jnts(5) + 0.3 * opti_jnts(12)+0.4 * opti_jnts(7) + 0.3 * opti_jnts(5) + 0.3 * opti_jnts(4)))),
+            # 7_left ankle      20_ANKLE_LEFT
+            opti_jnts(27),
+            # 8_right ankle     24_ANKLE_RIGHT
+            opti_jnts(33),
+            # 9_thorax          2_SPINE_CHEST
+            0.5*(0.25*(opti_jnts(0)+opti_jnts(1)+opti_jnts(2)+opti_jnts(3))+0.5*(0.4 * opti_jnts(6) + 0.3 * opti_jnts(5) + 0.3 * opti_jnts(12)+0.4 * opti_jnts(7) + 0.3 * opti_jnts(5) + 0.3 * opti_jnts(4))),
+            # 10_left toes      21_FOOT_LEFT
+            0.5*opti_jnts(28)+0.5*opti_jnts(29),
+            # 11_right toes     25_FOOT_RIGHT
+            0.5*opti_jnts(35)+0.5*opti_jnts(36),
+            # 12_lowerneck      3_NECK
+            0.5*opti_jnts(4)+0.5*opti_jnts(5),
+            # 13_left clavicle  0.4*4_CLAVICLE_LEFT+0.3*2_SPINE_CHEST+0.3*5_SHOULDER_LEFT
+            0.4 * opti_jnts(6) + 0.3 * opti_jnts(5) + 0.3 * opti_jnts(12),
+            # 14_right clavicle 0.4*11_CLAVICLE_RIGHT+0.3*2_SPINE_CHEST+0.3*12_SHOULDER_RIGHT
+            0.4 * opti_jnts(7) + 0.3 * opti_jnts(5) + 0.3 * opti_jnts(4),
+            # 15_upperneck      26_HEAD
+            0.2*opti_jnts(8)+0.8*(0.5*opti_jnts(4)+0.5*opti_jnts(5)),
+            # 16_left armroot   0.9*5_SHOULDER_LEFT+0.1*4_CLAVICLE_LEFT
+            opti_jnts(12),
+            # 17_right armroot  0.9*12_SHOULDER_RIGHT+0.1*11_CLAVICLE_RIGHT
+            opti_jnts(19),
+            # 18_left elbow     6_ELBOW_LEFT
+            opti_jnts(13),
+            # 19_right elbow  13_ELBOW_RIGHT
+            opti_jnts(20),
+            # 20_left wrist     7_WRIST_LEFT
+            0.5*opti_jnts(16)+0.5*opti_jnts(17),
+            # 21_right wrist    14_WRIST_RIGHT
+            0.5*opti_jnts(23)+0.5*opti_jnts(24),
+            # 22_left hand      8_HAND_LEFT
+            opti_jnts(15),
+            # 23_right hand     15_HAND_RIGHT
+            opti_jnts(22),
+            # ext_left finger tip   9_HANDTIP_LEFT
+            2*opti_jnts(15)-0.5*opti_jnts(16)-0.5*opti_jnts(17),
+            # ext_right finger tip  16_HANDTIP_RIGHT
+            2*opti_jnts(22)-0.5*opti_jnts(23)-0.5*opti_jnts(24),
+            # ext_left toe tip      21_FOOT_LEFT+0.3*(21_FOOT_LEFT-20_ANKLE_LEFT)
+            0.5*opti_jnts(28)+0.5*opti_jnts(29) + 0.3 * (0.5*opti_jnts(28)+0.5*opti_jnts(29) - opti_jnts(27)),
+            # ext_right toe tip     25_FOOT_RIGHT+0.3*(25_FOOT_RIGHT-24_ANKLE_RIGHT)
+            0.5*opti_jnts(34)+0.5*opti_jnts(35) + 0.3 * (0.5*opti_jnts(34)+0.5*opti_jnts(35) - opti_jnts(33)),
+            # ext_head_top          27_NOSE+1.5*((28_EYE_LEFT-27_NOSE)+(30_EYE_RIGHT-27_NOSE))
+            opti_jnts(8)
+        ])
+        return self.smpl_jnts
+
     def normalization(self, jnts=None, pcl=None):
         if jnts is None:
             jnts = self.smpl_jnts
         if pcl is None:
             pcl = self.pcl
         # x_norm = np.linalg.norm(jnts, axis = 0, keepdims = True, ord=np.inf)
-        origin_scale =  np.max(np.abs(jnts))
-        x_norm = np.repeat(origin_scale, 3)
+        self.scale = np.max(np.abs(jnts))
+        x_norm = np.repeat(self.scale, 3)
         self.smpl_jnts = jnts / x_norm
         self.pcl = pcl/x_norm
         #self.smpl_jnts,self.pcl=self.smpl_joints_transfer_coordinates(self.smpl_jnts)
-        return self.smpl_jnts, self.pcl, origin_scale
+        return self.smpl_jnts, self.pcl
+
+    def revert_transform(self):
+        return np.linalg.inv(self.R.T), -self.t, self.scale
+
+    def save_revert_transform(self, file_path):
+        R, t, scale = self.revert_transform()
+        np.savez(file_path, R=R, t=t, scale=scale)
+
+
+def included_cos(a,b):
+    return a/math.sqrt(a*a+b*b)

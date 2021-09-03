@@ -29,11 +29,14 @@ def compute_single_transform(color_frame: np.ndarray, pcl_frame: np.ndarray, int
     return _R, _t, pcl
 
 
-def run_kinect_calib_cpp(filepath):
+def run_kinect_calib_cpp(root_path, devices:list=["master","sub1","sub2"]):
     import json
-    with open(filepath,'r',encoding='utf8')as f:
-        json_data = json.load(f)
-    trans_mat = np.asarray(list(json_data['value0']['matrix'].values()), np.float64).reshape(4,4)
+    trans_mat = {}
+    num_dict = {"master":0, "sub1":1, "sub2":2}
+    for d in devices:
+        with open(root_path+'/calib/kinect/matrix{}.json'.format(num_dict[d]),'r',encoding='utf8') as f:
+            json_data = json.load(f)
+        trans_mat[d] = np.asarray(list(json_data['value0']['matrix'].values()), np.float64).reshape(4,4)
     return trans_mat
 
 
@@ -139,14 +142,13 @@ def run_kinect_calib_online(kwargs):
     return results
 
 
-def run_optitrack_calib(kwargs):
+def run_optitrack_calib(kwargs=None, root_path="/__test__/default"):
     from dataloader.result_loader import OptitrackCalibResultLoader
     from optitrack.calib import read_csv, trans_matrix
 
-    output_path = os.path.join(kwargs["output"], "optitrack")
+    output_path = os.path.join(kwargs.get("output",root_path+"/calib/"), "optitrack")
     clean_dir(output_path)
-
-    loader = OptitrackCalibResultLoader(kwargs["input"])
+    loader = OptitrackCalibResultLoader(kwargs.get("input", root_path))
 
     coords = read_csv(loader.file_dict["calib/input"].iloc[0]["filepath"])
     R, t = trans_matrix(coords)

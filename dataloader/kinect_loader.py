@@ -737,6 +737,12 @@ def _get_config(type="mas") -> Config:
                     color_resolution=ColorResolution.RES_1536P,
                     depth_mode=DepthMode.NFOV_UNBINNED,
                     wired_sync_mode=WiredSyncMode.SUBORDINATE,)
+    elif type == "alone":
+        return Config(
+                    camera_fps=FPS.FPS_30,
+                    color_resolution=ColorResolution.RES_1536P,
+                    depth_mode=DepthMode.NFOV_UNBINNED,
+                    wired_sync_mode=WiredSyncMode.STANDALONE,)
     elif type == "skeleton_mas":
         return config(
 	    			color_resolution=_k4a.K4A_COLOR_RESOLUTION_1536P,
