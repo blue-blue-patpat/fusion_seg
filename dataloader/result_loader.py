@@ -1,9 +1,9 @@
 import os
 import numpy as np
 import pandas as pd
-import cv2 as cv
 from sklearn.neighbors import KNeighborsClassifier
 from dataloader.utils import file_paths_from_dir, filename_decoder
+from sync.offsets import Offsets
 
 
 class ResultLoader():
@@ -76,6 +76,16 @@ class ResultLoader():
 
     def __len__(self):
         return min([len(v) for v in self.file_dict.values()])
+
+    def __repr__(self) -> str:
+        res = super().__repr__()
+        for tag, df in self.file_dict.items():
+            res += "\ntag={}\tlen={}".format(tag, len(df))
+        res += "\n"
+        return res
+
+    def __str__(self) -> str:
+        return self.__repr__()
 
 
 class ArbeResultLoader(ResultLoader):
@@ -199,3 +209,194 @@ class OptitrackCSVLoader(ResultLoader):
         else:
             self.params = params
         self.run()
+
+
+class ResultFileLoader():
+    def __init__(self, root_path: str, skip_head: int=0, skip_tail: int=0,
+                 enabled_sources: list=None, disabled_sources: list=[],
+                 offsets: dict=None) -> None:
+        """
+        ResultFileLoader init
+
+        :param root_path: root path
+        :param skip_head: skip first $skip_head$ radar frames, default 0
+        :param skip_tail: skip first $skip_tail$ radar frames, default 0
+        :param enabled_sources: enabled result sources, default enable all sources
+        :param disabled_sources: disabled result sources, default []
+        :param offsets: if $root_path$/offsets.txt doesn't exist, init offsets with $offsets$
+        :returns: None
+        """
+        self.root_path = root_path
+
+        self.skip_head = skip_head
+        self.skip_tail = skip_tail
+
+        # Init file sources
+        if enabled_sources is None:
+            self.sources = ["arbe", "master", "sub1", "sub2", "optitrack", "mesh", "calib"]
+        else:
+            self.sources = enabled_sources
+
+        # Remove disabled sources
+        _sources = list(set(self.sources) - set(disabled_sources))
+        _sources.sort(key=self.sources.index)
+        self.sources = _sources
+
+        # Init data
+        self.init_arbe_source()
+        self.init_kinect_source()
+        self.init_optitrack_source()
+        self.init_mesh_source()
+        self.init_calib_source()
+
+        # Verify if offsets can be restored from file
+        if Offsets.verify_file(root_path):
+            # Init from file
+            self.offsets = Offsets.from_file(root_path)
+        elif isinstance(offsets, dict):
+            # Init from arg
+            self.offsets = Offsets(offsets)
+        else:
+            # Init empty offsets
+            self.offsets = Offsets(dict(zip(self.sources, [0]*len(self.sources))), base=self.sources[0])
+
+        self.fps = 30
+
+        self.results = self.info = {}
+
+    def init_arbe_source(self):
+        """
+        Init Arbe radar results
+        """
+        if "arbe" not in self.sources:
+            print("[ResultFileLoader] Source 'arbe' is not enabled, may cause unexpected errors.")
+            return
+
+        self.a_loader = ArbeResultLoader(self.root_path)
+
+        # Verify if params are illegal
+        if len(self.a_loader) < (self.skip_head + self.skip_tail):
+            raise IndexError("[ResultFileLoader] Skip count exceeds radar frame limit.")
+
+    def init_kinect_source(self):
+        """
+        Init Azure Kinect results
+        """
+        self.k_mas_loader = KinectResultLoader(self.root_path, device="master") if "master" in self.sources else None
+        self.k_sub1_loader = KinectResultLoader(self.root_path, device="sub1") if "sub1" in self.sources else None
+        self.k_sub2_loader = KinectResultLoader(self.root_path, device="sub2") if "sub2" in self.sources else None
+
+    def init_optitrack_source(self):
+        """
+        Init OptiTrack body tracker results
+        """
+        self.o_loader = OptitrackResultLoader(self.root_path) if "optitrack" in self.sources else None
+            
+    def init_mesh_source(self):
+        if "mesh" in self.sources:
+            # TODO: complete mesh init
+            self.mesh_loader = ResultLoader()
+
+    def init_calib_source(self):
+        """
+        Init transform matrix
+        """
+        from calib.utils import to_radar_transform_mat
+
+        if "calib" in self.sources:
+            self.trans = to_radar_transform_mat(self.root_path)
+
+    def select_kinect_trans_item_by_t(self, k_loader: KinectResultLoader, t: float) -> None:
+        """
+        Select Kinect transformed results by timestamp
+        """
+        _t = t + self.offsets[k_loader.device] / self.fps
+        res = k_loader.select_item(_t, "st", False)
+        trans_mat = self.trans["kinect_{}".format(k_loader.device)]
+        self.results.update({
+            # "{}_pcl".format(k_loader.device): np.load(res["kinect/{}/pcls".format(k_loader.device)]["filepath"]) / 1000 @ trans_mat["R"] + trans_mat["t"],
+            "{}_skeleton".format(k_loader.device): np.load(res["kinect/{}/skeleton".format(k_loader.device)]["filepath"])[:,:,:3].reshape(-1,3) / 1000 @ trans_mat["R"].T + trans_mat["t"]
+        })
+        self.info.update({
+            k_loader.device: res
+        })
+
+    def select_trans_optitrack_item_by_t(self, o_loader: OptitrackResultLoader, t: float) -> None:
+        """
+        Select OptiTrack transformed results by timestamp
+        """
+        _t = t + self.offsets["optitrack"] / self.fps
+        res = o_loader.select_item(_t, "st", False)
+        arr = np.load(res["optitrack"]["filepath"])
+        self.results.update(dict(
+            optitrack=arr["markers"][:,:,:3].reshape(-1,3) @ self.trans["optitrack"]["R"].T + self.trans["optitrack"]["t"],
+            optitrack_person_count=arr["markers"].shape[0]
+        ))
+        self.info.update(dict(
+            optitrack = res
+        ))
+
+    def __getitem__(self, index: int) -> tuple:
+        """
+        Returns the $index$^th radar frame with its synchronized frames of other devices
+        """
+        i = index + self.skip_head
+        if index not in range(0, self.__len__()):
+            raise IndexError("[ResultFileLoader] Index out of range {}.".format(range(0, self.__len__())))
+        
+        arbe_res = self.a_loader[i]
+        self.results = dict(
+            arbe=np.load(arbe_res["arbe"]["filepath"])[:,:3]
+        )
+        self.info = dict(
+            arbe=arbe_res
+        )
+
+        t = float(arbe_res["arbe"]["st"])
+        if self.k_mas_loader:
+            self.select_kinect_trans_item_by_t(self.k_mas_loader, t)
+        if self.k_sub1_loader:
+            self.select_kinect_trans_item_by_t(self.k_sub1_loader, t)
+        if self.k_sub2_loader:
+            self.select_kinect_trans_item_by_t(self.k_sub2_loader, t)
+        if self.o_loader:
+            self.select_trans_optitrack_item_by_t(self.o_loader, t)
+        return self.results, self.info
+
+    def __len__(self):
+        return len(self.a_loader) - self.skip_head - self.skip_tail
+
+    def __repr__(self):
+        res = super().__repr__()
+        res += "\n----\noffsets="
+        res += str(self.offsets)
+        res += "\n----\n"
+
+        if "arbe" in self.sources:
+            res += str(self.a_loader)
+            res += "----\n"
+
+        if "master" in self.sources:
+            res += str(self.k_mas_loader)
+            res += "----\n"
+
+        if "sub1" in self.sources:
+            res += str(self.k_sub1_loader)
+            res += "----\n"
+
+        if "sub2" in self.sources:
+            res += str(self.k_sub2_loader)
+            res += "----\n"
+
+        if "optitrack" in self.sources:
+            res += str(self.o_loader)
+            res += "----\n"
+
+        if "mesh" in self.sources:
+            res += str(self.mesh_loader)
+            res += "----\n"
+
+        return res
+
+    def __str__(self) -> str:
+        return self.__repr__()

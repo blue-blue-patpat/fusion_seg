@@ -1,15 +1,17 @@
 from visualization.utils import O3DStreamPlot, o3d_coord, o3d_pcl, o3d_plot, o3d_skeleton, pcl_filter
 import numpy as np
 import open3d as o3d
-from dataloader.result_loader import KinectResultLoader, ArbeResultLoader, OptitrackResultLoader
-from kinect.config import EXTRINSIC_MAS_ARBE, KINECT_SKELETON_LINES
+from dataloader.result_loader import KinectResultLoader, ArbeResultLoader, OptitrackResultLoader, ResultFileLoader
+from kinect.config import KINECT_SKELETON_LINES
+from calib.utils import kinect_transform_mat
 
 
 class SkelArbeManager():
-    def __init__(self, result_path, *devices) -> None:
+    def __init__(self, result_path, *devices, start_frame=100) -> None:
         if not devices:
             devices = ("master","sub1","sub2")
         self.devices = devices
+        self.start_frame = start_frame
         self.k_loader_dict = {}
         for device in devices:
             param = [dict(tag="kinect/{}/skeleton".format(device), ext=".npy")]
@@ -21,11 +23,9 @@ class SkelArbeManager():
             print("No {}".format(device))
             exit(1)
         param = "kinect/{}/skeleton".format(device)
-        for i in range(90, len(self.a_loader)):
+        for i in range(self.start_frame, len(self.a_loader)):
             a_row = self.a_loader[i]
             k_row = self.k_loader_dict[device].select_item(a_row["arbe"]["st"], "st", False)
-            # k_row = self.k_loader_dict[device].select_by_skid(i)
-            # a_row = self.a_loader.select_item(k_row[param]["st"], "tm", False)
             yield k_row[param], a_row["arbe"]
 
 
@@ -53,6 +53,10 @@ class KinectArbeStreamPlot(O3DStreamPlot):
         if device is None:
             device = self.devices[0]
         input_manager = SkelArbeManager(self.input_path, *self.devices)
+
+        # transform
+        kinect_trans_mat = kinect_transform_mat(self.input_path)
+
         for kinect_row, arbe_row in input_manager.generator(device):
             # load numpy from file
             kinect_arr = np.load(kinect_row["filepath"])
@@ -60,10 +64,7 @@ class KinectArbeStreamPlot(O3DStreamPlot):
 
             person_count = kinect_arr.shape[0]
             kinect_skeleton = kinect_arr[:,:,:3].reshape(-1,3)/1000
-
-            # transform
-            kinect_arbe_matix = EXTRINSIC_MAS_ARBE
-            skeleton_pcl = kinect_skeleton @ kinect_arbe_matix["R"].T + kinect_arbe_matix["t"]
+            skeleton_pcl = kinect_skeleton @ kinect_trans_mat["kinect_"+device]["R"].T + kinect_trans_mat["kinect_"+device]["t"]
 
             # filter pcl with naive bounding box
             arbe_pcl = pcl_filter(skeleton_pcl, arbe_arr[:,:3], 0.5)
@@ -181,13 +182,13 @@ class KinectOfflineStreamPlotCpp(O3DStreamPlot):
 
     def generator(self, root_path: str = None):
         import cv2
-        from run_calibration import run_kinect_calib_cpp
+        from calib.utils import kinect_to_world_transform_cpp
         from dataloader.result_loader import KinectResultLoader
 
         if root_path is None:
             root_path = self.input_path
 
-        transform_mats = run_kinect_calib_cpp(root_path, self.devices)
+        transform_mats = kinect_to_world_transform_cpp(root_path, self.devices)
 
         if self.tag == "id":
             params = []
@@ -213,7 +214,6 @@ class KinectOfflineStreamPlotCpp(O3DStreamPlot):
             pcl_loader = KinectResultLoader(root_path, pcl_params)
             color_loader = KinectResultLoader(root_path, color_params)
             for i in range(self.start_frame, len(pcl_loader)):
-            # for v in pcl_loader.file_dict["kinect/master/pcls"].loc[self.start_frame:, "st"]:
                 pcl_frame = pcl_loader.select_item(pcl_loader[i]["kinect/master/pcls"]["st"], "st", False)
                 result = {}
 
@@ -222,8 +222,6 @@ class KinectOfflineStreamPlotCpp(O3DStreamPlot):
                     color_frame = color_loader.select_by_id(pcl_frame["kinect/{}/pcls".format(dev)]["id"])
                     color = cv2.imread(color_frame["kinect/{}/color".format(dev)]["filepath"])
                     result[dev] = o3d_pcl(pcl, colors=np.fliplr(color.reshape(-1, 3)/255)).transform(transform_mats[dev])
-                    # o3d_pcls = o3d_pcl(pcl, colors=np.fliplr(color.reshape(-1, 3)/255)).transform(transform_mats[device])
-                    # result[device] = dict(pcl=np.asarray(o3d_pcls.points), colors=np.asarray(o3d_pcls.colors))
                 yield result
 
     def show(self):
@@ -309,4 +307,69 @@ class OptitrackArbeStreamPlot(O3DStreamPlot):
                     pcl=arbe_pcl,
                     color=[0,1,0]
                 ),
+            )
+
+
+class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
+    def __init__(self, input_path: str, main_device="master", angle_of_view=[0,-1,0,1], *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.input_path = input_path
+        self.main_device = main_device
+        self.angle_of_view = angle_of_view
+        self.skip_head = kwargs.get("skip_head", 600)
+        self.skip_tail = kwargs.get("skip_tail", 700)
+        self.file_loader = ResultFileLoader(
+            self.input_path, self.skip_head, self.skip_tail,
+            enabled_sources=["arbe", "optitrack", self.main_device, "calib"]
+        )
+
+    def init_updater(self):
+        self.plot_funcs = dict(
+            opti_marker=o3d_skeleton,
+            kinect_skeleton = o3d_skeleton,
+            arbe_pcls=o3d_pcl)
+
+    def init_show(self):
+        super().init_show()
+        self.ctr.set_up(np.array([0, 0, 1]))
+        self.ctr.set_front(np.array(self.angle_of_view[:3]))
+        self.ctr.set_zoom(self.angle_of_view[3])
+        
+    def generator(self):
+        from optitrack.config import marker_lines
+
+        for i in range(len(self.file_loader)):
+
+            #load numpy from file
+            frame, info = self.file_loader[i]
+
+            # filter pcl with naive bounding box
+            arbe_pcl = pcl_filter(frame["optitrack"], frame["arbe"], 0.5)
+
+            # init lines
+            kinect_lines =  KINECT_SKELETON_LINES
+            opti_lines = marker_lines
+            if frame["optitrack_person_count"] > 1:
+                for p in range(1, frame["optitrack_person_count"]):
+                    kinect_lines = np.vstack((kinect_lines,kinect_lines+p*32))
+                    opti_lines = np.vstack((opti_lines,opti_lines+p*37))
+
+            kinect_colors = np.array([[0,0,1]]*len(kinect_lines))
+            opti_colors = np.array([[1,0,0]]*len(opti_lines))
+
+            yield dict(
+                kinect_skeleton = dict(
+                    skeleton = frame["{}_skeleton".format(self.main_device)],
+                    lines = kinect_lines,
+                    colors = kinect_colors
+                ),
+                arbe_pcls = dict(
+                    pcl = arbe_pcl,
+                    color = [0,1,0]
+                ),
+                opti_marker = dict(
+                    skeleton = frame["optitrack"],
+                    lines = opti_lines,
+                    colors = opti_colors
+                )
             )

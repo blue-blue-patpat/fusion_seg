@@ -3,10 +3,7 @@ import argparse
 import cv2
 import numpy as np
 import open3d as o3d
-from kinect.calib import calibrate_kinect
-from kinect.config import MAS, SUB1, SUB2, INTRINSIC
 from dataloader.utils import clean_dir
-from dataloader.result_loader import KinectResultLoader
 from visualization.utils import o3d_plot, o3d_pcl, o3d_coord
 
 
@@ -20,6 +17,8 @@ def compute_single_transform(color_frame: np.ndarray, pcl_frame: np.ndarray, int
     :param aruco_size: tag size in mm
     :return: 3*3 R, 1*3 t, open3d.PointCloud pcl
     """
+    from kinect.calib import calibrate_kinect
+    
     # R, t is rotation and translate matrix from world to camera
     R, t = calibrate_kinect(color_frame, pcl_frame, intrinsic_mtx=intrinsic, aruco_size=aruco_size)
     _R = np.linalg.inv(R)
@@ -27,17 +26,6 @@ def compute_single_transform(color_frame: np.ndarray, pcl_frame: np.ndarray, int
     pcl = o3d_pcl(pcl_frame.reshape(-1,3)/1000 @ _R.T + _t)
     pcl.colors = o3d.utility.Vector3dVector(color_frame.reshape(-1, 3)/255)
     return _R, _t, pcl
-
-
-def run_kinect_calib_cpp(root_path, devices:list=["master","sub1","sub2"]):
-    import json
-    trans_mat = {}
-    num_dict = {"master":0, "sub1":1, "sub2":2}
-    for d in devices:
-        with open(root_path+'/calib/kinect/matrix{}.json'.format(num_dict[d]),'r',encoding='utf8') as f:
-            json_data = json.load(f)
-        trans_mat[d] = np.asarray(list(json_data['value0']['matrix'].values()), np.float64).reshape(4,4)
-    return trans_mat
 
 
 def run_kinect_viewer(kwargs: dict):
@@ -49,6 +37,9 @@ def run_kinect_calib_offline(kwargs: dict):
     """
     Compute R, t and colored pcl for a all cameras using mkv
     """
+    from dataloader.result_loader import KinectResultLoader
+    from kinect.config import MAS, SUB1, SUB2, INTRINSIC
+
     output_path = os.path.join(kwargs["output"], "kinect")
     clean_dir(output_path)
     loader = KinectResultLoader(kwargs["input"], params=[
@@ -86,6 +77,7 @@ def run_kinect_calib_online(kwargs):
     from multiprocessing.dummy import Pool
     from pyk4a import PyK4A
     from dataloader.kinect_loader import _get_config, _get_device_ids
+    from kinect.config import MAS, SUB1, SUB2, INTRINSIC
     
     output_path = os.path.join(kwargs["output"], "kinect")
     clean_dir(output_path)
@@ -142,21 +134,75 @@ def run_kinect_calib_online(kwargs):
     return results
 
 
-def run_optitrack_calib(kwargs=None, root_path="/__test__/default"):
+def run_optitrack_calib(kwargs):
     from dataloader.result_loader import OptitrackCalibResultLoader
     from optitrack.calib import read_csv, trans_matrix
 
-    output_path = os.path.join(kwargs.get("output",root_path+"/calib/"), "optitrack")
+    output_path = os.path.join(kwargs["output"], "optitrack")
     clean_dir(output_path)
-    loader = OptitrackCalibResultLoader(kwargs.get("input", root_path))
+    loader = OptitrackCalibResultLoader(kwargs["output"])
 
     coords = read_csv(loader.file_dict["calib/input"].iloc[0]["filepath"])
     R, t = trans_matrix(coords)
 
-    np.savez(os.path.join(output_path, "transform"), R=R, t=t)
+    np.savez(os.path.join(output_path, "optitrack_to_radar"), R=R, t=t)
 
     o3d_plot([o3d_pcl(coords @ R.T + t)], size=0.1)
     return R, t
+
+
+def run_kinect_calib_cpp(kwargs):
+    import json
+    root_path = kwargs["input"]
+    devices = list(kwargs.get("devices", 'master,sub1,sub2').split(','))
+    os.system("ignoredata/kinect_files/calib/calib_k4a {path}/kinect/master/out.mkv {path}/kinect/sub1/out.mkv {path}/kinect/sub2/out.mkv".format(path=root_path))
+    os.system("mv *.ply ignoredata/kinect_files/calib/")
+    clean_dir(root_path+"/calib/kinect")
+    for i, dev in enumerate(devices):
+        json_file = root_path+'/kinect/{}/matrix{}.json'.format(dev, i)
+        with open(json_file,'r',encoding='utf8') as f:
+            json_data = json.load(f)
+        trans_mat = np.asarray(list(json_data['value0']['matrix'].values()), np.float64).reshape(4,4)
+        np.savez(os.path.join(root_path, "calib/kinect/{}_to_world".format(dev)), R=trans_mat[:3,:3], t=trans_mat[:3,3])
+        os.remove(json_file)
+    try:
+        run_optitrack_calib(kwargs)
+    except:
+        pass
+
+
+def run_modify_offset(kwargs):
+    from dataloader.result_loader import ResultFileLoader
+    from visualization.o3d_plot import KinectArbeOptitrackStreamPlot
+
+    root_path = kwargs["input"]
+    print(ResultFileLoader(root_path, disabled_sources=["mesh"]))
+
+    plt = KinectArbeOptitrackStreamPlot(root_path)
+
+    while True:
+        plt.show()
+        print("Current Offsets:")
+        print(plt.file_loader.offsets)
+        print("\n----")
+        new_offsets = dict([arg.split('=') for arg in input("Set new offset value in 'key1=value1,key2=value2' format:").split(",") if '=' in arg])
+        for k, v in new_offsets.items():
+            if k in plt.file_loader.offsets.keys():
+                plt.file_loader.offsets[k] = int(v)
+        print("Updated Offsets:")
+        print(plt.file_loader.offsets)
+        cmd = input("Continue[c]\tWrite File and Continue[w]\tWrite and Quit[wq]\tQuit[q]\n")
+        if cmd == 'c':
+            continue
+        elif cmd == 'w':
+            plt.file_loader.offsets.to_file(root_path)
+            continue
+        elif cmd == 'wq':
+            plt.file_loader.offsets.to_file(root_path)
+            break
+        elif cmd == 'q':
+            break
+    print("Offsets saved in {}/offsets.txt".format(root_path))
 
 
 def run_null():
@@ -177,10 +223,14 @@ def run():
         kinect_online=run_kinect_calib_online,
         kinect=run_kinect_calib_online,
         k=run_kinect_calib_online,
+        # kinect cpp
+        kinect_cpp=run_kinect_calib_cpp,
         # optitrack
         optitrack=run_optitrack_calib,
         opti=run_optitrack_calib,
         o=run_optitrack_calib,
+        # modify offset
+        offset=run_modify_offset,
     )
     parser = argparse.ArgumentParser(usage='"run_calibration.py -h" to show help.')
     parser.add_argument('-t', '--task', dest='task', type=str,

@@ -57,25 +57,25 @@ def minimal_test():
 
 if __name__ == "__main__":
     # minimal_test()
-    from visualization.o3d_plot import OptitrackArbeStreamPlot, KinectOfflineStreamPlotCpp
-
-    # plot = OptitrackArbeStreamPlot('/media/nesc525/perple/2021-08-28_17-29-16', angle_of_view=[0,-1,0,1])
-    # plot.show()
+    from visualization.o3d_plot import OptitrackArbeStreamPlot, KinectOfflineStreamPlotCpp, KinectArbeStreamPlot
 
     # parse_opti_csv("/media/nesc525/perple/2021-08-30_10-32-25/optitrack/out.csv")
     # extract_mkv("/media/nesc525/perple/arbe_test/kinect/master/out.mkv")
     
     # from visualization.o3d_plot import OptitrackArbeStreamPlot
     # from multiprocessing import Pool
+    root_path = '/media/nesc525/perple/2021-09-04_10-54-08'
 
-    # def process(path, angle_of_view=[0,-1,0,1]):
-    #     plot = OptitrackArbeStreamPlot(path, angle_of_view)
-    #     plot.show()
-    root_path = '/media/nesc525/perple/2021-08-28_17-29-16'
+    # from dataloader.result_loader import KinectMKVtLoader, OptitrackCSVLoader
+    # csv_file = OptitrackCSVLoader(root_path)
+    # if len(csv_file):
+    #     parse_opti_csv(csv_file.file_dict["optitrack"].loc[0,"filepath"])
+
+    # plot = OptitrackArbeStreamPlot(root_path, [0,-1,0,10])
+    # plot.show()
+
     # plot = KinectOfflineStreamPlotCpp(root_path, start_frame=60, tag="st")
     # plot.show()
 
-    from dataloader.result_loader import KinectMKVtLoader, OptitrackCSVLoader
-    csv_file = OptitrackCSVLoader(root_path)
-    if len(csv_file):
-        parse_opti_csv(csv_file.file_dict["optitrack"].loc[0,"filepath"])
+    plot = KinectArbeStreamPlot(root_path, ["master"], [0,-1,0,2])
+    plot.show()

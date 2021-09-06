@@ -32,7 +32,7 @@ class ArbeSubscriber(rospy.Subscriber):
     Arbe Subscriber
     """
     def __init__(self, name, data_class, callback=None, callback_args=None,
-                 queue_size=None, buff_size=65536, tcp_nodelay=False):
+                 queue_size=1, buff_size=65536, tcp_nodelay=False):
         # clear dir before start
         clean_dir(callback_args.get('save_path', './__test__/default/arbe/'))
     
@@ -41,7 +41,7 @@ class ArbeSubscriber(rospy.Subscriber):
         # True if self is ready to be released
         self.release_flag = Value(ctypes.c_bool, False)
 
-        self.callback_args.update(dict(name=name, dataframe={}, task_queue={}, start_tm=time.time(),
+        self.callback_args.update(dict(name=name, dataframe={}, task_queue={}, start_tm=0,
             pool=Pool(),
             # fig = plt.figure(1),
             info=dict(formatter="\tcount={}/{}; \tfps={}; \tstatus={}; \t{}:{}", data=[0, 0, -1, 1, 0, 0])))
@@ -103,6 +103,7 @@ def arbe_loader_callback(msg, args):
 
     if args["info"]["data"][1] == 0:
         args["start_tm"] = time.time()
+        print(args["start_tm"])
         data = np.array(_msg_to_dataframe(msg))
         args["dt_base"] = args["start_tm"] - float(data[0][-1]) / 1000
 

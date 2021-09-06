@@ -6,9 +6,9 @@ from kinect.config import EXTRINSIC_MAS_ARBE
 
 def kinect_transform_mat(root_path: str):
     input_path = os.path.join(root_path, "calib/kinect")
-    R_mas_to_world, t_mas_to_world = extract_transform_mat(os.path.join(input_path, "master.npz"))
-    R_sub1_to_world, t_sub1_to_world = extract_transform_mat(os.path.join(input_path, "sub1.npz"))
-    R_sub2_to_world, t_sub2_to_world = extract_transform_mat(os.path.join(input_path, "sub2.npz"))
+    R_mas_to_world, t_mas_to_world = extract_transform_mat(os.path.join(input_path, "master_to_world.npz"))
+    R_sub1_to_world, t_sub1_to_world = extract_transform_mat(os.path.join(input_path, "sub1_to_world.npz"))
+    R_sub2_to_world, t_sub2_to_world = extract_transform_mat(os.path.join(input_path, "sub2_to_world.npz"))
 
     R_mas_to_radar = EXTRINSIC_MAS_ARBE["R"]
     t_mas_to_radar = EXTRINSIC_MAS_ARBE["t"]
@@ -37,7 +37,7 @@ def kinect_transform_mat(root_path: str):
 
 def optitrack_transform_mat(root_path: str):
     input_path = os.path.join(root_path, "calib/optitrack")
-    R_opti_to_radar, t_opti_to_radar = extract_transform_mat(os.path.join(input_path, "transform.npz"))
+    R_opti_to_radar, t_opti_to_radar = extract_transform_mat(os.path.join(input_path, "optitrack_to_radar.npz"))
     return dict(
         optitrack=dict(
             R=R_opti_to_radar,
@@ -60,3 +60,12 @@ def to_radar_transform_mat(root_path: str):
     transform_dict.update(kinect_transform_mat(root_path))
     transform_dict.update(optitrack_transform_mat(root_path))
     return transform_dict
+
+
+def kinect_to_world_transform_cpp(root_path, devices:list=["master","sub1","sub2"]):
+    import json
+    trans_mat = {}
+    for dev in devices:
+        R, t = np.load(root_path+"/calib/kinect/{}_to_world.npz".format(dev)).values()
+        trans_mat[dev] = np.vstack((np.hstack((R, t.reshape(-1,1))), [0,0,0,1]))
+    return trans_mat
