@@ -74,8 +74,9 @@ if __name__ == "__main__":
     # plot = OptitrackArbeStreamPlot(root_path, [0,-1,0,10])
     # plot.show()
 
-    # plot = KinectOfflineStreamPlotCpp(root_path, start_frame=60, tag="st")
-    # plot.show()
-
-    plot = KinectArbeStreamPlot(root_path, ["master"], [0,-1,0,2])
+    root_path = "/home/nesc525/chen/3DSVC/__test__/default"
+    plot = KinectOfflineStreamPlotCpp(root_path, start_frame=203, write_ply=True)
     plot.show()
+
+    # plot = KinectArbeStreamPlot(root_path, ["master"], [0,-1,0,2])
+    # plot.show()

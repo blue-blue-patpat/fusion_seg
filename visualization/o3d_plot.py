@@ -159,7 +159,7 @@ class KinectRealtimeStreamPlot(O3DStreamPlot):
 
 
 class KinectOfflineStreamPlotCpp(O3DStreamPlot):
-    def __init__(self, input_path: str, devices=['master','sub1','sub2'], start_frame=30, tag="st", *args, **kwargs) -> None:
+    def __init__(self, input_path: str, devices=['master','sub1','sub2'], start_frame=30, tag="st", write_ply=False, *args, **kwargs) -> None:
         from kinect.config import MAS, SUB1, SUB2, INTRINSIC
         self.input_path = input_path
         self.devices = devices
@@ -167,6 +167,7 @@ class KinectOfflineStreamPlotCpp(O3DStreamPlot):
         self.devices_id = dict(master=MAS, sub1=SUB1, sub2=SUB2)
         self.start_frame = start_frame
         self.tag = tag
+        self.write_ply = write_ply
         super().__init__(*args, **kwargs)
 
     def init_updater(self):
@@ -184,6 +185,7 @@ class KinectOfflineStreamPlotCpp(O3DStreamPlot):
         import cv2
         from calib.utils import kinect_to_world_transform_cpp
         from dataloader.result_loader import KinectResultLoader
+        import os
 
         if root_path is None:
             root_path = self.input_path
@@ -196,13 +198,15 @@ class KinectOfflineStreamPlotCpp(O3DStreamPlot):
                 params.append(dict(tag="kinect/{}/pcls".format(device), ext=".npy"))
                 params.append(dict(tag="kinect/{}/color".format(device), ext=".png"))
             loader = KinectResultLoader(root_path, params)
-            for v in range(self.start_frame, len(loader)):
+            for f in range(self.start_frame, len(loader)):
                 result = {}
-                pcl_frame = loader[v]
+                pcl_frame = loader[f]
                 for dev in self.devices:
                     pcl = np.load(pcl_frame["kinect/{}/pcls".format(dev)]["filepath"]).reshape(-1,3)/1000
                     color = cv2.imread(pcl_frame["kinect/{}/color".format(dev)]["filepath"])
                     result[dev] = o3d_pcl(pcl, colors=np.fliplr(color.reshape(-1, 3)/255)).transform(transform_mats[dev])
+                    if self.write_ply:
+                        o3d.io.write_point_cloud(os.path.join(root_path+"/calib/kinect/ply", "{}.ply".format(dev+str(f))), result[dev])
                 yield result
 
         else:
@@ -222,6 +226,8 @@ class KinectOfflineStreamPlotCpp(O3DStreamPlot):
                     color_frame = color_loader.select_by_id(pcl_frame["kinect/{}/pcls".format(dev)]["id"])
                     color = cv2.imread(color_frame["kinect/{}/color".format(dev)]["filepath"])
                     result[dev] = o3d_pcl(pcl, colors=np.fliplr(color.reshape(-1, 3)/255)).transform(transform_mats[dev])
+                    if self.write_ply:
+                        o3d.io.write_point_cloud(os.path.join(root_path+"/calib/kinect/plys", "{}.ply".format(dev+str(i))), result[dev])
                 yield result
 
     def show(self):
@@ -316,8 +322,8 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
         self.input_path = input_path
         self.main_device = main_device
         self.angle_of_view = angle_of_view
-        self.skip_head = kwargs.get("skip_head", 600)
-        self.skip_tail = kwargs.get("skip_tail", 700)
+        self.skip_head = kwargs.get("skip_head", 0)
+        self.skip_tail = kwargs.get("skip_tail", 0)
         self.file_loader = ResultFileLoader(
             self.input_path, self.skip_head, self.skip_tail,
             enabled_sources=["arbe", "optitrack", self.main_device, "calib"]

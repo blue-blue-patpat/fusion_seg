@@ -138,9 +138,9 @@ def run_optitrack_calib(kwargs):
     from dataloader.result_loader import OptitrackCalibResultLoader
     from optitrack.calib import read_csv, trans_matrix
 
-    output_path = os.path.join(kwargs["output"], "optitrack")
+    output_path = os.path.join(kwargs["input"], "calib/optitrack")
     clean_dir(output_path)
-    loader = OptitrackCalibResultLoader(kwargs["output"])
+    loader = OptitrackCalibResultLoader(kwargs["input"])
 
     coords = read_csv(loader.file_dict["calib/input"].iloc[0]["filepath"])
     R, t = trans_matrix(coords)
@@ -155,9 +155,9 @@ def run_kinect_calib_cpp(kwargs):
     import json
     root_path = kwargs["input"]
     devices = list(kwargs.get("devices", 'master,sub1,sub2').split(','))
+    clean_dir(root_path+"/calib/kinect/plys")
     os.system("ignoredata/kinect_files/calib/calib_k4a {path}/kinect/master/out.mkv {path}/kinect/sub1/out.mkv {path}/kinect/sub2/out.mkv".format(path=root_path))
-    os.system("mv *.ply ignoredata/kinect_files/calib/")
-    clean_dir(root_path+"/calib/kinect")
+    os.system("mv *.ply {}/calib/kinect/plys".format(root_path))
     for i, dev in enumerate(devices):
         json_file = root_path+'/kinect/{}/matrix{}.json'.format(dev, i)
         with open(json_file,'r',encoding='utf8') as f:
@@ -176,9 +176,11 @@ def run_modify_offset(kwargs):
     from visualization.o3d_plot import KinectArbeOptitrackStreamPlot
 
     root_path = kwargs["input"]
+    skip_head = kwargs.get("skip_head", 0)
+    skip_tail = kwargs.get("skip_tail", 0)
     print(ResultFileLoader(root_path, disabled_sources=["mesh"]))
 
-    plt = KinectArbeOptitrackStreamPlot(root_path)
+    plt = KinectArbeOptitrackStreamPlot(root_path, skip_head=skip_head, skip_tail=skip_tail)
 
     while True:
         plt.show()
@@ -235,8 +237,8 @@ def run():
     parser = argparse.ArgumentParser(usage='"run_calibration.py -h" to show help.')
     parser.add_argument('-t', '--task', dest='task', type=str,
                         choices=list(task_dict.keys()), default='null', help='Run Target, default "null". {}'.format(task_dict))
-    parser.add_argument('-i', '--input', dest='input', type=str,
-                        default='./ignoredata/calib_files/input', help='Input File Path, default "./ignoredata/calib_files/input"')
+    parser.add_argument('-p', '--path', dest='input', type=str,
+                        default='/__test__/default', help='Input File Path, default "/__test__/default"')
     parser.add_argument('-o', '--output', dest='output', type=str,
                         default='', help='Output File Path, default $input + "calib"')
     parser.add_argument('-a', '--addition', dest='addition', type=str,

@@ -241,6 +241,10 @@ class JointsBridge():
         self.pcl = self.pcl/x_norm
 
     def revert_transform(self):
+        """
+        Return revert transform matrix R, t, scale
+        To transform back to origin coordinates, use (R @ array(3, n) + t) * scale
+        """
         return np.linalg.inv(self.R.T), -self.t/self.scale, self.scale
 
 
