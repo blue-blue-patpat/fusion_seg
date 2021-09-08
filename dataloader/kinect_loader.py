@@ -434,6 +434,8 @@ class KinectMKVSubscriber(Process):
                     continue
                 if not self.run_init_flag:
                     self.start_tm = time.time()
+                    with open(os.path.join(self.save_path, "info.txt"), "w") as f:
+                        f.write("starttm={}_tasktm={}".format(self.start_tm, self.task_tm))
                     self.run_init_flag = True
                 
                 record.write_capture(frame)
@@ -476,9 +478,6 @@ class KinectMKVSubscriber(Process):
         print_log("[{}] Collection task stopped, processing {} frames...".format(self.name, frame_count), log_obj=self.log_obj)
         if self.log_obj:
             self.log_obj.flush()
-
-        with open(os.path.join(self.save_path, "info.txt"), "w") as f:
-            f.write("starttm={}_tasktm={}".format(self.start_tm, self.task_tm))
 
         self.infodata[2].value(-1)
         self.infodata[3].value(2)
@@ -588,7 +587,7 @@ class KinectSkeletonSubscriber(Process):
         clean_dir(os.path.join(self.save_path, "color"))
         clean_dir(os.path.join(self.save_path, "depth"))
         clean_dir(os.path.join(self.save_path, "skeleton"))
-        clean_dir(os.path.join(self.save_path, "point"))
+        clean_dir(os.path.join(self.save_path, "pcls"))
         # frame_list = []
         frame_count = 0
         self.infodata[3].value(1)
@@ -598,14 +597,14 @@ class KinectSkeletonSubscriber(Process):
             filename = "id={}_st={}_dt={}".format(frame_count, sys_tm, timestamp)
             path_color = os.path.join(save_path, "color", filename+".png")
             path_depth = os.path.join(save_path, "depth", filename+".png")
-            # path_point = os.path.join(save_path, "point", filename)
+            # path_pcls = os.path.join(save_path, "pcls", filename)
             path_skelton = os.path.join(save_path, "skeleton", filename)
 
             # save
             color_image = cv.imdecode(color_image, -1)
             cv.imwrite(path_color, color_image)
             cv.imwrite(path_depth, depth_image)
-            # np.save(path_point, point_cloud)
+            # np.save(path_pcls, point_cloud)
             body_arr = np.asarray(bodys)
             if np.any(body_arr):
                 np.save(path_skelton, body_arr)

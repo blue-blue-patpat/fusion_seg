@@ -55,7 +55,7 @@ def run_kinect_loader_multi(client=None, **kwargs):
     id_dict = _get_device_ids()
     print_log("[{}] {} devices found.".format(kwargs.get("name", "KinectMulti"), len(id_dict)), log_obj)
 
-    client.add_sub("KinectSub2", sub_type=sub_type, config=_get_config("skeleton_sub") if type_name == "s" else _get_config("sub"),
+    client.add_sub("KinectSub2", sub_type=sub_type, config=_get_config("skeleton_sub") if type_name == "s" else _get_config("alone"),
                    device_id=id_dict[SUB2],
                    save_path=os.path.join(kwargs.get(
                        "save_path", "./__test__/default/kinect/"), "sub2"),
@@ -63,7 +63,7 @@ def run_kinect_loader_multi(client=None, **kwargs):
                    disable_visualization=kwargs.get("disable_visualization", False))
     client.start_sub("KinectSub2")
 
-    client.add_sub("KinectSub1", sub_type=sub_type, config=_get_config("skeleton_sub") if type_name == "s" else _get_config("sub"),
+    client.add_sub("KinectSub1", sub_type=sub_type, config=_get_config("skeleton_sub") if type_name == "s" else _get_config("alone"),
                    device_id=id_dict[SUB1],
                    save_path=os.path.join(kwargs.get(
                        "save_path", "./__test__/default/kinect/"), "sub1"),
@@ -71,7 +71,7 @@ def run_kinect_loader_multi(client=None, **kwargs):
                    disable_visualization=kwargs.get("disable_visualization", False))
     client.start_sub("KinectSub1")
 
-    client.add_sub("KinectMaster", sub_type=sub_type, config=_get_config("skeleton_mas") if type_name == "s" else _get_config("mas"),
+    client.add_sub("KinectMaster", sub_type=sub_type, config=_get_config("skeleton_mas") if type_name == "s" else _get_config("alone"),
                    device_id=id_dict[MAS],
                    save_path=os.path.join(kwargs.get(
                        "save_path", "./__test__/default/kinect/"), "master"),
@@ -83,6 +83,7 @@ def run_kinect_loader_multi(client=None, **kwargs):
 def quit(client, **args):
     if args["env"] == "prod":
         import shutil
+        args["log_obj"].close()
         shutil.rmtree(args["path"], ignore_errors=True)
     exit(0)
 
@@ -129,7 +130,7 @@ def run():
             parent_path = os.path.join(args.save_path, ymdhms_time())
 
         if not os.path.exists(parent_path):
-            os.makedirs(parent_path)
+            os.makedirs(parent_path+"/optitrack")
 
         # init log file obj
         if not args.disable_log:
@@ -214,7 +215,8 @@ def run():
                 func=quit,
                 args=dict(
                     path=parent_path,
-                    env=args.env
+                    env=args.env,
+                    log_obj=log_obj
                 )
             ),
         )

@@ -296,12 +296,12 @@ class OptitrackArbeStreamPlot(O3DStreamPlot):
             if person_count > 1:
                 for p in range(1, person_count):
                     lines = np.vstack((lines, lines + p*37))
-            colors = np.asarray([[0,0,1]] * len(lines))
+            colors = np.asarray([[1,0,0]] * len(lines))
             
             yield dict(
                 opti_marker=dict(
                     skeleton=opti_markers,
-                    color=[0,0,1],
+                    color=[1,0,0],
                     lines=lines,
                     colors=colors
                 ),
@@ -318,15 +318,15 @@ class OptitrackArbeStreamPlot(O3DStreamPlot):
 
 class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
     def __init__(self, input_path: str, main_device="master", angle_of_view=[0,-1,0,1], *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+        super().__init__()
         self.input_path = input_path
         self.main_device = main_device
         self.angle_of_view = angle_of_view
-        self.skip_head = kwargs.get("skip_head", 0)
-        self.skip_tail = kwargs.get("skip_tail", 0)
+        self.skip_head = int(kwargs.get("skip_head", 0))
+        self.skip_tail = int(kwargs.get("skip_tail", 0))
         self.file_loader = ResultFileLoader(
             self.input_path, self.skip_head, self.skip_tail,
-            enabled_sources=["arbe", "optitrack", self.main_device, "calib"]
+            enabled_sources=["arbe", "optitrack", self.main_device, "kinect_skeleton"]
         )
 
     def init_updater(self):

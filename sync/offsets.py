@@ -31,7 +31,7 @@ class Offsets(dict):
     @staticmethod
     def from_file(file_path: str):
         with open(os.path.join(file_path, "offsets.txt"), "r") as f:
-            return Offsets(eval(f.readline()), base=f.readline())
+            return Offsets(eval(f.readline()), base=f.readline().split(':')[1])
 
     @staticmethod
     def verify_file(file_path: str):

@@ -44,8 +44,8 @@ class ResultLoader():
             if clfs_key not in self.clfs.keys():
                 X = np.array([df[item_key]]).T.astype(np.float64)
                 y = df.index
-                if np.isnan(X).any():
-                    np.nan_to_num(X, False)
+                # if np.isnan(X).any():
+                #     np.nan_to_num(X, False)
                 self.clfs[clfs_key] = KNeighborsClassifier(n_neighbors=1).fit(X, y)
             res = dict(df.iloc[self.clfs[clfs_key].predict(np.array([[value]], dtype=np.float64))[0]])
         return res
@@ -233,7 +233,7 @@ class ResultFileLoader():
 
         # Init file sources
         if enabled_sources is None:
-            self.sources = ["arbe", "master", "sub1", "sub2", "optitrack", "mesh", "calib"]
+            self.sources = ["arbe", "master", "sub1", "sub2", "kinect_skeleton", "optitrack", "mesh"]
         else:
             self.sources = enabled_sources
 
@@ -247,6 +247,8 @@ class ResultFileLoader():
         self.init_kinect_source()
         self.init_optitrack_source()
         self.init_mesh_source()
+
+        # Init calib
         self.init_calib_source()
 
         # Verify if offsets can be restored from file
@@ -303,23 +305,43 @@ class ResultFileLoader():
         """
         from calib.utils import to_radar_transform_mat
 
-        if "calib" in self.sources:
-            self.trans = to_radar_transform_mat(self.root_path)
+        self.trans = to_radar_transform_mat(self.root_path)
 
     def select_kinect_trans_item_by_t(self, k_loader: KinectResultLoader, t: float) -> None:
         """
         Select Kinect transformed results by timestamp
         """
-        _t = t + self.offsets[k_loader.device] / self.fps
-        res = k_loader.select_item(_t, "st", False)
+        if k_loader.device in self.offsets.keys():
+            _t = t + self.offsets[k_loader.device] / self.fps
+            res_skeleton = k_loader.select_item_in_tag(_t, "st", "kinect/{}/skeleton".format(k_loader.device), False)
+            res = k_loader.select_by_skid(res_skeleton["skid"])
+
+        elif "master" in self.offsets.keys():
+            _t = t + self.offsets["master"] / self.fps
+            if self.k_mas_loader is None:
+                self.k_mas_loader = KinectResultLoader(self.root_path, device="master")
+            mas_res_skeleton = self.k_mas_loader.select_item_in_tag(_t, "st", "kinect/master/skeleton", False)
+            mas_res = self.k_mas_loader.select_by_skid(mas_res_skeleton["skid"])
+
+            res = k_loader.select_item(mas_res["kinect/master/pcls"]["id"], "id", False)
+
         trans_mat = self.trans["kinect_{}".format(k_loader.device)]
-        self.results.update({
-            # "{}_pcl".format(k_loader.device): np.load(res["kinect/{}/pcls".format(k_loader.device)]["filepath"]) / 1000 @ trans_mat["R"] + trans_mat["t"],
-            "{}_skeleton".format(k_loader.device): np.load(res["kinect/{}/skeleton".format(k_loader.device)]["filepath"])[:,:,:3].reshape(-1,3) / 1000 @ trans_mat["R"].T + trans_mat["t"]
-        })
-        self.info.update({
-            k_loader.device: res
-        })
+        if "kinect_skeleton" in self.sources:
+            self.results.update({
+                "{}_skeleton".format(k_loader.device): np.load(res["kinect/{}/skeleton".format(k_loader.device)]["filepath"])[:,:,:3].reshape(-1,3) / 1000 @ trans_mat["R"].T + trans_mat["t"]
+            })
+            self.info.update({
+                k_loader.device: res["kinect/{}/skeleton".format(k_loader.device)]
+            })
+        if "kinect_pcl" in self.sources:
+            pcl = np.load(res["kinect/{}/pcls".format(k_loader.device)]["filepath"]).reshape(-1, 3)
+            pcl = pcl[pcl.any(axis=1)]
+            self.results.update({
+                "{}_pcl".format(k_loader.device):  pcl / 1000 @ trans_mat["R"].T + trans_mat["t"],
+            })
+            self.info.update({
+                "{}_pcl".format(k_loader.device): res["kinect/{}/pcls".format(k_loader.device)]
+            })
 
     def select_trans_optitrack_item_by_t(self, o_loader: OptitrackResultLoader, t: float) -> None:
         """
@@ -333,7 +355,7 @@ class ResultFileLoader():
             optitrack_person_count=arr["markers"].shape[0]
         ))
         self.info.update(dict(
-            optitrack = res
+            optitrack = res["optitrack"]
         ))
 
     def __getitem__(self, index: int) -> tuple:
@@ -343,13 +365,15 @@ class ResultFileLoader():
         i = index + self.skip_head
         if index not in range(0, self.__len__()):
             raise IndexError("[ResultFileLoader] Index out of range {}.".format(range(0, self.__len__())))
-        
+        self.results = self.info = {}
         arbe_res = self.a_loader[i]
-        self.results = dict(
-            arbe=np.load(arbe_res["arbe"]["filepath"])[:,:3]
-        )
+
+        if "arbe" in self.sources:
+            self.results = dict(
+                arbe=np.load(arbe_res["arbe"]["filepath"])[:,:3]
+            )
         self.info = dict(
-            arbe=arbe_res
+            arbe=arbe_res["arbe"]
         )
 
         t = float(arbe_res["arbe"]["st"])

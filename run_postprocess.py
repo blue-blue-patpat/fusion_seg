@@ -12,6 +12,14 @@ def postprocess(root_path, *devices):
     params = []
     pool = Pool()
 
+    # if needs to parse the opti_csv
+    try:
+        csv_file = OptitrackCSVLoader(root_path)
+        if len(csv_file):
+            parse_opti_csv(csv_file.file_dict["optitrack"].loc[0,"filepath"])
+    except:
+        pass
+
     def process(device):
         mkv_path = os.path.join(root_path, "kinect", device)
         os.system("ignoredata/kinect_files/offline_processor {}/out.mkv {}/out.json".format(mkv_path, mkv_path))
@@ -24,13 +32,6 @@ def postprocess(root_path, *devices):
     mkv_list = [m.loc[0,"filepath"] for m in mkvs.file_dict.values()]
     pool.map_async(extract_mkv, mkv_list)
 
-    # if needs to parse the opti_csv
-    try:
-        csv_file = OptitrackCSVLoader(root_path)
-        if len(csv_file):
-            parse_opti_csv(csv_file.file_dict["optitrack"].loc[0,"filepath"])
-    except:
-        pass
     pool.close()
     pool.join()
 

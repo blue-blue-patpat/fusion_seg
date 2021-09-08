@@ -1,9 +1,6 @@
 import numpy as np
 import torch
-import pytorch3d
-from pytorch3d.ops import sample_points_from_meshes
 from pytorch3d.io import load_obj, save_obj
-from pytorch3d.utils import ico_sphere
 from pytorch3d.structures import Meshes
 from alfred.dl.torch.common import device
 import pickle
@@ -227,40 +224,12 @@ class KinematicModel():
     with open(path, 'w') as fp:
       save_obj(fp, torch.tensor(self.verts), torch.tensor(self.faces))
 
-  def show_obj(self, title, mode="open3d"):
-    """
-    Visualize the SMPL mesh using open3D
-    """
-    if mode == "opend3d":
-      import open3d as o3d
-      # we can print verts as well, using open3d
-      pcobj = o3d.geometry.PointCloud()
-      pcobj.points = o3d.utility.Vector3dVector(self.mesh.verts_packed())
-      o3d.visualization.draw_geometries([pcobj], title)
-    elif mode == "open3d-jupyter":
-      import open3d as o3d
-      from open3d import JVisualizer
-    elif mode =="matplotlib":
-      import matplotlib.pyplot as plt
-      import matplotlib as mpl
-      from mpl_toolkits.mplot3d import Axes3D
-      points = sample_points_from_meshes(self.mesh, 5000)
-      x, y, z = points.clone().detach().cpu().squeeze().unbind(1)    
-      fig = plt.figure(figsize=(5, 5))
-      ax = Axes3D(fig)
-      ax.scatter3D(x, z, -y)
-      ax.set_xlabel('x')
-      ax.set_ylabel('z')
-      ax.set_zlabel('y')
-      ax.set_title(title)
-      plt.show()
-
 
 class KinematicPCAWrapper():
   """
   A wrapper for `KinematicsModel` to be compatible to the solver.
   """
-  def __init__(self, core: KinematicModel, n_pose=12):
+  def __init__(self, core: KinematicModel):
     """
     Parameters
     ----------
@@ -270,7 +239,7 @@ class KinematicPCAWrapper():
       Degrees of freedom for pose, by default 12
     """
     self.core = core
-    self.n_pose = n_pose
+    self.n_pose = (core.n_joints - 1) * 3
     self.n_shape = core.n_shape_params
     self.n_glb = 3
     self.n_params = self.n_pose + self.n_shape + self.n_glb

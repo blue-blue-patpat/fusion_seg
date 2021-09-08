@@ -15,17 +15,15 @@ class JointsBridge():
         self.jnts = jnts
         self.pcl = pcl
 
-    def smpl_from_kinect(self):
-        self.kinect_jnts_to_smpl()
-        self.smpl_joints_transform()
+    def map(self, source="optitrack"):
         self.filter_pcl()
-        self.normalization()
-        return self.jnts, self.pcl
-
-    def smpl_from_optitrack(self):
-        self.optitrack_jnts_to_smpl()
+        if source == "optitrack":
+            self.optitrack_jnts_to_smpl()
+        elif source == "kinect":
+            self.kinect_jnts_to_smpl()
+        else:
+            pass
         self.smpl_joints_transform()
-        self.filter_pcl()
         self.normalization()
         return self.jnts, self.pcl
 
@@ -37,7 +35,7 @@ class JointsBridge():
         upper_bound = self.jnts.max(axis=0) + 0.3
         lower_bound = self.jnts.min(axis=0) - 0.3
         # remove ground pcl
-        lower_bound[1] += 0.32
+        # lower_bound[1] += 0.3
         _filter = np.apply_along_axis(
             lambda row:\
                 np.all((lower_bound<row) & (row<upper_bound))\
