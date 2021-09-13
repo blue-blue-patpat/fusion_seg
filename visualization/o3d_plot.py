@@ -1,4 +1,4 @@
-from visualization.utils import O3DStreamPlot, o3d_coord, o3d_pcl, o3d_plot, o3d_skeleton, pcl_filter
+from visualization.utils import O3DStreamPlot, o3d_coord, o3d_mesh, o3d_pcl, o3d_plot, o3d_skeleton, pcl_filter
 import numpy as np
 import open3d as o3d
 from dataloader.result_loader import KinectResultLoader, ArbeResultLoader, OptitrackResultLoader, ResultFileLoader
@@ -379,3 +379,21 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
                     colors = opti_colors
                 )
             )
+
+
+class MinimalStreamPlot(O3DStreamPlot):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(width=1800, *args, **kwargs)
+
+    def init_updater(self):
+        self.plot_funcs = dict(
+            mesh=o3d_mesh,
+            pcl=o3d_pcl,
+            kpts=o3d_pcl,
+        )
+
+    def init_show(self):
+        super().init_show()
+        self.ctr.set_up(np.array([[0],[1],[0]]))
+        self.ctr.set_front(np.array([[0.2],[0],[1]]))
+        self.ctr.set_zoom(0.6)

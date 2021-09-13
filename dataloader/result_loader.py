@@ -284,9 +284,18 @@ class ResultFileLoader():
         """
         Init Azure Kinect results
         """
-        self.k_mas_loader = KinectResultLoader(self.root_path, device="master") if "master" in self.sources else None
-        self.k_sub1_loader = KinectResultLoader(self.root_path, device="sub1") if "sub1" in self.sources else None
-        self.k_sub2_loader = KinectResultLoader(self.root_path, device="sub2") if "sub2" in self.sources else None
+        self.k_mas_loader = KinectResultLoader(self.root_path, device="master", params=[
+            dict(tag="kinect/master/pcls", ext=".npy"),
+            dict(tag="kinect/master/skeleton", ext=".npy"),
+        ]) if "master" in self.sources else None
+        self.k_sub1_loader = KinectResultLoader(self.root_path, device="sub1", params=[
+            dict(tag="kinect/sub1/pcls", ext=".npy"),
+            dict(tag="kinect/sub1/skeleton", ext=".npy"),
+        ]) if "sub1" in self.sources else None
+        self.k_sub2_loader = KinectResultLoader(self.root_path, device="sub2", params=[
+            dict(tag="kinect/sub2/pcls", ext=".npy"),
+            dict(tag="kinect/sub2/skeleton", ext=".npy"),
+        ]) if "sub2" in self.sources else None
 
     def init_optitrack_source(self):
         """
@@ -335,7 +344,7 @@ class ResultFileLoader():
             })
         if "kinect_pcl" in self.sources:
             pcl = np.load(res["kinect/{}/pcls".format(k_loader.device)]["filepath"]).reshape(-1, 3)
-            pcl = pcl[pcl.any(axis=1)]
+            # pcl = pcl[pcl.any(axis=1)]
             self.results.update({
                 "{}_pcl".format(k_loader.device):  pcl / 1000 @ trans_mat["R"].T + trans_mat["t"],
             })

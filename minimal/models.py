@@ -5,15 +5,13 @@ from pytorch3d.structures import Meshes
 from alfred.dl.torch.common import device
 import pickle
 
-from torch import tensor
-
 
 class KinematicModel():
   """
   Kinematic model that takes in model parameters and outputs mesh, keypoints,
   etc.
   """
-  def __init__(self, model_path, armature, scale=1):
+  def __init__(self, model_path, armature, scale=1, compute_mesh=True):
     """
     Parameters
     ----------
@@ -43,7 +41,9 @@ class KinematicModel():
       self.parents = params['parents']
 
     self.n_shape_params = self.mesh_shape_basis.shape[-1]
+    self.coord_origin = np.array([0, 0, 0])
     self.scale = scale
+    self.compute_mesh = compute_mesh
 
     self.armature = armature
     self.n_joints = self.armature.n_joints
@@ -62,7 +62,7 @@ class KinematicModel():
 
     self.update()
 
-  def set_params(self, pose_abs=None, pose_pca=None, pose_glb=None, shape=None):
+  def set_params(self, coord_origin=None, pose_abs=None, pose_pca=None, pose_glb=None, shape=None):
     """
     Set model parameters and get the mesh. Do not set `pose_abs` and `pose_pca`
     at the same time.
@@ -85,6 +85,8 @@ class KinematicModel():
     np.ndarray, shape [K, 3]
       Keypoints coordinates of the model, scale applied.
     """
+    if coord_origin is not None:
+      self.coord_origin = coord_origin
     if pose_abs is not None:
       self.pose = pose_abs
     elif pose_pca is not None:
@@ -136,9 +138,12 @@ class KinematicModel():
       np.matmul(T, verts.reshape([-1, 4, 1])).reshape([-1, 4])[:, :3]
 
     # update mesh
-    center = self.verts.mean(0)
-    verts = self.verts - center
-    self.mesh = Meshes(verts=[torch.tensor(verts, dtype=torch.float32, device=device)], faces=[torch.tensor(self.faces, dtype=torch.float32, device=device)])
+    if self.compute_mesh:
+      # center = self.verts.mean(0)
+      verts = self.verts - self.coord_origin
+      self.mesh = Meshes(verts=[torch.tensor(verts, dtype=torch.float32, device=device)], faces=[torch.tensor(self.faces, dtype=torch.float32, device=device)])
+    else:
+      self.mesh = None
 
     # update keypoints
     # self.keypoints = self.J_regressor_ext.dot(self.mesh.verts_packed()) *self.scale
@@ -147,7 +152,7 @@ class KinematicModel():
     # update verts
     self.verts *= self.scale
 
-    return self.mesh, self.keypoints.copy()
+    return self.mesh, self.keypoints - self.coord_origin
     # return [], self.keypoints.copy()
 
   def rodrigues(self, r):
@@ -222,7 +227,7 @@ class KinematicModel():
     path: Path to save.
     """
     with open(path, 'w') as fp:
-      save_obj(fp, torch.tensor(self.verts), torch.tensor(self.faces))
+      save_obj(fp, torch.tensor(self.verts - self.coord_origin), torch.tensor(self.faces))
 
 
 class KinematicPCAWrapper():
@@ -242,6 +247,7 @@ class KinematicPCAWrapper():
     self.n_pose = (core.n_joints - 1) * 3
     self.n_shape = core.n_shape_params
     self.n_glb = 3
+    self.n_coord = 3
     self.n_params = self.n_pose + self.n_shape + self.n_glb
 
   def run(self, params):
@@ -258,9 +264,9 @@ class KinematicPCAWrapper():
     np.ndarray
       Corresponding result.
     """
-    shape, pose_pca, pose_glb = self.decode(params)
+    shape, pose_pca, pose_glb, coord_origin = self.decode(params)
     return \
-      self.core.set_params(pose_glb=pose_glb, pose_pca=pose_pca, shape=shape)
+      self.core.set_params(coord_origin=coord_origin, pose_glb=pose_glb, pose_pca=pose_pca, shape=shape)
 
   def decode(self, params):
     """
@@ -280,7 +286,8 @@ class KinematicPCAWrapper():
     np.ndarray
       Global rotation.
     """
-    pose_glb = params[:self.n_glb]
-    pose_pca = params[self.n_glb:-self.n_shape]
+    coord_origin = params[:self.n_coord]
+    pose_glb = params[self.n_coord:self.n_coord + self.n_glb]
+    pose_pca = params[self.n_coord + self.n_glb:-self.n_shape]
     shape = params[-self.n_shape:]
-    return shape, pose_pca, pose_glb
+    return shape, pose_pca, pose_glb, coord_origin

@@ -23,6 +23,9 @@ def o3d_pcl(pcl: np.ndarray = None, color: list = None, colors: list = None, las
         _pcl = o3d.geometry.PointCloud()
 
     if pcl is not None and pcl.size != 0:
+        if pcl.shape[0] > 1000000:
+            # auto downsample
+            pcl = pcl[np.random.choice(np.arange(pcl.shape[0]), size=1000000, replace=False)]
         _pcl.points = o3d.utility.Vector3dVector(pcl)
         if color is not None:
             _pcl.paint_uniform_color(color)
@@ -56,7 +59,7 @@ def o3d_mesh(mesh: Meshes, color: list, last_update: None): ...
 def o3d_mesh(mesh: Iterable, color: list, last_update: None): ...
 
 
-def o3d_mesh(mesh: Union[Meshes, Iterable] = None, color: list = [1,0,0],
+def o3d_mesh(mesh: Union[Meshes, Iterable] = None, color: list = None,
              last_update = None):
     _mesh = last_update
     if _mesh is None:
@@ -69,7 +72,8 @@ def o3d_mesh(mesh: Union[Meshes, Iterable] = None, color: list = [1,0,0],
         else:
             _mesh.vertices = o3d.utility.Vector3dVector(mesh[0])
             _mesh.triangles = o3d.utility.Vector3iVector(mesh[1])
-        _mesh.paint_uniform_color(color)
+        if color is not None:
+            _mesh.paint_uniform_color(color)
         _mesh.compute_vertex_normals()
     return _mesh
 
@@ -156,6 +160,13 @@ class O3DStreamPlot():
             tick = time.time()
         # except:
         #     self.close_view()
+
+    def show_manual(self, update_dict):
+        for updater_key, update_params in update_dict.items():
+            if updater_key not in self.updater_dict.keys():
+                continue
+            self.updater_dict[updater_key].update(update_params)
+        self.update_plot()
 
     def close_view(self):
         self.view.close()

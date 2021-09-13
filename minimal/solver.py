@@ -1,15 +1,18 @@
 import os
+from visualization.utils import o3d_mesh, o3d_plot
 import numpy as np
 import torch
 from pytorch3d.loss import point_mesh_edge_distance, point_mesh_face_distance
 from pytorch3d.structures import Meshes, Pointclouds
 from alfred.dl.torch.common import device
 from minimal.models import KinematicModel, KinematicPCAWrapper
-from minimal.utils import LossManager
+from minimal.utils import LossManager, VPOSER_DIR
+from human_body_prior.tools.model_loader import load_model
+from human_body_prior.models.vposer_model import VPoser
 
 
 class Solver:
-    def __init__(self, model: KinematicPCAWrapper, eps=1e-5, max_iter=30):
+    def __init__(self, model: KinematicPCAWrapper, eps=1e-5, plot_type="matplotlib"):
         """
         Parameters
         ----------
@@ -24,13 +27,19 @@ class Solver:
         """
         self.model = model
         self.eps = eps
-        self.max_iter = int(max_iter)
+        self.plot_type = plot_type
 
-        self.pose_params = np.zeros(self.model.n_pose)
+        # coord_origin + pose_params
+        self.pose_params = np.zeros(self.model.n_pose + 3)
         self.shape_params = np.zeros(self.model.n_shape)
 
-    def solve(self, jnts_target, pcls_target, solve_type="full", losses_with_weights=None,
-                    kpts_threshold=0.04, mse_threshold=1e-8, loss_threshold=1e-8, u=1e-3, v=1.5, verbose=0):
+        self.vp, _ = load_model(VPOSER_DIR, model_code=VPoser,
+                              remove_words_in_model_weights='vp_model.',
+                              disable_grad=True)
+        self.vp = self.vp.to('cuda')
+
+    def solve(self, jnts_target, pcls_target, solve_type="full", losses_with_weights=None, max_iter=30,
+                    kpts_threshold=0.04, mse_threshold=1e-7, loss_threshold=1e-6, u=1e-3, v=1.5, dbg_level=0):
         if solve_type == "full":
             params = self.params()
         elif solve_type == "pose":
@@ -39,9 +48,9 @@ class Solver:
         if losses_with_weights is None:
             losses_with_weights = dict(
                 kpts_losses=1,
-                angle_losses=1,
-                edge_losses=1,
-                face_losses=1,
+                # angle_losses=1,
+                edge_losses=100,
+                face_losses=100,
             )
 
         jacobian = np.zeros([jnts_target.size, params.shape[0]])
@@ -49,12 +58,13 @@ class Solver:
         pcls = Pointclouds([torch.tensor(pcls_target, dtype=torch.float32, device=device)])
 
         # accelerate draw
-        pcls_vis = pcls_target[np.random.choice(np.arange(pcls_target.shape[0]), size=1000, replace=False)]
+        pcls_vis = pcls_target[np.random.choice(np.arange(pcls_target.shape[0]), size=min(1000, pcls_target.shape[0]), replace=False)]
 
-        losses = LossManager(losses_with_weights, mse_threshold, loss_threshold)
+        losses = LossManager(losses_with_weights, mse_threshold, loss_threshold, plot_type=self.plot_type)
 
-        for i in range(self.max_iter):
+        for i in range(int(max_iter)):
             # update modle
+            self.vpose_mapper()
             mesh_updated, jnts_updated = self.model.run(self.params())
 
             # compute keypoints loss
@@ -62,16 +72,18 @@ class Solver:
             losses.update_loss("kpts_losses", loss_kpts)
 
             # compute keypoints angle loss
-            loss_angle = angle_loss(jnts_updated, self.pose_params)
-            losses.update_loss("angle_losses", loss_angle)
+            # loss_angle = angle_loss(jnts_updated, self.pose_params)
+            # losses.update_loss("angle_losses", loss_angle)
 
             # compute edge loss
-            loss_edge = point_mesh_edge_distance(mesh_updated, pcls).cpu()
-            losses.update_loss("edge_losses", loss_edge)
+            if losses_with_weights["edge_losses"] > 0:
+                loss_edge = point_mesh_edge_distance(mesh_updated, pcls).cpu()
+                losses.update_loss("edge_losses", loss_edge)
         
-            # # compute face loss
-            loss_face = point_mesh_face_distance(mesh_updated, pcls).cpu()
-            losses.update_loss("face_losses", loss_face)
+            # compute face loss
+            if losses_with_weights["face_losses"] > 0:
+                loss_face = point_mesh_face_distance(mesh_updated, pcls).cpu()
+                losses.update_loss("face_losses", loss_face)
 
             # check loss
             if losses.check_losses():
@@ -95,28 +107,40 @@ class Solver:
             else:
                 u *= v
 
-            if verbose > 0:
-                # losses.clear_plt()
+            if dbg_level > 0 and i%dbg_level == 0:
+                if mesh_updated is None:
+                    mesh_updated = [self.model.core.verts - self.pose_params[:self.model.n_coord], self.model.core.faces]
+                    
                 losses.show_losses()
-
-                if i%verbose == 0:
+                if self.plot_type == "matplotlib":
                     vertices, faces= mesh_updated.verts_packed().cpu(), mesh_updated.faces_packed().cpu()
-                    losses.show_output(mesh=(vertices, faces), pcls=pcls_vis, kpts_target=jnts_target, kpts_updated=jnts_updated)
-                pass
-            self.update_params(params)
+                    losses.show_output_mpl(mesh=(vertices, faces), pcls=pcls_vis, kpts_target=jnts_target, kpts_updated=jnts_updated)
+                else:
+                    losses.show_output_o3d(mesh_updated, pcls_vis, jnts_target)
 
-        return self.params()
+            self.update_params(params)
+        if dbg_level == 0:
+            o3d_plot([o3d_mesh(mesh_updated)])
+        return self.params(), losses
 
     def params(self):
         return np.hstack([self.pose_params, self.shape_params])
 
     def update_params(self, params: np.ndarray):
-        if params.shape[0] == self.model.n_pose:
+        if isinstance(params, np.lib.npyio.NpzFile):
+            self.pose_params = params["pose"]
+            self.shape_params = params["shape"]
+        elif params.shape[0] == self.model.n_pose + self.model.n_coord:
             self.pose_params = params
-        elif params.shape[0] == self.model.n_params - 3:
-            self.pose_params, self.shape_params = params[:self.model.n_pose], params[-self.model.n_shape:]
+        elif params.shape[0] == self.model.n_params - 3 + self.model.n_coord:
+            self.pose_params, self.shape_params = params[:self.model.n_pose + self.model.n_coord], params[-self.model.n_shape:]
         else:
             raise RuntimeError("Invalid params")
+
+    def vpose_mapper(self):
+        poseSMPL = torch.from_numpy(np.array([self.pose_params[6:69]])).type(torch.float).to('cuda')
+        poZ = self.vp.encode(poseSMPL).mean
+        self.pose_params[6:69] = self.vp.decode(poZ)['pose_body'].contiguous().reshape(poseSMPL.shape[1]).cpu().numpy()
 
     def get_derivative(self, n):
         """

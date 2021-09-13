@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 
 from pyk4a import ImageFormat, PyK4APlayback
+from pyk4a.capture import PyK4ACapture
 
 from dataloader.utils import clean_dir, ymdhms_time
 
@@ -75,7 +76,7 @@ def save(playback: PyK4APlayback, save_path="./", **kwargs):
     from multiprocessing.dummy import Pool
     info = [0, 0]
     pool = Pool()
-    def process(capture, save_path, kwargs, idx, info, color_tm_offset, depth_tm_offset):
+    def process(capture: PyK4ACapture, save_path, kwargs, idx, info, color_tm_offset, depth_tm_offset):
         if capture.color is not None:
             cv2.imwrite(os.path.join(save_path, "color/id={}_st={}_dt={}.png".format(idx, float(kwargs["starttm"]) + (capture.color_timestamp_usec - color_tm_offset)/1000000, float(kwargs["tasktm"]) + capture.color_timestamp_usec/1000000)), capture.color)
         if capture.depth is not None:
@@ -83,6 +84,7 @@ def save(playback: PyK4APlayback, save_path="./", **kwargs):
         if capture.depth_point_cloud is not None:
             np.save(os.path.join(save_path, "pcls/id={}_st={}_dt={}".format(idx, float(kwargs["starttm"]) + (capture.depth_timestamp_usec - depth_tm_offset)/1000000, float(kwargs["tasktm"]) + capture.depth_timestamp_usec/1000000)), capture.transformed_depth_point_cloud)
         info[1] += 1
+
 
     while True:
         try:

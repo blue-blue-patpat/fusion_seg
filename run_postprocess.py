@@ -6,7 +6,7 @@ import os
 from optitrack.optitrack_loader import parse_opti_csv
 
 
-def postprocess(root_path, *devices):
+def postprocess(root_path, *devices, output_path=""):
     if not devices:
         devices = ["master","sub1","sub2"]
     params = []
@@ -27,7 +27,8 @@ def postprocess(root_path, *devices):
 
     for device in devices:
         params.append(dict(tag="kinect/{}".format(device), ext=".mkv"))
-        pool.apply_async(process, (device,))
+        # pool.apply_async(process, (device,))
+        process(device)
     mkvs = KinectMKVtLoader(root_path, params)
     mkv_list = [m.loc[0,"filepath"] for m in mkvs.file_dict.values()]
     pool.map_async(extract_mkv, mkv_list)

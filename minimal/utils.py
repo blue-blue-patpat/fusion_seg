@@ -1,5 +1,9 @@
 import matplotlib.pyplot as plt
-from numpy.random import f
+import numpy as np
+from visualization.o3d_plot import MinimalStreamPlot
+
+
+VPOSER_DIR = "/home/nesc525/xiangyu/human_body_prior/support_data/dowloads/vposer_v2_05"
 
 
 class WeightLoss(list):
@@ -21,13 +25,15 @@ class WeightLoss(list):
         return ret
 
 class LossManager():
-    def __init__(self, losses_with_weights={}, mse_threshold=1e-8, loss_threshold=1e-8) -> None:
+    def __init__(self, losses_with_weights={}, mse_threshold=1e-8, loss_threshold=1e-8, plot_type="matplotlib") -> None:
         self.losses = {}
         self.epoch = 0
         self.mse_threshold = mse_threshold
         self.loss_threshold = loss_threshold
         self.add_loss(losses_with_weights)
 
+        self.plot_type = plot_type
+        
         plt.ion()
         self.fig = plt.figure()
         self.fig.set_size_inches(12, 6)
@@ -35,8 +41,8 @@ class LossManager():
 
         self.arts = []
 
-        # self.plotlosses = PlotLosses(groups={'losses': list(self.losses.keys())+['loss'], '_exclude': ['mesh', 'pcls', 'kpts_target', 'kpts_updated']},
-        #                             outputs=[MeshPlot(cell_size=[10, 3]), ExtremaPrinterWithExclude()])
+        if plot_type == "open3d":
+            self.output_plt = MinimalStreamPlot()
 
     def add_loss(self, losses_with_weights: dict):
         for loss_name, weight in losses_with_weights.items():
@@ -44,12 +50,18 @@ class LossManager():
 
     def update_loss(self, loss_name: str, value: float):
         if loss_name in self.losses.keys():
-            self.losses[loss_name].append(value)
+            self.losses[loss_name].append(float(value))
 
     def update_losses(self, losses_value: dict):
         for loss_name, value in losses_value.items():
             self.update_loss(loss_name, value)
         self.epoch += 1
+
+    def save_losses(self, filepath: str):
+        _losses = {}
+        for loss_name, value in self.losses.items():
+            _losses[loss_name] = np.array(value)
+        np.savez(filepath, **_losses)
 
     def delta(self, idx=-1, absolute=True):
         return sum([loss.delta(idx, absolute) for loss in self.losses.values()])
@@ -59,9 +71,6 @@ class LossManager():
 
     def str_losses(self, idx=-1):
         return "\t".join(["{}={:.4f}".format(loss_name, loss[idx]) for loss_name, loss in self.losses.items()])
-
-    def clear_plt(self):
-        self.fig.clf()
 
     def show_losses(self):
         ax = self.fig.add_subplot(1, 2, 1)
@@ -74,7 +83,7 @@ class LossManager():
             ax.set_ylabel("Loss")
             ax.set_title("Loss vs iterations")
 
-    def show_output(self, mesh, pcls=None, kpts_target=None, kpts_updated=None):
+    def show_output_mpl(self, mesh, pcls=None, kpts_target=None, kpts_updated=None):
         x, y, z = mesh[0].T
         # ax = Axes3D(fig)
         ax = self.fig.add_subplot(1, 2, 2, projection='3d')
@@ -107,6 +116,24 @@ class LossManager():
         if self.draw_flag:
             plt.show()
             self.draw_flag = False
+
+    def show_output_o3d(self, mesh, pcl, kpts_target):
+        self.output_plt.show_manual(dict(
+            mesh=dict(
+                mesh=mesh
+            ),
+            pcl=dict(
+                pcl=pcl,
+                color=[0, 1, 0]
+            ),
+            kpts=dict(
+                pcl=kpts_target,
+                color=[0, 0, 1]
+            )
+        ))
+
+    def __del__(self):
+        plt.close(self.fig)
 
     def __len__(self):
         return min([len(loss) for loss in self.losses.values()])
