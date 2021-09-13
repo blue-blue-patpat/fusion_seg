@@ -16,7 +16,10 @@ import signal
 import time
 import ctypes
 import multiprocessing
-import rospy
+try:
+    import rospy
+except:
+    rospy = None
 import numpy as np
 
 
