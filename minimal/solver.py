@@ -6,7 +6,8 @@ from pytorch3d.loss import point_mesh_edge_distance, point_mesh_face_distance
 from pytorch3d.structures import Meshes, Pointclouds
 from alfred.dl.torch.common import device
 from minimal.models import KinematicModel, KinematicPCAWrapper
-from minimal.utils import LossManager, VPOSER_DIR
+from minimal.utils import LossManager
+from minimal.config import VPOSER_DIR
 from human_body_prior.tools.model_loader import load_model
 from human_body_prior.models.vposer_model import VPoser
 

@@ -2,10 +2,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from visualization.o3d_plot import MinimalStreamPlot
 
-
-VPOSER_DIR = "/home/nesc525/xiangyu/human_body_prior/support_data/dowloads/vposer_v2_05"
-
-
 class WeightLoss(list):
     def __init__(self, weight=1) -> None:
         super().__init__()
