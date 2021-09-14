@@ -34,9 +34,8 @@ class LossManager():
 
         self.plot_type = plot_type
         
-        plt.ion()
-        self.fig = plt.figure()
-        self.fig.set_size_inches(12, 6)
+        self.fig = None
+        self.mpl_flag = True
         self.draw_flag = True
 
         self.arts = []
@@ -73,6 +72,12 @@ class LossManager():
         return "\t".join(["{}={:.4f}".format(loss_name, loss[idx]) for loss_name, loss in self.losses.items()])
 
     def show_losses(self):
+        if self.mpl_flag:
+            plt.ion()
+            self.fig = plt.figure()
+            self.fig.set_size_inches(12, 6)
+            self.mpl_flag = False
+
         ax = self.fig.add_subplot(1, 2, 1)
         for loss_name, loss in self.losses.items():
             ax.plot(loss, label=loss_name)
@@ -133,7 +138,8 @@ class LossManager():
         ))
 
     def __del__(self):
-        plt.close(self.fig)
+        if self.fig is not None:
+            plt.close(self.fig)
 
     def __len__(self):
         return min([len(loss) for loss in self.losses.values()])

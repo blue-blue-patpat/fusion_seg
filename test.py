@@ -79,7 +79,7 @@ if __name__ == "__main__":
     # from kinect.kinect_skeleton import extract_skeleton
     # import os
     # from dataloader.result_loader import OptitrackCSVLoader
-    root_path = '/home/nesc525/chen/3DSVC/__test__/default'
+    root_path = "/media/nesc525/perple"
     # csv_file = OptitrackCSVLoader(root_path)
     # if len(csv_file):
     #     parse_opti_csv(csv_file.file_dict["optitrack"].loc[0,"filepath"])

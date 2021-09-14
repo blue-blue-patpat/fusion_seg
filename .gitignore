@@ -3,5 +3,6 @@
 .ipynb_checkpoints
 __pycache__
 __test__
+nohup.out
 ignoredata
 **/*.pyc

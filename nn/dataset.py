@@ -1,50 +1,49 @@
 # author:Leo-Zhu  time:21-8-31
 
 import os
+from posixpath import join
 import numpy as np
 from torch.utils.data import Dataset
-from dataloader.result_loader import KinectResultLoader, ArbeResultLoader, OptitrackResultLoader
+from dataloader.result_loader import ResultFileLoader
 
 
 class DataLoader(Dataset):
-    def __init__(self, root_path, frames_per_clip=2, step_between_clips=1, num_points=2048, train=True):
+    def __init__(self, root_path, frames_per_clip=2, step_between_clips=1, num_points=2048, train=True, skip_head=30):
         super(DataLoader, self).__init__()
-
-        self.clip = []
-        self.labels = []
-        # init result loader
-        self.arbe_loader = ArbeResultLoader(root_path)
-        self.opti_loader = OptitrackResultLoader(root_path)
-        # remove deduplicated arbe frames
-        self.arbe_loader.file_dict['arbe'] = self.arbe_loader.file_dict['arbe'].drop_duplicates(subset=['dt'],keep='first')
-
-        self.index_map = []
-
-        file_num = len(self.arbe_loader)
-        for i in range(file_num):
-            if i > frames_per_clip*step_between_clips-1 and i < file_num-frames_per_clip*step_between_clips+1:
-                for f in range(i-frames_per_clip*step_between_clips, i+frames_per_clip*step_between_clips+1, step_between_clips):
-                    self.index_map.append((i, f))
-
-        # for label_name in os.listdir(out_root):
-        #     label = np.load(os.path.join(out_root, label_name), allow_pickle=True)
-        #     self.labels.append(label)
-
-        self.frames_per_clip = frames_per_clip
         self.step_between_clips = step_between_clips
+        self.clip_range = frames_per_clip * step_between_clips
         self.num_points = num_points
         self.train = train
+        self.file_res = []
+        self.index_map = []
+        self.id_map = []
+        videos = [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] == 'D']
+        for path in videos:
+            # init result loader
+            file_loader = ResultFileLoader(root_path=path, skip_head=skip_head, enabled_sources=["arbe", "optitrack"])
+            self.file_res.append(file_loader)
 
+        for idx, file_res in enumerate(self.file_res):
+            # remove deduplicated arbe frames
+            arbe_ids = sorted(map(int, file_res.a_loader.file_dict["arbe"].drop_duplicates(subset=["dt"],keep="first")["id"]))[skip_head:]
+            file_num = len(arbe_ids)
+            self.id_map.append(arbe_ids)
+            for i, id in enumerate(arbe_ids):
+                if i > self.clip_range-1 and i < file_num-self.clip_range:
+                    self.index_map.append((idx, id))
+        pass
     def __len__(self):
         return len(self.index_map)
 
     def __getitem__(self, idx):
-
-        index, t = self.index_map[idx]
-        video = self.videos[index]
-        label = self.labels[index]
-
-        clip = [self.videos[t+i*self.step_between_clips] for i in range(self.frames_per_clip*2+1)]
+        index, id = self.index_map[idx]
+        arbe_video = self.file_res[index]
+        ids = self.id_map[index]
+        clip = []
+        for i, item in enumerate(ids):
+            if item == id:
+                clip_ids = ids[i-self.clip_range:i+self.clip_range+1:self.step_between_clips] 
+                clip.append(np.load(arbe_video.a_loader[clip_id]["arbe"]["filepath"]) for clip_id in clip_ids)
         for i, p in enumerate(clip):
             if p.shape[0] > self.num_points:
                 r = np.random.choice(p.shape[0], size=self.num_points, replace=False)
@@ -57,8 +56,8 @@ class DataLoader(Dataset):
         return clip.astype(np.float32), label, index
 
 
-if __name__ == '__main__':
-    dataset_1 = DataLoader(root_path='/home/leo/in_root', out_root='/home/leo/out_root')
+if __name__ == "__main__":
+    dataset_1 = DataLoader(root_path="/home/leo/in_root", out_root="/home/leo/out_root")
     clip, label, video_idx = dataset_1[0]
     print(clip)
     print(label)
