@@ -227,7 +227,11 @@ class KinematicModel():
     path: Path to save.
     """
     with open(path, 'w') as fp:
-      save_obj(fp, torch.tensor(self.verts - self.coord_origin), torch.tensor(self.faces))
+      # save_obj(fp, torch.tensor(self.verts - self.coord_origin), torch.tensor(self.faces))
+      for v in self.verts - self.coord_origin:
+        fp.write('v %f %f %f\n' % (v[0], v[1], v[2]))
+      for f in self.faces + 1:
+        fp.write('f %d %d %d\n' % (f[0], f[1], f[2]))
 
 
 class KinematicPCAWrapper():
