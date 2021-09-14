@@ -1,5 +1,4 @@
 import os
-from typing import Generator
 import argparse
 import numpy as np
 
@@ -8,21 +7,22 @@ from minimal import armatures
 from minimal.models import KinematicModel, KinematicPCAWrapper
 import minimal.config as config
 from minimal.bridge import JointsBridge
-from dataloader.result_loader import ResultFileLoader
-from dataloader.utils import ymdhms_time, clean_dir
+from minimal.input_loader import MinimalInput
+from dataloader.result_loader import MinimalLoader, ResultFileLoader
+from dataloader.utils import ymdhms_time, clean_dir, create_dir
 from visualization.utils import o3d_plot, o3d_coord, o3d_mesh, o3d_pcl, o3d_skeleton
 
 
 def optitrack_input(root_path, **kwargs):
     loader = ResultFileLoader(root_path, int(kwargs.get("skip_head", 0)), int(kwargs.get("skip_tail", 0)),
-                              enabled_sources=["arbe", "optitrack", "master", "sub1", "sub2", "kinect_pcl"])
+                              enabled_sources=["arbe", "optitrack", "master", "sub1", "sub2", "kinect_pcl", "kinect_pcl_remove_zeros"])
     print(loader)
     return loader
 
 
 def kinect_input(root_path, **kwargs):
     loader = ResultFileLoader(root_path, int(kwargs.get("skip_head", 0)), int(kwargs.get("skip_tail", 0)),
-                              enabled_sources=["arbe", "master", "sub1", "sub2", "kinect_pcl", "kinect_skeleton"])
+                              enabled_sources=["arbe", "master", "sub1", "sub2", "kinect_pcl", "kinect_pcl_remove_zeros", "kinect_skeleton"])
     print(loader)
     return loader
 
@@ -164,6 +164,9 @@ def stream_minimal(root_path: str, dbg_level: int=0, plot_type="open3d", **kwarg
 
 
 def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2, plot_type="open3d", **kwargs):
+    print("{} : [Minimal] Starting minimal...\nroot_path={}\tdbg_level={}\twindow_len={}".format(
+        ymdhms_time(), root_path, dbg_level, window_len
+    ))
     save_path = os.path.join(root_path, "minimal")
     temp_path = os.path.join(root_path, "minimal_temp")
     dbg_level = int(dbg_level)
@@ -175,15 +178,15 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
     solver = Solver(wrapper, plot_type=plot_type)
 
     # save to $root_path$/minimal/(param,obj,trans)
-    clean_dir(os.path.join(save_path, "param"))
-    clean_dir(os.path.join(save_path, "obj"))
-    clean_dir(os.path.join(save_path, "trans"))
-    clean_dir(os.path.join(save_path, "loss"))
+    create_dir(os.path.join(save_path, "param"))
+    create_dir(os.path.join(save_path, "obj"))
+    create_dir(os.path.join(save_path, "trans"))
+    create_dir(os.path.join(save_path, "loss"))
 
-    clean_dir(os.path.join(temp_path, "param"))
-    clean_dir(os.path.join(temp_path, "obj"))
-    clean_dir(os.path.join(temp_path, "trans"))
-    clean_dir(os.path.join(temp_path, "loss"))
+    create_dir(os.path.join(temp_path, "param"))
+    create_dir(os.path.join(temp_path, "obj"))
+    create_dir(os.path.join(temp_path, "trans"))
+    create_dir(os.path.join(temp_path, "loss"))
 
     jnts_brg = JointsBridge()
 
@@ -193,9 +196,11 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
 
     if os.path.exists(os.path.join(save_path, "init_params.npz")):
         # load init shape & pose
+        print("{} : [Minimal] Load current init params".format(ymdhms_time()))
         solver.update_params(np.load(os.path.join(save_path, "init_params.npz")))
     else:
         # solve init shape
+        print("{} : [Minimal] Start solving init params...".format(ymdhms_time()))
         shape_params = []
         for i in range(window_len*2+1):
             result, info = loader[i]
@@ -220,16 +225,30 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
         face_losses=50,
     )
 
-    inputs = MinimalInput(loader, jnts_brg, data_type)
+    print("{} : [Minimal] Losses: {}".format(ymdhms_time(), losses_w))
+
+    inputs = MinimalInput(loader, data_type)
+    current_minimal = MinimalLoader(root_path)
+
+    start_idx = 0
 
     for i in range(len(loader)):
+        result = current_minimal.select_item_in_tag(i+int(kwargs.get("skip_head", 0)), "rid", "minimal/param")
+        if len(result) == 0:
+            break
+        start_idx = i
+
+    print("{} : [Minimal] Configure start index {}".format(ymdhms_time(), start_idx))
+
+    for i in range(start_idx, len(loader)):
+        rid = inputs[i]["info"]["arbe"]["id"]
         init_pose = solver.pose_params
         results = {}
         for j in range(max(0, i-window_len), min(len(loader), i+window_len)):
             solver.update_params(init_pose)
             _, losses = solver.solve(inputs[j]["jnts"], inputs[i]["pcl"], "pose", max_iter=40, kpts_threshold=0.02, loss_threshold=0.0005, mse_threshold=0.0001, dbg_level=dbg_level, losses_with_weights=losses_w)
         
-            filename = "id={}#{}_rid={}".format(i, j, inputs[i]["info"]["arbe"]["id"])
+            filename = "id={}#{}_rid={}".format(i, j, rid)
             solver.save_param(os.path.join(temp_path, "param", filename))
             solver.save_model(os.path.join(temp_path, "obj", filename+".obj"))
             inputs.save_revert_transform(j, os.path.join(temp_path, "trans", filename))
@@ -248,40 +267,7 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
         inputs.save_revert_transform(j, os.path.join(save_path, "trans", filename))
         inputs.remove(i-window_len)
 
-
-class MinimalInput:
-    def __init__(self, loader: ResultFileLoader, brg: JointsBridge, data_type: str) -> None:
-        self.input_dict = {}
-        self.loader = loader
-        self.brg = brg
-        self.data_type = data_type
-
-    def update(self, idx: int):
-        if idx in self.input_dict.keys():
-            return
-        result, info = self.loader[idx]
-        self.brg.init_input(result["optitrack"], np.vstack([result["master_pcl"], result["sub1_pcl"], result["sub2_pcl"]]))
-        _jnts, _pcl = self.brg.map(self.data_type)
-        R, t, scale = self.brg.revert_transform()
-        self.input_dict[idx] = dict(
-            jnts=_jnts,
-            pcl=_pcl,
-            info=info,
-            transform=dict(
-                R=R, t=t, scale=scale
-            )
-        )
-
-    def remove(self, idx: int):
-        if idx in self.input_dict.keys():
-            del self.input_dict[idx]
-
-    def save_revert_transform(self, idx: int, file_path: str):
-        np.savez(file_path, **self.input_dict[idx]["transform"])
-
-    def __getitem__(self, idx):
-        self.update(idx)
-        return self.input_dict[idx]
+        print("{} : [Minimal] Frame pcl={}_jnts={}_rid={} end up with loss {}".format(ymdhms_time(), i, j, rid, results[result_key]["loss"]))
 
 
 def run():

@@ -204,6 +204,11 @@ def clean_dir(dir):
     os.makedirs(dir)
 
 
+def create_dir(dir):
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+
+
 def ymdhms_time() -> str:
     """
     Return current time str for print use

@@ -100,7 +100,6 @@ class Solver:
             params -= delta
 
             update = losses.delta(absolute=False)
-            print(update)
 
             if update > 0 and update > losses.delta(idx=-2, absolute=False):
                 u /= v

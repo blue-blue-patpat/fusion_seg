@@ -30,13 +30,18 @@ class ResultLoader():
 
     def select_item_in_tag(self, value, item_key, tag, exact=True):
         df = self.file_dict[tag]
-        res = None
+        if df.empty:
+            return {}
         if exact:
             # auto convert type when comparing strs
             if not np.issubdtype(df[item_key].dtypes, np.number):
                 value = str(value)
             # match equal
-            res = dict(df[df[item_key]==value].iloc[0])
+            res_df = df[df[item_key]==value]
+            if res_df.empty:
+                res = {}
+            else:
+                res = dict(df[df[item_key]==value].iloc[0])
         else:
             # match closest
             clfs_key = str(tag) + str(item_key)
@@ -211,6 +216,20 @@ class OptitrackCSVLoader(ResultLoader):
         self.run()
 
 
+class MinimalLoader(ResultLoader):
+    def __init__(self, result_path, params=None) -> None:
+        super().__init__(result_path)
+        if params is None:
+            self.params = [
+                dict(tag="minimal/obj", ext=".obj"),
+                dict(tag="minimal/param", ext=".npz"),
+                dict(tag="minimal/trans", ext=".npz"),
+            ]
+        else:
+            self.params = params
+        self.run()
+
+
 class ResultFileLoader():
     def __init__(self, root_path: str, skip_head: int=0, skip_tail: int=0,
                  enabled_sources: list=None, disabled_sources: list=[],
@@ -306,7 +325,8 @@ class ResultFileLoader():
     def init_mesh_source(self):
         if "mesh" in self.sources:
             # TODO: complete mesh init
-            self.mesh_loader = ResultLoader()
+            pass
+            # self.mesh_loader = ResultLoader()
 
     def init_calib_source(self):
         """
@@ -344,7 +364,8 @@ class ResultFileLoader():
             })
         if "kinect_pcl" in self.sources:
             pcl = np.load(res["kinect/{}/pcls".format(k_loader.device)]["filepath"]).reshape(-1, 3)
-            # pcl = pcl[pcl.any(axis=1)]
+            if "kinect_pcl_remove_zeros" in self.sources:
+                pcl = pcl[pcl.any(axis=1)]
             self.results.update({
                 "{}_pcl".format(k_loader.device):  pcl / 1000 @ trans_mat["R"].T + trans_mat["t"],
             })
