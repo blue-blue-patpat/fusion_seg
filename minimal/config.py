@@ -2,5 +2,4 @@ SMPL_MODEL_1_0_PATH = './ignoredata/minimal_files/model_files/smpl_1_0_female.pk
 SMPL_MODEL_1_0_MALE_PATH = './ignoredata/minimal_files/model_files/smpl_1_0_male.pkl'
 SMPL_MODEL_1_1_PATH = './ignoredata/minimal_files/model_files/smpl_1_1_female.pkl'
 
-VPOSER_DIR_525 = "/home/nesc525/xiangyu/human_body_prior/support_data/dowloads/vposer_v2_05"
-VPOSER_DIR_AMAX = ""
+VPOSER_DIR = "/home/nesc525/xiangyu/human_body_prior/support_data/dowloads/vposer_v2_05"
