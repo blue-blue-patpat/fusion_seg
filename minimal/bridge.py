@@ -12,7 +12,7 @@ class JointsBridge():
         self.scale = 0
 
     def init_input(self, jnts: np.ndarray, pcl: np.ndarray) -> None:
-        self.jnts = jnts
+        self.jnts = np.nan_to_num(jnts)
         if pcl.shape[0] > 50000:
             self.pcl = pcl[np.random.choice(np.arange(pcl.shape[0]), size=50000, replace=False)]
 

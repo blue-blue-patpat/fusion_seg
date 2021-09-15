@@ -84,9 +84,9 @@ def pcl_filter(pcl_a, pcl_b, bound=0.5):
     """
     from itertools import compress
 
-    upper_bound = pcl_a.max(axis=0) + bound
-    lower_bound = pcl_a.min(axis=0) - bound
-    pcl_in_bound = (pcl_b < upper_bound) & (pcl_b > lower_bound)
+    upper_bound = pcl_a[:,:3].max(axis=0) + bound
+    lower_bound = pcl_a[:,:3].min(axis=0) - bound
+    pcl_in_bound = (pcl_b[:,:3] < upper_bound) & (pcl_b[:,:3] > lower_bound)
 
     filter_list = []
     for row in pcl_in_bound:

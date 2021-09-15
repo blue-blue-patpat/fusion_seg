@@ -90,5 +90,9 @@ if __name__ == "__main__":
     #     extract_skeleton(root_path, dev)
     #     extract_mkv(root_path+"/kinect/{}/out.mkv".format(dev))
 
-    from nn.dataset import DataLoader
-    d = DataLoader(root_path)
+    from nn.dataset import MIMOBody3D
+    import torch
+    dataset = MIMOBody3D(root_path)
+
+    data_loader = torch.utils.data.DataLoader(dataset, batch_size=1000, shuffle=True, pin_memory=True)
+    print(data_loader)

@@ -48,4 +48,6 @@ def update(self: MinimalInput, idx: int):
             R=R, t=t, scale=scale
         )
     )
+    if np.isnan(result["optitrack"]).sum() > 0:
+        self.input_dict[idx]["info"]["nan"] = True
     print("{} : [MinimalInput] Frame {} successfully loaded.".format(ymdhms_time(), idx))

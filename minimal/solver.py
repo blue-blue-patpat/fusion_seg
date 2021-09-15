@@ -1,4 +1,5 @@
 import os
+from typing import Union
 from visualization.utils import o3d_mesh, o3d_plot
 import numpy as np
 import torch
@@ -126,7 +127,7 @@ class Solver:
     def params(self):
         return np.hstack([self.pose_params, self.shape_params])
 
-    def update_params(self, params: np.ndarray):
+    def update_params(self, params: Union[np.lib.npyio.NpzFile, np.ndarray]):
         if isinstance(params, np.lib.npyio.NpzFile):
             self.pose_params = params["pose"]
             self.shape_params = params["shape"]

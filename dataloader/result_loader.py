@@ -1,6 +1,8 @@
 import os
 import numpy as np
 import pandas as pd
+from pytorch3d.io import load_obj
+from pytorch3d.structures import Meshes
 from sklearn.neighbors import KNeighborsClassifier
 from dataloader.utils import file_paths_from_dir, filename_decoder
 from sync.offsets import Offsets
@@ -291,7 +293,6 @@ class ResultFileLoader():
         """
         if "arbe" not in self.sources:
             print("[ResultFileLoader] Source 'arbe' is not enabled, may cause unexpected errors.")
-            return
 
         self.a_loader = ArbeResultLoader(self.root_path)
 
@@ -323,10 +324,10 @@ class ResultFileLoader():
         self.o_loader = OptitrackResultLoader(self.root_path) if "optitrack" in self.sources else None
             
     def init_mesh_source(self):
-        if "mesh" in self.sources:
-            # TODO: complete mesh init
-            pass
-            # self.mesh_loader = ResultLoader()
+        """
+        Init Mesh
+        """
+        self.mesh_loader = MinimalLoader(self.root_path) if "mesh" in self.sources else None
 
     def init_calib_source(self):
         """
@@ -387,6 +388,31 @@ class ResultFileLoader():
         self.info.update(dict(
             optitrack = res["optitrack"]
         ))
+
+    def select_trans_mesh_item_by_rid(self, mesh_loader: MinimalLoader, rid: int) -> None:
+        """
+        Select Mesh transformed results by radar id
+        """
+        res = mesh_loader.select_item(rid, "rid")
+        if len(res["minimal/param"]) == 0:
+            self.results.update(dict(mesh_param=None, mesh_obj=None))
+            self.info.update(dict(mesh=None))
+
+        trans_param = np.load(res["minimal/trans"]["filepath"])
+        
+        if "mesh_param" in self.sources:
+            self.results.update(dict(
+                mesh_param=np.load(res["minimal/param"]["filepath"]),
+                mesh_R=trans_param["R"],
+                mesh_t=trans_param["t"],
+                mesh_scale=trans_param["scale"]
+            ))
+        if "mesh_obj" in self.sources:
+            verts, faces, _ = load_obj(res["minimal/obj"]["filepath"])
+            verts = (verts @ trans_param["R"] + trans_param["t"]) * trans_param["scale"]
+            self.results.update(dict(
+                mesh_param=Meshes(verts=[verts], faces=[faces[0]]),
+            ))
 
     def __getitem__(self, index: int) -> tuple:
         """

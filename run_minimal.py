@@ -15,14 +15,14 @@ from visualization.utils import o3d_plot, o3d_coord, o3d_mesh, o3d_pcl, o3d_skel
 
 def optitrack_input(root_path, **kwargs):
     loader = ResultFileLoader(root_path, int(kwargs.get("skip_head", 0)), int(kwargs.get("skip_tail", 0)),
-                              enabled_sources=["arbe", "optitrack", "master", "sub1", "sub2", "kinect_pcl", "kinect_pcl_remove_zeros"])
+                              enabled_sources=["optitrack", "master", "sub1", "sub2", "kinect_pcl", "kinect_pcl_remove_zeros"])
     print(loader)
     return loader
 
 
 def kinect_input(root_path, **kwargs):
     loader = ResultFileLoader(root_path, int(kwargs.get("skip_head", 0)), int(kwargs.get("skip_tail", 0)),
-                              enabled_sources=["arbe", "master", "sub1", "sub2", "kinect_pcl", "kinect_pcl_remove_zeros", "kinect_skeleton"])
+                              enabled_sources=["master", "sub1", "sub2", "kinect_pcl", "kinect_pcl_remove_zeros", "kinect_skeleton"])
     print(loader)
     return loader
 
@@ -260,7 +260,11 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
             del losses
         result_key = min(results, key=lambda key: results[key]["loss"])
         solver.update_params(results[result_key]["pose"])
-        filename = "id={}#{}_rid={}".format(i, j, inputs[i]["info"]["arbe"]["id"])
+        if inputs[j]["info"].get("nan", False):
+            nan_flag = "nan"
+        else:
+            nan_flag = "fine"
+        filename = "id={}_skid={}_masid={}_rid={}_type={}".format(i, inputs[j]["info"]["optitrack"]["id"], inputs[i]["info"]["master_pcl"]["id"], rid, nan_flag)
 
         solver.save_param(os.path.join(save_path, "param", filename))
         solver.save_model(os.path.join(save_path, "obj", filename+".obj"))
