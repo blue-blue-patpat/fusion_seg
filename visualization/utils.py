@@ -108,7 +108,7 @@ class O3DItemUpdater():
 
 class O3DStreamPlot():
     def __init__(self, width=1600, height=1200, with_coord=True) -> None:
-        self.view = o3d.visualization.Visualizer()
+        self.view = o3d.visualization.VisualizerWithKeyCallback()
         self.view.create_window(width=width, height=height)
         self.ctr = self.view.get_view_control()
 
@@ -119,6 +119,7 @@ class O3DStreamPlot():
         self.updater_dict = dict()
         self.init_updater()
         self.init_plot()
+        self.init_key_cbk()
 
     def init_updater(self):
         self.plot_funcs = dict(exampel_pcl=o3d_pcl, example_skeleton=o3d_skeleton, example_mesh=o3d_mesh)
@@ -131,6 +132,22 @@ class O3DStreamPlot():
             if self.with_coord:
                 self.view.add_geometry(o3d_coord())
             self.updater_dict[updater_key] = updater
+
+    def init_key_cbk(self):
+        key_map = dict(
+            w=87, a=65, s=83, d=68, h=72, l=76
+        )
+        key_cbk = dict(
+            w=lambda v : v.get_view_control().rotate(0, 40),
+            a=lambda v : v.get_view_control().rotate(40, 0),
+            s=lambda v : v.get_view_control().rotate(0, -40),
+            d=lambda v : v.get_view_control().rotate(-40, 0),
+            h=lambda v : v.get_view_control().scale(-2),
+            l=lambda v : v.get_view_control().scale(2),
+        )
+
+        for key, value in key_map.items():
+            self.view.register_key_callback(value, key_cbk[key])
 
     def init_show(self):
         self.view.reset_view_point(True)

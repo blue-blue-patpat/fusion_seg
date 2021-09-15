@@ -11,6 +11,7 @@ from minimal.input_loader import MinimalInput
 from dataloader.result_loader import MinimalLoader, ResultFileLoader
 from dataloader.utils import ymdhms_time, clean_dir, create_dir
 from visualization.utils import o3d_plot, o3d_coord, o3d_mesh, o3d_pcl, o3d_skeleton
+from visualization.mesh_plot import MinimalResultStreamPlot
 
 
 def optitrack_input(root_path, **kwargs):
@@ -198,6 +199,7 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
         # load init shape & pose
         print("{} : [Minimal] Load current init params".format(ymdhms_time()))
         solver.update_params(np.load(os.path.join(save_path, "init_params.npz")))
+        jnts_brg.scale = np.load(os.path.join(save_path, "init_transform.npz"))["scale"]
     else:
         # solve init shape
         print("{} : [Minimal] Start solving init params...".format(ymdhms_time()))
@@ -214,6 +216,7 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
     
         solver.shape_params = np.array(shape_params).mean(0)
         solver.save_param(os.path.join(save_path, "init_params"))
+        jnts_brg.save_revert_transform(os.path.join(save_path, "init_transform"))
 
     # disable mesh update
     # solver.model.core.compute_mesh = False
@@ -282,6 +285,7 @@ def run():
         kinect_stream_minimal=stream_minimal,
         optitrack_stream_minimal=stream_minimal,
         optitrack_stream_windowed=optitrack_stream_windowed_minimal,
+        check=lambda **kwargs : MinimalResultStreamPlot(kwargs.get("root_path"), skip_head=kwargs.get("skip_head", 0), skip_tail=kwargs.get("skip_tail", 0)).show(),
     )
     parser = argparse.ArgumentParser(usage='"run_minimal.py -h" to show help.')
     parser.add_argument('-p', '--path', dest='root_path', type=str, help='File Root Path, default "./__test__/default"')

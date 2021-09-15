@@ -1,6 +1,16 @@
 # Minimal Infomation
 
 ## Data Structure
+### File Name
+
+Example:  
+> id=1849_skid=2062_masid=1941_rid=2009_type=fine
+- $id$: unique index among current minimal files
+- $skid$: skeleton index(optitrack $id$)
+- $masid$: plcs index(master $id$)
+- $rid$: radar index(arbe $id$)
+- $type$: skeleton type(fine=OK, nan=skeleton has nan value)
+
 ### SMPL Params
 #### Pose
 pose: 1 * 72(3 coord + (24 joints - 1 pelvis) * 3 pose)  

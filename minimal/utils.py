@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from visualization.o3d_plot import MinimalStreamPlot
+from visualization.mesh_plot import MinimalStreamPlot
 
 class WeightLoss(list):
     def __init__(self, weight=1) -> None:

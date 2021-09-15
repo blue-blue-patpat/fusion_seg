@@ -2,7 +2,6 @@ import os
 import numpy as np
 import pandas as pd
 from pytorch3d.io import load_obj
-from pytorch3d.structures import Meshes
 from sklearn.neighbors import KNeighborsClassifier
 from dataloader.utils import file_paths_from_dir, filename_decoder
 from sync.offsets import Offsets
@@ -271,6 +270,7 @@ class ResultFileLoader():
 
         # Init calib
         self.init_calib_source()
+        self.init_skip()
 
         # Verify if offsets can be restored from file
         if Offsets.verify_file(root_path):
@@ -336,6 +336,13 @@ class ResultFileLoader():
         from calib.utils import to_radar_transform_mat
 
         self.trans = to_radar_transform_mat(self.root_path)
+
+    def init_skip(self):
+        if "mesh" not in self.sources:
+            return
+        rid_arr = np.array(self.mesh_loader.file_dict["minimal/param"]["rid"], dtype=int)
+        self.skip_head = max(self.skip_head, rid_arr.min())
+        self.skip_tail = max(self.skip_tail, len(self.a_loader) - 1 - rid_arr.max())
 
     def select_kinect_trans_item_by_t(self, k_loader: KinectResultLoader, t: float) -> None:
         """
@@ -409,9 +416,11 @@ class ResultFileLoader():
             ))
         if "mesh_obj" in self.sources:
             verts, faces, _ = load_obj(res["minimal/obj"]["filepath"])
+            # TODO: change to origin R
+            # verts = (verts @ np.linalg.inv(trans_param["R"]) + trans_param["t"]) * trans_param["scale"]
             verts = (verts @ trans_param["R"] + trans_param["t"]) * trans_param["scale"]
             self.results.update(dict(
-                mesh_param=Meshes(verts=[verts], faces=[faces[0]]),
+                mesh_obj=(verts, faces[0]),
             ))
 
     def __getitem__(self, index: int) -> tuple:
@@ -433,6 +442,7 @@ class ResultFileLoader():
         )
 
         t = float(arbe_res["arbe"]["st"])
+        rid = int(arbe_res["arbe"]["id"])
         if self.k_mas_loader:
             self.select_kinect_trans_item_by_t(self.k_mas_loader, t)
         if self.k_sub1_loader:
@@ -441,6 +451,8 @@ class ResultFileLoader():
             self.select_kinect_trans_item_by_t(self.k_sub2_loader, t)
         if self.o_loader:
             self.select_trans_optitrack_item_by_t(self.o_loader, t)
+        if self.mesh_loader:
+            self.select_trans_mesh_item_by_rid(self.mesh_loader, rid)
         return self.results, self.info
 
     def __len__(self):

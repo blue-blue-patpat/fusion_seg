@@ -8,9 +8,9 @@ from dataloader.result_loader import ResultFileLoader
 from visualization.utils import pcl_filter
 
 
-class MIMOBody3D(Dataset):
+class MMBody3D(Dataset):
     def __init__(self, root_path, frames_per_clip=2, step_between_clips=1, num_points=2048, train=True, skip_head=100):
-        super(MIMOBody3D, self).__init__()
+        super(MMBody3D, self).__init__()
         self.step_between_clips = step_between_clips
         # range of frame index in a clip
         self.clip_range = frames_per_clip * step_between_clips
@@ -46,6 +46,7 @@ class MIMOBody3D(Dataset):
         ids = self.id_list[index]
         clip = []
         label = video[id][0]["optitrack"]
+        self.num_class = label.shape[0]
         i = ids.index(id)
         clip_ids = ids[i-self.clip_range:i+self.clip_range+1:self.step_between_clips] 
         for clip_id in clip_ids:
