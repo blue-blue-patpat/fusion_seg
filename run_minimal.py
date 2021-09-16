@@ -230,7 +230,7 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
 
     print("{} : [Minimal] Losses: {}".format(ymdhms_time(), losses_w))
 
-    inputs = MinimalInput(loader, data_type)
+    inputs = MinimalInput(loader, jnts_brg.scale, data_type)
     current_minimal = MinimalLoader(root_path)
 
     start_idx = 0
@@ -244,7 +244,8 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
     print("{} : [Minimal] Configure start index {}".format(ymdhms_time(), start_idx))
 
     for i in range(start_idx, len(loader)):
-        rid = inputs[i]["info"]["arbe"]["id"]
+        # rid = inputs[i]["info"]["arbe"]["id"]
+        rid = i+int(kwargs.get("skip_head", 0))
         init_pose = solver.pose_params
         results = {}
         for j in range(max(0, i-window_len), min(len(loader), i+window_len)):

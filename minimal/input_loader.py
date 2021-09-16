@@ -7,9 +7,10 @@ from minimal.bridge import JointsBridge
 
  
 class MinimalInput:
-    def __init__(self, loader: ResultFileLoader, data_type: str) -> None:
+    def __init__(self, loader: ResultFileLoader, scale: float, data_type: str) -> None:
         self.input_dict = {}
         self.loader = loader
+        self.scale = scale
         self.data_type = data_type
         self.pool = Pool(5)
 
@@ -37,6 +38,7 @@ def update(self: MinimalInput, idx: int):
     self.input_dict[idx] = {}
     result, info = self.loader[idx]
     brg = JointsBridge()
+    brg.scale = self.scale
     brg.init_input(result["optitrack"], np.vstack([result["master_pcl"], result["sub1_pcl"], result["sub2_pcl"]]))
     _jnts, _pcl = brg.map(self.data_type)
     R, t, scale = brg.revert_transform()
