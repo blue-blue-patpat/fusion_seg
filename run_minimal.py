@@ -12,6 +12,7 @@ from dataloader.result_loader import MinimalLoader, ResultFileLoader
 from dataloader.utils import ymdhms_time, clean_dir, create_dir
 from visualization.utils import o3d_plot, o3d_coord, o3d_mesh, o3d_pcl, o3d_skeleton
 from visualization.mesh_plot import MinimalResultStreamPlot
+from message.dingtalk import MSG_ERROR, MSG_INFO, TimerBot
 
 
 def optitrack_input(root_path, **kwargs):
@@ -165,9 +166,14 @@ def stream_minimal(root_path: str, dbg_level: int=0, plot_type="open3d", **kwarg
 
 
 def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2, plot_type="open3d", **kwargs):
-    print("{} : [Minimal] Starting minimal...\nroot_path={}\tdbg_level={}\twindow_len={}".format(
+    bot = kwargs.pop("msg_bot")
+    assert isinstance(bot, TimerBot)
+    bot.enable()
+    
+    bot.print("{} : [Minimal] Starting minimal...\nroot_path={}\tdbg_level={}\twindow_len={}".format(
         ymdhms_time(), root_path, dbg_level, window_len
     ))
+
     save_path = os.path.join(root_path, "minimal")
     temp_path = os.path.join(root_path, "minimal_temp")
     dbg_level = int(dbg_level)
@@ -197,12 +203,12 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
 
     if os.path.exists(os.path.join(save_path, "init_params.npz")):
         # load init shape & pose
-        print("{} : [Minimal] Load current init params".format(ymdhms_time()))
+        bot.print("{} : [Minimal] Load current init params".format(ymdhms_time()))
         solver.update_params(np.load(os.path.join(save_path, "init_params.npz")))
         jnts_brg.set_scale(np.load(os.path.join(save_path, "init_transform.npz"))["scale"])
     else:
         # solve init shape
-        print("{} : [Minimal] Start solving init params...".format(ymdhms_time()))
+        bot.print("{} : [Minimal] Start solving init params...".format(ymdhms_time()))
         shape_params = []
         for i in range(window_len*2+1):
             result, info = loader[i]
@@ -228,7 +234,7 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
         face_losses=50,
     )
 
-    print("{} : [Minimal] Losses: {}".format(ymdhms_time(), losses_w))
+    bot.print("{} : [Minimal] Losses: {}".format(ymdhms_time(), losses_w))
 
     inputs = MinimalInput(loader, jnts_brg.scale, data_type)
     current_minimal = MinimalLoader(root_path)
@@ -241,7 +247,7 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
             break
         start_idx = i
 
-    print("{} : [Minimal] Configure start index {}".format(ymdhms_time(), start_idx))
+    bot.print("{} : [Minimal] Configure start index {}".format(ymdhms_time(), start_idx))
 
     for i in range(start_idx, len(loader)):
         # rid = inputs[i]["info"]["arbe"]["id"]
@@ -275,7 +281,7 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
         inputs.save_revert_transform(j, os.path.join(save_path, "trans", filename))
         inputs.remove(i-window_len)
 
-        print("{} : [Minimal] Frame pcl={}_jnts={}_rid={} end up with loss {}".format(ymdhms_time(), i, j, rid, results[result_key]["loss"]))
+        bot.print("{} : [Minimal] Frame pcl={}_jnts={}_rid={} end up with loss {}".format(ymdhms_time(), i, j, rid, results[result_key]["loss"]))
 
 
 def run():
@@ -298,7 +304,15 @@ def run():
 
     args_dict = dict([arg.split('=') for arg in args.addition.split('#') if '=' in arg])
     args_dict.update(dict(args._get_kwargs()))
-    task_dict[args.task](**args_dict)
+
+    args_dict["msg_bot"] = TimerBot(args_dict.get("interval", 30))
+
+    try:
+        task_dict[args.task](**args_dict)
+    except Exception as e:
+        args_dict["msg_bot"].enable()
+        args_dict["msg_bot"].add_task("{} : {}".format(ymdhms_time, e), MSG_ERROR)
+        raise e
 
 if __name__ == "__main__":
     run()
