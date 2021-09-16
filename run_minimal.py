@@ -199,7 +199,7 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
         # load init shape & pose
         print("{} : [Minimal] Load current init params".format(ymdhms_time()))
         solver.update_params(np.load(os.path.join(save_path, "init_params.npz")))
-        jnts_brg.scale = np.load(os.path.join(save_path, "init_transform.npz"))["scale"]
+        jnts_brg.set_scale(np.load(os.path.join(save_path, "init_transform.npz"))["scale"])
     else:
         # solve init shape
         print("{} : [Minimal] Start solving init params...".format(ymdhms_time()))

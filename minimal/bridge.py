@@ -33,6 +33,10 @@ class JointsBridge():
         R, t, scale = self.revert_transform()
         np.savez(file_path, R=R, t=t, scale=scale)
 
+    def set_scale(self, scale):
+        self.scale = scale
+        self.x_norm = np.repeat(self.scale, 3)
+
     def filter_pcl(self) -> np.ndarray:
         # upper_bound = self.jnts.max(axis=0) + 0.3
         # lower_bound = self.jnts.min(axis=0) - 0.3
@@ -247,8 +251,7 @@ class JointsBridge():
     def normalization(self):
         # x_norm = np.linalg.norm(jnts, axis = 0, keepdims = True, ord=np.inf)
         if self.scale == 0:
-            self.scale = np.max(np.abs(self.jnts))
-            self.x_norm = np.repeat(self.scale, 3)
+            self.set_scale(np.max(np.abs(self.jnts)))
         self.jnts = self.jnts / self.x_norm
         self.pcl = self.pcl / self.x_norm
 
