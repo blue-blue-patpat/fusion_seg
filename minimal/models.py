@@ -44,6 +44,7 @@ class KinematicModel():
     self.coord_origin = np.array([0, 0, 0])
     self.scale = scale
     self.compute_mesh = compute_mesh
+    self.mesh = None
 
     self.armature = armature
     self.n_joints = self.armature.n_joints
@@ -141,10 +142,11 @@ class KinematicModel():
     if self.compute_mesh:
       # center = self.verts.mean(0)
       verts = self.verts - self.coord_origin
-      self.mesh = Meshes(verts=[torch.tensor(verts, dtype=torch.float32, device=device)], faces=[torch.tensor(self.faces, dtype=torch.float32, device=device)])
-    else:
-      self.mesh = None
-
+      if False or self.mesh is None:
+        self.mesh = Meshes(verts=torch.tensor(verts, dtype=torch.float32, device=device).view(1, *verts.shape), faces=torch.tensor(self.faces, dtype=torch.float32, device=device).view(1, *self.faces.shape))
+      else:
+        self.mesh._verts_list = [torch.tensor(verts, dtype=torch.float32, device=device)]
+        self.mesh._compute_packed(True)
     # update keypoints
     # self.keypoints = self.J_regressor_ext.dot(self.mesh.verts_packed()) *self.scale
     self.keypoints = self.J_regressor_ext.dot(self.verts) *self.scale

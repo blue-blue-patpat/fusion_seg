@@ -6,3 +6,4 @@ __test__
 nohup.out
 ignoredata
 **/*.pyc
+nn/p4t/modules/src

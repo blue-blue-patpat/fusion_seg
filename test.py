@@ -90,9 +90,9 @@ if __name__ == "__main__":
     #     extract_skeleton(root_path, dev)
     #     extract_mkv(root_path+"/kinect/{}/out.mkv".format(dev))
 
-    from nn.dataset import MMBody3D
-    import torch
-    dataset = MMBody3D(root_path)
+    # from nn.dataset import MMBody3D
+    # import torch
+    # dataset = MMBody3D(root_path)
 
-    data_loader = torch.utils.data.DataLoader(dataset, batch_size=1000, shuffle=True, pin_memory=True)
-    print(data_loader)
+    # data_loader = torch.utils.data.DataLoader(dataset, batch_size=1000, shuffle=True, pin_memory=True)
+    # print(data_loader)

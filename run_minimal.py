@@ -2,8 +2,10 @@ import os
 import argparse
 import numpy as np
 
+# from minimal.solver_torch import Solver
 from minimal.solver import Solver
 from minimal import armatures
+# from minimal.models_torch import KinematicModel, KinematicPCAWrapper
 from minimal.models import KinematicModel, KinematicPCAWrapper
 import minimal.config as config
 from minimal.bridge import JointsBridge
@@ -179,6 +181,7 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
     dbg_level = int(dbg_level)
     window_len = int(window_len)
 
+    # smpl = KinematicModel().init_from_file(config.SMPL_MODEL_1_0_MALE_PATH, armatures.SMPLArmature)
     smpl = KinematicModel(config.SMPL_MODEL_1_0_MALE_PATH, armatures.SMPLArmature)
 
     wrapper = KinematicPCAWrapper(smpl)
@@ -201,7 +204,7 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
 
     data_type = "optitrack"
 
-    if os.path.exists(os.path.join(save_path, "init_params.npz")):
+    if os.path.exists(os.path.join(save_path, "init_params.npz")) and os.path.exists(os.path.join(save_path, "init_transform.npz")):
         # load init shape & pose
         bot.print("{} : [Minimal] Load current init params".format(ymdhms_time()))
         solver.update_params(np.load(os.path.join(save_path, "init_params.npz")))
@@ -217,6 +220,7 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
 
             _, losses = solver.solve(_jnts, _pcl, "full", dbg_level=dbg_level, max_iter=100)
             
+            # shape_params.append(solver.shape_params.cpu().numpy())
             shape_params.append(solver.shape_params)
             del losses
     

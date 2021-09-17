@@ -1,17 +1,21 @@
-import os
+from builtins import isinstance
 from time import time
 from typing import Union
+
+from numpy.linalg.linalg import solve
 from visualization.utils import o3d_mesh, o3d_plot
 import numpy as np
 import torch
 from pytorch3d.loss import point_mesh_edge_distance, point_mesh_face_distance
 from pytorch3d.structures import Meshes, Pointclouds
 from alfred.dl.torch.common import device
-from minimal.models import KinematicModel, KinematicPCAWrapper
+from minimal.models_torch import KinematicModel, KinematicPCAWrapper
 from minimal.utils import LossManager
 from minimal.config import VPOSER_DIR
+from alfred.dl.torch.common import device
 from human_body_prior.tools.model_loader import load_model
 from human_body_prior.models.vposer_model import VPoser
+from vctoolkit import Timer
 
 
 class Solver:
@@ -33,13 +37,13 @@ class Solver:
         self.plot_type = plot_type
 
         # coord_origin + pose_params
-        self.pose_params = np.zeros(self.model.n_pose + 3)
-        self.shape_params = np.zeros(self.model.n_shape)
+        self.pose_params = torch.zeros(self.model.n_pose + 3, device=device)
+        self.shape_params = torch.zeros(self.model.n_shape, device=device)
 
         self.vp, _ = load_model(VPOSER_DIR, model_code=VPoser,
                               remove_words_in_model_weights='vp_model.',
                               disable_grad=True)
-        self.vp = self.vp.to('cuda')
+        self.vp = self.vp.to(device)
 
     def solve(self, jnts_target, pcls_target, solve_type="full", losses_with_weights=None, max_iter=30,
                     kpts_threshold=0.04, mse_threshold=1e-7, loss_threshold=1e-6, u=1e-3, v=1.5, dbg_level=0):
@@ -56,8 +60,9 @@ class Solver:
                 face_losses=100,
             )
 
-        jacobian = np.zeros([jnts_target.size, params.shape[0]])
+        jacobian = torch.zeros([jnts_target.size, params.shape[0]], device=device)
 
+        jnts_target = torch.from_numpy(jnts_target).to(device)
         pcls = Pointclouds([torch.tensor(pcls_target, dtype=torch.float32, device=device)])
 
         # accelerate draw
@@ -67,13 +72,12 @@ class Solver:
 
         for i in range(int(max_iter)):
             t = time()
-            # update modle
-            self.vpose_mapper()
+            # update model
             mesh_updated, jnts_updated = self.model.run(self.params())
 
             # compute keypoints loss
             loss_kpts, residual = jnts_distance(jnts_updated, jnts_target, activate_distance=kpts_threshold)
-            losses.update_loss("kpts_losses", loss_kpts)
+            losses.update_loss("kpts_losses", loss_kpts.cpu())
 
             # compute edge loss
             if losses_with_weights["edge_losses"] > 0:
@@ -90,13 +94,14 @@ class Solver:
                 break
 
             for k in range(params.shape[0]):
-                jacobian[:, k] = np.hstack([self.get_derivative(k)])
-            jtj = np.matmul(jacobian.T, jacobian)
-            jtj = jtj + u * np.eye(jtj.shape[0])
+                jacobian[:, k] = self.get_derivative(k)
 
-            delta = np.matmul(
-                np.matmul(np.linalg.inv(jtj), jacobian.T), residual
-            ).ravel()
+            jtj = torch.matmul(jacobian.T, jacobian)
+            jtj = jtj + u * torch.eye(jtj.shape[0], device=device)
+
+            delta = torch.matmul(
+                torch.matmul(torch.inverse(jtj), jacobian.T), residual.to(jacobian.dtype)
+            ).view(-1)
             params -= delta
 
             update = losses.delta(absolute=False)
@@ -115,22 +120,30 @@ class Solver:
                     vertices, faces= mesh_updated.verts_packed().cpu(), mesh_updated.faces_packed().cpu()
                     losses.show_output_mpl(mesh=(vertices, faces), pcls=pcls_vis, kpts_target=jnts_target, kpts_updated=jnts_updated)
                 else:
-                    losses.show_output_o3d(mesh_updated, pcls_vis, jnts_target)
+                    losses.show_output_o3d(mesh_updated, pcls_vis, jnts_target.cpu())
 
             self.update_params(params)
+
             print(time()-t)
+
         if dbg_level == 0:
             o3d_plot([o3d_mesh(mesh_updated)])
+
         return self.params(), losses
 
     def params(self):
-        return np.hstack([self.pose_params, self.shape_params])
+        return torch.cat([self.pose_params, self.shape_params])
 
-    def update_params(self, params: Union[np.lib.npyio.NpzFile, np.ndarray]):
+    def update_params(self, params: Union[np.lib.npyio.NpzFile, np.ndarray, torch.Tensor]):
         if isinstance(params, np.lib.npyio.NpzFile):
-            self.pose_params = params["pose"]
-            self.shape_params = params["shape"]
-        elif params.shape[0] == self.model.n_pose + self.model.n_coord:
+            self.pose_params = torch.from_numpy(params["pose"]).to(device)
+            self.shape_params = torch.from_numpy(params["shape"]).to(device)
+            return
+
+        if isinstance(params, np.ndarray):
+            params = torch.from_numpy(params).to(device)
+
+        if params.shape[0] == self.model.n_pose + self.model.n_coord:
             self.pose_params = params
         elif params.shape[0] == self.model.n_params - 3 + self.model.n_coord:
             self.pose_params, self.shape_params = params[:self.model.n_pose + self.model.n_coord], params[-self.model.n_shape:]
@@ -138,9 +151,9 @@ class Solver:
             raise RuntimeError("Invalid params")
 
     def vpose_mapper(self):
-        poseSMPL = torch.from_numpy(np.array([self.pose_params[6:69]])).type(torch.float).to('cuda')
-        poZ = self.vp.encode(poseSMPL).mean
-        self.pose_params[6:69] = self.vp.decode(poZ)['pose_body'].contiguous().reshape(poseSMPL.shape[1]).cpu().numpy()
+        poseSMPL = self.pose_params[6:69]
+        poZ = self.vp.encode(poseSMPL.view(1, poseSMPL.shape[0])).mean
+        self.pose_params[6:69] = self.vp.decode(poZ)['pose_body'].contiguous().reshape(poseSMPL.shape[0])
 
     def get_derivative(self, n):
         """
@@ -160,8 +173,8 @@ class Solver:
         np.ndarray
         Derivative with respect to the n-th parameter.
         """
-        params1 = np.array(self.params())
-        params2 = np.array(self.params())
+        params1 = self.params()
+        params2 = self.params()
 
         params1[n] += self.eps
         params2[n] -= self.eps
@@ -176,18 +189,45 @@ class Solver:
 
         d = (res1 - res2) / (2 * self.eps)
 
-        return d.ravel()
+        return d.view(-1)
 
     def save_param(self, file_path):
-        np.savez(file_path, pose=self.pose_params, shape=self.shape_params)
+        if isinstance(self.shape_params, np.ndarray):
+            shape=self.shape_params.cpu().numpy()
+        else:
+            shape = self.shape_params
+        np.savez(file_path, pose=self.pose_params.cpu().numpy(), shape=shape)
 
     def save_model(self, file_path):
         self.model.core.save_obj(file_path)
 
 
-def jnts_distance(kpts_updated, kpts_target, activate_distance):
+def get_derivative_wrapper(args):
+    model, n, params, eps = args
+
+    params1 = params.clone().detach()
+    params2 = params.clone().detach()
+
+    params1[n] += eps
+    params2[n] -= eps
+
+    model.compute_mesh = False
+    coord_origin = params[:3]
+    pose_glb = params[3:6]
+    pose_pca = params[6:-model.n_shape_params]
+    shape = params[-model.n_shape_params:]
+
+    res1 =  model.set_params(coord_origin=coord_origin, pose_glb=pose_glb, pose_pca=pose_pca, shape=shape)[1]
+    res2 =  model.set_params(coord_origin=coord_origin, pose_glb=pose_glb, pose_pca=pose_pca, shape=shape)[1]
+
+    d = (res1 - res2) / (2 * eps)
+
+    return d.view(-1)
+
+
+def jnts_distance(kpts_updated: torch.Tensor, kpts_target: torch.Tensor, activate_distance):
     d = (kpts_updated - kpts_target)
-    _filter = np.linalg.norm(d, axis=1) < activate_distance
-    residual = np.where(np.repeat(_filter.reshape(_filter.shape[0], 1), 3, axis=1), 0, d).reshape(kpts_updated.size, 1)
-    loss_jnts = np.mean(np.square(residual))
-    return loss_jnts, residual
+    _filter = torch.norm(d, dim=1) < torch.tensor(activate_distance, device=device)
+    residual = torch.where(_filter.view(_filter.shape[0], 1).expand(d.shape), 0., d).to(device)
+    loss_jnts = torch.mean(torch.square(residual)).to(device)
+    return loss_jnts, residual.view(-1)
