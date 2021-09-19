@@ -18,6 +18,9 @@ from nn.p4t.datasets.mmbody import MMBody3D
 import nn.p4t.modules.mmbody as Models
 
 from message.dingtalk import TimerBot
+from visualization.utils import o3d_pcl, o3d_plot, o3d_skeleton
+from visualization.o3d_plot import NNPredLabelStreamPlot
+from optitrack.config import marker_lines
 
 
 def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, device, epoch, print_freq):
@@ -45,7 +48,7 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
     return list(metric_logger.meters['loss'].deque)
 
 
-def evaluate(model, criterion, data_loader, device):
+def evaluate(model, criterion, data_loader, device, **kwargs):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
@@ -67,10 +70,35 @@ def evaluate(model, criterion, data_loader, device):
             
             metric_logger.update(loss=loss.item())
             metric_logger.meters['rmse'].update(rmse, n=batch_size)
+                        
+            if kwargs['visual']:
+                clip = clip.cpu().numpy()
+                for b, batch in enumerate(clip):
+                    arbe_frame = batch[len(batch)//2] * kwargs['scale'] - kwargs['offset']
+                    pred = output[b].reshape(-1, 3) * kwargs['scale'] - kwargs['offset']
+                    label = target[b].reshape(-1, 3) * kwargs['scale'] - kwargs['offset']
+                    yield dict(
+                        arbe_pcl = dict(
+                            pcl = arbe_frame,
+                            color = [0,1,0]
+                        ),
+                        pred = dict(
+                            skeleton = pred,
+                            lines = marker_lines,
+                            colors = np.asarray([[1,0,0]] * len(marker_lines))
+                        ),
+                        label = dict(
+                            skeleton = label,
+                            lines = marker_lines,
+                            colors = np.asarray([[0,0,1]] * len(marker_lines))
+                        )
+                    )
+            torch.cuda.empty_cache()
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
 
-    return np.mean(rmse_list)
+    return rmse_list
 
 
 def main(args):
@@ -97,19 +125,17 @@ def main(args):
             frames_per_clip=args.clip_len,
             step_between_clips=1,
             num_points=args.num_points,
-            train=True
+            train=bool(args.train)
     )
 
     train_size = int(0.9 * len(dataset_all))
     test_size = len(dataset_all) - train_size
-    dataset_train, dataset_test = torch.utils.data.random_split(dataset_all, [train_size, test_size])
-
+    dataset_train, dataset_eval = torch.utils.data.random_split(dataset_all, [train_size, test_size])
 
     print("Creating data loaders")
 
-    data_loader = torch.utils.data.DataLoader(dataset_train, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=True)
-
-    data_loader_test = torch.utils.data.DataLoader(dataset_test, batch_size=args.batch_size, num_workers=args.workers, pin_memory=True)
+    data_loader_train = torch.utils.data.DataLoader(dataset_train, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=True)
+    data_loader_eval = torch.utils.data.DataLoader(dataset_eval, batch_size=args.batch_size, num_workers=args.workers, pin_memory=True)
 
     print("Creating model")
     Model = getattr(Models, args.model)
@@ -117,8 +143,7 @@ def main(args):
                   temporal_kernel_size=args.temporal_kernel_size, temporal_stride=args.temporal_stride,
                   emb_relu=args.emb_relu,
                   dim=args.dim, depth=args.depth, heads=args.heads, dim_head=args.dim_head,
-                  # TODO: update label class
-                  mlp_dim=args.mlp_dim, num_classes=args.num_classes)
+                  mlp_dim=args.mlp_dim, num_classes=dataset_all.num_classes)
 
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
@@ -131,8 +156,8 @@ def main(args):
 
     # convert scheduler to be per iteration, not per epoch, for warmup that lasts
     # between different epochs
-    warmup_iters = args.lr_warmup_epochs * len(data_loader)
-    lr_milestones = [len(data_loader) * m for m in args.lr_milestones]
+    warmup_iters = args.lr_warmup_epochs * len(data_loader_train)
+    lr_milestones = [len(data_loader_train) * m for m in args.lr_milestones]
     lr_scheduler = WarmupMultiStepLR(optimizer, milestones=lr_milestones, gamma=args.lr_gamma, warmup_iters=warmup_iters, warmup_factor=1e-5)
 
     model_without_ddp = model
@@ -144,7 +169,7 @@ def main(args):
         lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         args.start_epoch = checkpoint['epoch'] + 1
 
-    if args.mode == 'train':
+    if args.train:
         print("Start training")
         start_time = time.time()
         summary(model, (2*args.clip_len+1, args.num_points, 3))
@@ -152,18 +177,19 @@ def main(args):
         loss_list = []
         rmse_list = []
         bot =TimerBot()
-        dingbot = True
+        dingbot = False
         for epoch in range(args.start_epoch, args.epochs):
-            loss = train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, device, epoch, args.print_freq)
+            loss = train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq)
             loss_list += loss
 
-            rmse = evaluate(model, criterion, data_loader_test, device=device)
-            rmse_list.append(rmse)
+            rmse = evaluate(model, criterion, data_loader_eval, device)
+            rmse_list.append(np.mean(rmse))
 
             fig.add_subplot(1, 1, 1).plot(loss_list)
             fig.canvas.draw()
             img = cv2.cvtColor(np.asarray(fig.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
-            cv2.imwrite(os.path.join(args.output_dir, 'loss.png'), img)
+            if args.output_dir:
+                cv2.imwrite(os.path.join(args.output_dir, 'loss.png'), img)
 
             if dingbot:
                 bot.add_md("tran_mmbody", "【LOSS】 \n ![img]({}) \n 【RMSE】\n epoch={}, rmse={}".format(bot.img2b64(img), epoch, rmse_list))
@@ -187,10 +213,14 @@ def main(args):
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         print('Training time {}'.format(total_time_str))
         print('RMSE {}'.format(rmse_list))
-    else:
-        print("Start testing")
         
-
+    else:
+        data_loader_test = torch.utils.data.DataLoader(dataset_all, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
+        plot = NNPredLabelStreamPlot()
+        print("Start testing")
+        gen = evaluate(model, criterion, data_loader_test, device, visual=True, offset=dataset_all.normal_offset, scale=dataset_all.normal_scale)
+        plot.show(gen, fps=12)
+    torch.cuda.empty_cache()
 
 def parse_args():
     import argparse
@@ -233,7 +263,7 @@ def parse_args():
     # resume
     parser.add_argument('--resume', default='', help='resume from checkpoint')
     parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='start epoch')
-    parser.add_argument('--mode', default='train', type=str, help='train or test')
+    parser.add_argument('--train', default=1, type=int, help='train or test')
 
     args = parser.parse_args()
 

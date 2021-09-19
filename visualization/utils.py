@@ -107,6 +107,7 @@ class O3DItemUpdater():
 
 
 class O3DStreamPlot():
+    pause = False
     def __init__(self, width=1600, height=1200, with_coord=True) -> None:
         self.view = o3d.visualization.VisualizerWithKeyCallback()
         self.view.create_window(width=width, height=height)
@@ -135,7 +136,7 @@ class O3DStreamPlot():
 
     def init_key_cbk(self):
         key_map = dict(
-            w=87, a=65, s=83, d=68, h=72, l=76
+            w=87, a=65, s=83, d=68, h=72, l=76, space=32
         )
         key_cbk = dict(
             w=lambda v : v.get_view_control().rotate(0, 40),
@@ -144,6 +145,7 @@ class O3DStreamPlot():
             d=lambda v : v.get_view_control().rotate(-40, 0),
             h=lambda v : v.get_view_control().scale(-2),
             l=lambda v : v.get_view_control().scale(2),
+            space=lambda v : exec("O3DStreamPlot.pause = not O3DStreamPlot.pause"),
         )
 
         for key, value in key_map.items():
@@ -172,7 +174,7 @@ class O3DStreamPlot():
                     continue
                 self.updater_dict[updater_key].update(update_params)
             self.update_plot()
-            while time.time() - tick < duration:
+            while (not self.pause) and time.time() - tick < duration:
                 pass
             tick = time.time()
         # except:

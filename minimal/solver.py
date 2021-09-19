@@ -66,7 +66,6 @@ class Solver:
         losses = LossManager(losses_with_weights, mse_threshold, loss_threshold, plot_type=self.plot_type)
 
         for i in range(int(max_iter)):
-            t = time()
             # update modle
             self.vpose_mapper()
             mesh_updated, jnts_updated = self.model.run(self.params())
@@ -118,7 +117,6 @@ class Solver:
                     losses.show_output_o3d(mesh_updated, pcls_vis, jnts_target)
 
             self.update_params(params)
-            print(time()-t)
         if dbg_level == 0:
             o3d_plot([o3d_mesh(mesh_updated)])
         return self.params(), losses

@@ -1,11 +1,12 @@
 import os
 import argparse
 import numpy as np
+import torch
 
-# from minimal.solver_torch import Solver
+from minimal.solver_torch import Solver as SolverTorch
 from minimal.solver import Solver
 from minimal import armatures
-# from minimal.models_torch import KinematicModel, KinematicPCAWrapper
+from minimal.models_torch import KinematicModel as KinematicModelTorch, KinematicPCAWrapper as KinematicPCAWrapperTorch
 from minimal.models import KinematicModel, KinematicPCAWrapper
 import minimal.config as config
 from minimal.bridge import JointsBridge
@@ -167,7 +168,7 @@ def stream_minimal(root_path: str, dbg_level: int=0, plot_type="open3d", **kwarg
         del losses
 
 
-def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2, plot_type="open3d", **kwargs):
+def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2, plot_type="open3d", device="cpu", **kwargs):
     bot = kwargs.pop("msg_bot")
     assert isinstance(bot, TimerBot)
     bot.enable()
@@ -181,11 +182,20 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
     dbg_level = int(dbg_level)
     window_len = int(window_len)
 
-    # smpl = KinematicModel().init_from_file(config.SMPL_MODEL_1_0_MALE_PATH, armatures.SMPLArmature)
-    smpl = KinematicModel(config.SMPL_MODEL_1_0_MALE_PATH, armatures.SMPLArmature)
+    if device == "cpu":
+        bot.print("{} : [Minimal] Running in CPU mode.".format(ymdhms_time()))
+        _Model = KinematicModel
+        _Wrapper = KinematicPCAWrapper
+        _Solver = Solver
+    else:
+        bot.print("{} : [Minimal] Running in GPU mode.".format(ymdhms_time()))
+        _Model = KinematicModelTorch
+        _Wrapper = KinematicPCAWrapperTorch
+        _Solver = SolverTorch
 
-    wrapper = KinematicPCAWrapper(smpl)
-    solver = Solver(wrapper, plot_type=plot_type)
+    smpl = _Model().init_from_file(config.SMPL_MODEL_1_0_MALE_PATH, armatures.SMPLArmature)
+    wrapper = _Wrapper(smpl)
+    solver = _Solver(wrapper, plot_type=plot_type)
 
     # save to $root_path$/minimal/(param,obj,trans)
     create_dir(os.path.join(save_path, "param"))
@@ -220,11 +230,13 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
 
             _, losses = solver.solve(_jnts, _pcl, "full", dbg_level=dbg_level, max_iter=100)
             
-            # shape_params.append(solver.shape_params.cpu().numpy())
             shape_params.append(solver.shape_params)
             del losses
     
-        solver.shape_params = np.array(shape_params).mean(0)
+        if device == "cpu":
+            solver.shape_params = np.array(shape_params).mean(0)
+        else:
+            solver.shape_params = torch.vstack(shape_params).mean(0)
         solver.save_param(os.path.join(save_path, "init_params"))
         jnts_brg.save_revert_transform(os.path.join(save_path, "init_transform"))
 

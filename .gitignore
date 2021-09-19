@@ -7,3 +7,4 @@ nohup.out
 ignoredata
 **/*.pyc
 nn/p4t/modules/src
+kinect/pyk4a

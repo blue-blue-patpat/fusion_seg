@@ -16,6 +16,7 @@ from alfred.dl.torch.common import device
 from human_body_prior.tools.model_loader import load_model
 from human_body_prior.models.vposer_model import VPoser
 from vctoolkit import Timer
+from multiprocessing.dummy import Pool
 
 
 class Solver:
@@ -72,8 +73,17 @@ class Solver:
 
         for i in range(int(max_iter)):
             t = time()
+            pool = Pool()
             # update model
+            self.vpose_mapper()
             mesh_updated, jnts_updated = self.model.run(self.params())
+
+            results = []
+            _params = self.params()
+            for k in range(params.shape[0]):
+                # jacobian[:, k] = self.get_derivative(k)
+                result = pool.apply_async(get_derivative_wrapper, (self.model.core, k, _params, self.eps))
+                results.append(result)
 
             # compute keypoints loss
             loss_kpts, residual = jnts_distance(jnts_updated, jnts_target, activate_distance=kpts_threshold)
@@ -92,9 +102,21 @@ class Solver:
             # check loss
             if losses.check_losses():
                 break
+            
+            # for k in range(params.shape[0]):
+                # jacobian[:, k] = self.get_derivative(k)
 
-            for k in range(params.shape[0]):
-                jacobian[:, k] = self.get_derivative(k)
+            # for item in results:
+            #     item.wait()
+            pool.close()
+            pool.join()
+
+            for idx, item in enumerate(results):
+                if item.ready():  # 进程函数是否已经启动了
+                    if item.successful():  # 进程函数是否执行成功
+                        r = item.get()
+                        print(r)
+                        jacobian[:, idx] = r
 
             jtj = torch.matmul(jacobian.T, jacobian)
             jtj = jtj + u * torch.eye(jtj.shape[0], device=device)
@@ -192,7 +214,7 @@ class Solver:
         return d.view(-1)
 
     def save_param(self, file_path):
-        if isinstance(self.shape_params, np.ndarray):
+        if isinstance(self.shape_params, torch.Tensor):
             shape=self.shape_params.cpu().numpy()
         else:
             shape = self.shape_params
@@ -202,27 +224,35 @@ class Solver:
         self.model.core.save_obj(file_path)
 
 
-def get_derivative_wrapper(args):
-    model, n, params, eps = args
+def get_derivative_wrapper(model, n, params, eps):
+    # model, n, params, eps = args
 
-    params1 = params.clone().detach()
-    params2 = params.clone().detach()
+    _model = KinematicModel().init_from_model(model)
 
-    params1[n] += eps
-    params2[n] -= eps
+    params1 = params.clone()
+    params2 = params.clone()
 
     model.compute_mesh = False
+
+    params1[n] += eps
+    res1 =  _model.set_params(*decode_wrapper(model, params1))[1]
+
+    params2[n] -= eps
+    res2 =  _model.set_params(*decode_wrapper(model, params2))[1]
+
+    d = (res1 - res2) / (2 * eps)
+
+    # print(d)
+
+    return d.view(-1)
+
+
+def decode_wrapper(model, params):
     coord_origin = params[:3]
     pose_glb = params[3:6]
     pose_pca = params[6:-model.n_shape_params]
     shape = params[-model.n_shape_params:]
-
-    res1 =  model.set_params(coord_origin=coord_origin, pose_glb=pose_glb, pose_pca=pose_pca, shape=shape)[1]
-    res2 =  model.set_params(coord_origin=coord_origin, pose_glb=pose_glb, pose_pca=pose_pca, shape=shape)[1]
-
-    d = (res1 - res2) / (2 * eps)
-
-    return d.view(-1)
+    return coord_origin, None, pose_pca, pose_glb, shape
 
 
 def jnts_distance(kpts_updated: torch.Tensor, kpts_target: torch.Tensor, activate_distance):

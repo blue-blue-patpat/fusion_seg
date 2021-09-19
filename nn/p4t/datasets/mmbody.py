@@ -6,7 +6,16 @@ from visualization.utils import pcl_filter
 
 
 class MMBody3D(Dataset):
-    def __init__(self, root_path, frames_per_clip=2, step_between_clips=1, num_points=2048, train=True, skip_head=200, skip_tail=200):
+    def __init__(self,
+                root_path,
+                frames_per_clip=2,
+                step_between_clips=1,
+                num_points=2048,
+                train=True, 
+                normal_offset=[2., 0., 1.],
+                normal_scale = 5.,
+                skip_head=200,
+                skip_tail=200):
         super(MMBody3D, self).__init__()
         self.step_between_clips = step_between_clips
         # range of frame index in a clip
@@ -16,6 +25,9 @@ class MMBody3D(Dataset):
         self.video_list = []
         self.index_map = []
         self.id_list = []
+        self.normal_offset = normal_offset
+        self.normal_scale = normal_scale
+        # TODO update from the label
         self.num_classes = 111
         videos = [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] == 'D']
         for path in videos:
@@ -66,9 +78,9 @@ class MMBody3D(Dataset):
                 r = np.random.choice(f.shape[0], size=residue, replace=False)
                 r = np.concatenate([np.arange(f.shape[0]) for _ in range(repeat)] + [r], axis=0)
             clip[i] = f[r, :]
-        # TODO update the normalization
-        clip = (np.asarray(clip) + [2., 0., 1.])/5.
-        label = (label + [2., 0., 1.])/5.
+        # normalization
+        clip = (np.asarray(clip) + self.normal_offset) / self.normal_scale
+        label = (label + self.normal_offset) / self.normal_scale
         clip = np.asarray(clip, dtype=np.float32)
         label = np.asarray(label.reshape(-1), dtype=np.float32)
         if True in np.isnan(label):

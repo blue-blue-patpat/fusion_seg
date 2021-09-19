@@ -64,11 +64,11 @@ if __name__ == "__main__":
     
     # from visualization.o3d_plot import OptitrackArbeStreamPlot
     # from multiprocessing import Pool
-    # root_path = "/media/nesc525/perple/2021-09-10_11-27-22"
+    root_path = "/media/nesc525/perple/2021-09-10_11-27-22_D"
 
 
-    # plot = OptitrackArbeStreamPlot(root_path, [0,-1,0,10])
-    # plot.show()
+    plot = OptitrackArbeStreamPlot(root_path, [0,-1,0,10])
+    plot.show()
 
     # plot = KinectOfflineStreamPlotCpp(root_path, start_frame=30, write_ply=False)
     # plot.show()
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     # from kinect.kinect_skeleton import extract_skeleton
     # import os
     # from dataloader.result_loader import OptitrackCSVLoader
-    root_path = "/media/nesc525/perple"
+    # root_path = "/media/nesc525/perple"
     # csv_file = OptitrackCSVLoader(root_path)
     # if len(csv_file):
     #     parse_opti_csv(csv_file.file_dict["optitrack"].loc[0,"filepath"])

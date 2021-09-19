@@ -13,19 +13,20 @@ class KinematicModel():
         pass
 
     def init_from_model(self, model):
-        for name in ["pose_pca_basis", "pose_pca_mean", "J_regressor", "skinning_weights", "mesh_pose_basis",
-                     "mesh_shape_basis", "mesh_template", "faces", "coord_origin", "scale"]:
+        for name in ["pose_pca_basis", "pose_pca_mean", "J_regressor", "skinning_weights",
+                     "mesh_shape_basis", "mesh_template", "faces", "parents", "scale",
+                     "n_shape_params", "n_joints", "compute_mesh", "J_regressor_ext"]:
+            setattr(self, name, getattr(model, name))
+
+        for name in ["coord_origin"]:
             _t = getattr(model, name)
             setattr(self, name, _t.clone())
 
-        self.parents = model.parents
-        self.n_shape_params = model.n_shape_params
-        self.n_joints = model.n_joints
         self.pose = torch.zeros((self.n_joints, 3), device=device)
-        self.shape = torch.zeros(self.mesh_shape_basis.shape[-1], device=device).type(torch.float64)
+        self.shape = torch.zeros(self.n_shape_params, device=device)
 
-        self.compute_mesh = model.compute_mesh
         self.verts = None
+        self.mesh = None
         self.J = None
         self.R = None
         self.keypoints = None
@@ -38,8 +39,6 @@ class KinematicModel():
     def init_from_file(self, model_path, armature, scale=1, compute_mesh=True):
 
         """
-         #__init__() 是类的初始化方法；它在类的实例化操作后 会自动调用，不需要手动调用；
-
         Parameters
         ----------
         model_path : str
@@ -53,18 +52,18 @@ class KinematicModel():
             params = pickle.load(f)
 
             # pickle.load(file)注释:反序列化对象，将文件中的数据解析为一个python对象
-            self.pose_pca_basis = torch.from_numpy(params['pose_pca_basis']).to(device)
-            self.pose_pca_mean = torch.from_numpy(params['pose_pca_mean']).to(device)
+            self.pose_pca_basis = torch.from_numpy(params['pose_pca_basis']).to(device, torch.float32)
+            self.pose_pca_mean = torch.from_numpy(params['pose_pca_mean']).to(device, torch.float32)
 
-            self.J_regressor = torch.from_numpy(params['J_regressor']).to(device)
+            self.J_regressor = torch.from_numpy(params['J_regressor']).to(device, torch.float32)
 
-            self.skinning_weights = torch.from_numpy(params['skinning_weights']).to(device)
+            self.skinning_weights = torch.from_numpy(params['skinning_weights']).to(device, torch.float32)
 
-            self.mesh_pose_basis = torch.from_numpy(params['mesh_pose_basis']).to(device)  # pose blend shape
-            self.mesh_shape_basis = torch.from_numpy(params['mesh_shape_basis']).to(device)
-            self.mesh_template = torch.from_numpy(params['mesh_template']).to(device)
+            self.mesh_pose_basis = torch.from_numpy(params['mesh_pose_basis']).to(device, torch.float32)  # pose blend shape
+            self.mesh_shape_basis = torch.from_numpy(params['mesh_shape_basis']).to(device, torch.float32)
+            self.mesh_template = torch.from_numpy(params['mesh_template']).to(device, torch.float32)
 
-            self.faces = torch.from_numpy(params['faces'].astype(int)).to(device)
+            self.faces = torch.from_numpy(params['faces'].astype(int)).to(device, torch.float32)
 
             self.parents = params['parents']
 
@@ -78,7 +77,7 @@ class KinematicModel():
         self.armature = armature
         self.n_joints = self.armature.n_joints
         self.pose = torch.zeros((self.n_joints, 3), device=device)
-        self.shape = torch.zeros(self.mesh_shape_basis.shape[-1], device=device).type(torch.float64)
+        self.shape = torch.zeros(self.n_shape_params, device=device)
         self.verts = None
         self.J = None
         self.R = None
@@ -89,7 +88,7 @@ class KinematicModel():
         self.J_regressor_ext[:self.armature.n_joints] = self.J_regressor
         for i, v in enumerate(self.armature.keypoints_ext):
             self.J_regressor_ext[i + self.armature.n_joints, v] = 1
-        self.J_regressor_ext.to(device)
+        self.J_regressor_ext.to(device=device)
         
         return self
 
@@ -124,7 +123,7 @@ class KinematicModel():
         elif pose_pca is not None:
             pose_pca = pose_pca.clone()
             self.pose = torch.matmul(
-                pose_pca.unsqueeze(0).to(torch.float64), self.pose_pca_basis[:pose_pca.shape[0]]
+                pose_pca.unsqueeze(0), self.pose_pca_basis[:pose_pca.shape[0]]
             )[0] + self.pose_pca_mean
             self.pose = torch.reshape(self.pose, [self.n_joints - 1, 3])
             if pose_glb is None:
@@ -146,16 +145,19 @@ class KinematicModel():
         np.ndarray, shape [K, 3]
           Keypoints coordinates of the model, scale applied.
         """
-        verts = self.mesh_template + torch.matmul(self.mesh_shape_basis, self.shape.to(torch.float64))
+        from vctoolkit import Timer
+        t = Timer()
+        verts = self.mesh_template + torch.matmul(self.mesh_shape_basis, self.shape)
         self.J = torch.matmul(self.J_regressor,verts)
         self.R = self.rodrigues(self.pose.reshape((-1, 1, 3)))
-        G = torch.empty((self.n_joints, 4, 4), device=device, dtype=torch.float64)
-        G[0] = self.with_zeros(torch.hstack((self.R[0], self.J[0, :].reshape([3, 1]))))
+        G = torch.empty((self.n_joints, 4, 4), device=device)
+        G[0] = self.with_zeros(torch.hstack((self.R[0], self.J[0, :].view([3, 1]))))
+
         for i in range(1, self.n_joints):
             G[i] = torch.matmul(G[self.parents[i]], self.with_zeros(
                 torch.hstack([
                     self.R[i],
-                    (self.J[i, :] - self.J[self.parents[i], :]).reshape([3, 1])
+                    (self.J[i, :] - self.J[self.parents[i], :]).view([3, 1])
                 ])
             ))
         G = G - self.pack(torch.matmul(
@@ -179,7 +181,7 @@ class KinematicModel():
                 self.mesh._verts_list = [verts.to(torch.float32)]
                 self.mesh._compute_packed(True)
 
-        self.keypoints = torch.matmul(self.J_regressor_ext.to(torch.float64),self.verts)
+        self.keypoints = torch.matmul(self.J_regressor_ext, self.verts)
 
         self.verts *= self.scale
 
@@ -204,13 +206,13 @@ class KinematicModel():
         theta_dim = theta.shape[0]
         r_hat = r / theta
         cos = torch.cos(theta)
-        z_stick = torch.zeros(theta_dim, dtype=torch.float64).to(r.device)
+        z_stick = torch.zeros(theta_dim).to(r.device)
         m = torch.stack(
             (z_stick, -r_hat[:, 0, 2], r_hat[:, 0, 1], r_hat[:, 0, 2], z_stick,
             -r_hat[:, 0, 0], -r_hat[:, 0, 1], r_hat[:, 0, 0], z_stick), dim=1)
         m = torch.reshape(m, (-1, 3, 3))
-        i_cube = (torch.eye(3, dtype=torch.float64).unsqueeze(dim=0) \
-                + torch.zeros((theta_dim, 3, 3), dtype=torch.float64)).to(r.device)
+        i_cube = (torch.eye(3).unsqueeze(dim=0) \
+                + torch.zeros((theta_dim, 3, 3))).to(r.device)
         A = r_hat.permute(0, 2, 1)
         dot = torch.matmul(A, r_hat)
         R = cos * i_cube + (1 - cos) * dot + torch.sin(theta) * m
@@ -229,7 +231,7 @@ class KinematicModel():
         Matrix after appending of shape [4,4]
 
         """
-        ones = torch.tensor([[0.0, 0.0, 0.0, 1.0]], dtype=torch.float64).to(x.device)
+        ones = torch.tensor([[0.0, 0.0, 0.0, 1.0]], device=x.device)
         ret = torch.cat((x, ones), dim=0)
         return ret
 
@@ -247,7 +249,7 @@ class KinematicModel():
         Matrix of shape [batch_size, 4, 4] after appending.
 
         """
-        zeros43 = torch.zeros((x.shape[0], 4, 3), dtype=torch.float64).to(x.device)
+        zeros43 = torch.zeros((x.shape[0], 4, 3)).to(x.device)
         ret = torch.cat((zeros43, x), dim=2)
         return ret
 

@@ -317,16 +317,18 @@ class OptitrackArbeStreamPlot(O3DStreamPlot):
 
 
 class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
-    def __init__(self, input_path: str, main_device="master", angle_of_view=[0,-1,0,1], *args, **kwargs) -> None:
+    def __init__(self, input_path: str, main_device="master", angle_of_view=[0,-1,0,1], enabled_sources=None, *args, **kwargs) -> None:
         super().__init__()
         self.input_path = input_path
         self.main_device = main_device
         self.angle_of_view = angle_of_view
         self.skip_head = int(kwargs.get("skip_head", 0))
         self.skip_tail = int(kwargs.get("skip_tail", 0))
+        if enabled_sources is None:
+            enabled_sources = ["arbe", "optitrack", self.main_device, "kinect_skeleton"]
         self.file_loader = ResultFileLoader(
             self.input_path, self.skip_head, self.skip_tail,
-            enabled_sources=["arbe", "optitrack", self.main_device, "kinect_skeleton"]
+            enabled_sources=enabled_sources
         )
 
     def init_updater(self):
@@ -379,3 +381,22 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
                     colors = opti_colors
                 )
             )
+
+
+class NNPredLabelStreamPlot(O3DStreamPlot):
+    def __init__(self, input_path=None, angle_of_view=[0,-1,0,1], *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.input_path = input_path
+        self.angle_of_view = angle_of_view
+
+    def init_updater(self):
+        self.plot_funcs = dict(
+            arbe_pcl=o3d_pcl,
+            pred=o3d_skeleton,
+            label=o3d_skeleton)
+
+    def init_show(self):
+        super().init_show()
+        self.ctr.set_up(np.array([0, 0, 1]))
+        self.ctr.set_front(np.array(self.angle_of_view[:3]))
+        self.ctr.set_zoom(self.angle_of_view[3])
