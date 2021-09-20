@@ -325,17 +325,19 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
         self.skip_head = int(kwargs.get("skip_head", 0))
         self.skip_tail = int(kwargs.get("skip_tail", 0))
         if enabled_sources is None:
-            enabled_sources = ["arbe", "optitrack", self.main_device, "kinect_skeleton"]
+            self.enabled_sources = ["arbe", "optitrack", self.main_device, "kinect_skeleton"]
+        else:
+            self.enabled_sources = enabled_sources
         self.file_loader = ResultFileLoader(
             self.input_path, self.skip_head, self.skip_tail,
-            enabled_sources=enabled_sources
+            enabled_sources=self.enabled_sources
         )
 
     def init_updater(self):
         self.plot_funcs = dict(
-            opti_marker=o3d_skeleton,
+            optitrack=o3d_skeleton,
             kinect_skeleton = o3d_skeleton,
-            arbe_pcls=o3d_pcl)
+            arbe=o3d_pcl)
 
     def init_show(self):
         super().init_show()
@@ -355,27 +357,30 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
             arbe_pcl = pcl_filter(frame["optitrack"], frame["arbe"], 0.5)
 
             # init lines
-            kinect_lines =  KINECT_SKELETON_LINES
             opti_lines = marker_lines
             if frame["optitrack_person_count"] > 1:
                 for p in range(1, frame["optitrack_person_count"]):
                     kinect_lines = np.vstack((kinect_lines,kinect_lines+p*32))
                     opti_lines = np.vstack((opti_lines,opti_lines+p*37))
-
-            kinect_colors = np.array([[0,0,1]]*len(kinect_lines))
             opti_colors = np.array([[1,0,0]]*len(opti_lines))
 
-            yield dict(
+            kinect_skeleton = {}
+            if "kinect_skeleton" in self.enabled_sources:
+                kinect_lines =  KINECT_SKELETON_LINES
+                kinect_colors = np.array([[0,0,1]]*len(kinect_lines))
                 kinect_skeleton = dict(
                     skeleton = frame["{}_skeleton".format(self.main_device)],
                     lines = kinect_lines,
                     colors = kinect_colors
-                ),
-                arbe_pcls = dict(
+                )
+            
+            yield dict(
+                kinect_skeleton = kinect_skeleton,
+                arbe = dict(
                     pcl = arbe_pcl,
                     color = [0,1,0]
                 ),
-                opti_marker = dict(
+                optitrack = dict(
                     skeleton = frame["optitrack"],
                     lines = opti_lines,
                     colors = opti_colors

@@ -37,7 +37,7 @@ class P4Transformer(nn.Module):
             nn.Linear(mlp_dim, num_classes),
         )
 
-        self.sigmoid = nn.Sigmoid()
+        self.norm = nn.Sigmoid()
 
     def forward(self, input):                                                                                                               # [B, L, N, 3]
         device = input.get_device()
@@ -65,5 +65,5 @@ class P4Transformer(nn.Module):
         output = self.transformer(embedding)
         output = torch.max(input=output, dim=1, keepdim=False, out=None)[0]
         output = self.mlp_head(output)
-        output = self.sigmoid(output)
+        output = self.norm(output)
         return output

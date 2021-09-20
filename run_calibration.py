@@ -178,9 +178,13 @@ def run_modify_offset(kwargs):
     root_path = kwargs["input"]
     skip_head = kwargs.get("skip_head", 0)
     skip_tail = kwargs.get("skip_tail", 0)
-    print(ResultFileLoader(root_path, disabled_sources=["mesh"]))
+    enabled_sources = kwargs.get("enabled_sources", None)
+    if enabled_sources:
+        enabled_sources = enabled_sources.split(',')
+            
+    print(ResultFileLoader(root_path, enabled_sources=["arbe", "optitrack"]))
 
-    plt = KinectArbeOptitrackStreamPlot(root_path, skip_head=skip_head, skip_tail=skip_tail)
+    plt = KinectArbeOptitrackStreamPlot(root_path, skip_head=skip_head, skip_tail=skip_tail, enabled_sources=enabled_sources)
 
     while True:
         plt.show()

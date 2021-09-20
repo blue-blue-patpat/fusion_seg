@@ -120,15 +120,16 @@ class KinematicModel():
         verts = self.mesh_template + self.mesh_shape_basis.dot(self.shape)
         self.J = self.J_regressor.dot(verts)
         self.R = self.rodrigues(self.pose.reshape((-1, 1, 3)))
-        G = np.empty((self.n_joints, 4, 4))
-        G[0] = self.with_zeros(np.hstack((self.R[0], self.J[0, :].reshape([3, 1]))))
+        G = []
+        G.append(self.with_zeros(np.hstack((self.R[0], self.J[0, :].reshape([3, 1])))))
         for i in range(1, self.n_joints):
-            G[i] = G[self.parents[i]].dot(self.with_zeros(
+            G.append(G[self.parents[i]].dot(self.with_zeros(
                 np.hstack([
                     self.R[i],
                     (self.J[i, :] - self.J[self.parents[i], :]).reshape([3, 1])
                 ])
-            ))
+            )))
+        G = np.stack(G,axis=0)
         G = G - self.pack(np.matmul(
             G,
             np.hstack([self.J, np.zeros([self.n_joints, 1])]) \

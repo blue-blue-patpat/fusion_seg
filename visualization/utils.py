@@ -13,7 +13,7 @@ def o3d_plot(o3d_items: list, title="", show_coord=True, **kwargs):
     o3d.visualization.draw_geometries(_items, title)
 
 
-def o3d_coord(size=0.5, origin=[0, 0, 0]):
+def o3d_coord(size=0.3, origin=[0, 0, 0]):
     return o3d.geometry.TriangleMesh.create_coordinate_frame(size=size, origin=origin)
 
 
@@ -167,18 +167,24 @@ class O3DStreamPlot():
             gen = self.generator()
         tick = time.time()
         duration = 1/fps
-        # try:
-        for update_dict in gen:
+        while True:
+            while time.time() - tick < duration:
+                time.sleep(0.002)
+            
+            try:
+                if not self.pause:
+                    update_dict = next(gen)
+            except StopIteration as e:
+                break
+
             for updater_key, update_params in update_dict.items():
                 if updater_key not in self.updater_dict.keys():
                     continue
                 self.updater_dict[updater_key].update(update_params)
             self.update_plot()
-            while (not self.pause) and time.time() - tick < duration:
-                pass
             tick = time.time()
-        # except:
-        #     self.close_view()
+
+        self.close_view()
 
     def show_manual(self, update_dict):
         for updater_key, update_params in update_dict.items():

@@ -1,16 +1,19 @@
 import pickle
 import torch
+from torch.nn import Module
 from pytorch3d.structures import Meshes
 from alfred.dl.torch.common import device
+from vctoolkit import Timer
 
 
-class KinematicModel():
+class KinematicModel(Module):
     """
     Kinematic model that takes in model parameters and outputs mesh, keypoints,
     etc.
     """
     def __init__(self):
-        pass
+        torch.backends.cudnn.benchmark=True
+        super().__init__()
 
     def init_from_model(self, model):
         for name in ["pose_pca_basis", "pose_pca_mean", "J_regressor", "skinning_weights",
@@ -145,21 +148,22 @@ class KinematicModel():
         np.ndarray, shape [K, 3]
           Keypoints coordinates of the model, scale applied.
         """
-        from vctoolkit import Timer
         t = Timer()
         verts = self.mesh_template + torch.matmul(self.mesh_shape_basis, self.shape)
         self.J = torch.matmul(self.J_regressor,verts)
-        self.R = self.rodrigues(self.pose.reshape((-1, 1, 3)))
-        G = torch.empty((self.n_joints, 4, 4), device=device)
-        G[0] = self.with_zeros(torch.hstack((self.R[0], self.J[0, :].view([3, 1]))))
+        self.R = self.rodrigues(self.pose.view((-1, 1, 3)))
+        G = []
+        G.append(self.with_zeros(torch.hstack((self.R[0], self.J[0, :].view([3, 1])))))
 
         for i in range(1, self.n_joints):
-            G[i] = torch.matmul(G[self.parents[i]], self.with_zeros(
-                torch.hstack([
+            G.append(torch.matmul(G[self.parents[i]], self.with_zeros(
+                torch.cat([
                     self.R[i],
                     (self.J[i, :] - self.J[self.parents[i], :]).view([3, 1])
-                ])
-            ))
+                ], dim=1)
+            )))
+        G = torch.stack(G, dim=0)
+
         G = G - self.pack(torch.matmul(
             G,
             torch.hstack([self.J, torch.zeros([self.n_joints, 1], device=device)]) \
@@ -176,9 +180,9 @@ class KinematicModel():
         # center = self.verts.mean(0)
             verts = self.verts - self.coord_origin
             if self.mesh is None:
-                self.mesh = Meshes(verts=[verts.to(torch.float32)], faces=[self.faces])
+                self.mesh = Meshes(verts=[verts], faces=[self.faces])
             else:
-                self.mesh._verts_list = [verts.to(torch.float32)]
+                self.mesh._verts_list = [verts]
                 self.mesh._compute_packed(True)
 
         self.keypoints = torch.matmul(self.J_regressor_ext, self.verts)
@@ -302,7 +306,7 @@ class KinematicPCAWrapper():
         """
         shape, pose_pca, pose_glb, coord_origin = self.decode(params)
         return \
-            self.core.set_params(coord_origin=coord_origin, pose_glb=pose_glb, pose_pca=pose_pca, shape=shape)
+        self.core.set_params(coord_origin=coord_origin, pose_glb=pose_glb, pose_pca=pose_pca, shape=shape)
 
     def decode(self, params):
         """
@@ -324,7 +328,7 @@ class KinematicPCAWrapper():
         """
         params = params.to(device)
         coord_origin = params[:self.n_coord]
-        pose_glb = params[self.n_coord:self.n_glb+self.n_coord].to(device)
-        pose_pca = params[self.n_coord+self.n_glb:-self.n_shape].to(device)
-        shape = params[-self.n_shape:].to(device)
+        pose_glb = params[self.n_coord:self.n_coord + self.n_glb]
+        pose_pca = params[self.n_coord + self.n_glb:-self.n_shape]
+        shape = params[-self.n_shape:]
         return shape, pose_pca, pose_glb, coord_origin

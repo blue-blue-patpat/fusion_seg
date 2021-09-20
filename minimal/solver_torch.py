@@ -73,17 +73,9 @@ class Solver:
 
         for i in range(int(max_iter)):
             t = time()
-            pool = Pool()
             # update model
             self.vpose_mapper()
             mesh_updated, jnts_updated = self.model.run(self.params())
-
-            results = []
-            _params = self.params()
-            for k in range(params.shape[0]):
-                # jacobian[:, k] = self.get_derivative(k)
-                result = pool.apply_async(get_derivative_wrapper, (self.model.core, k, _params, self.eps))
-                results.append(result)
 
             # compute keypoints loss
             loss_kpts, residual = jnts_distance(jnts_updated, jnts_target, activate_distance=kpts_threshold)
@@ -103,20 +95,8 @@ class Solver:
             if losses.check_losses():
                 break
             
-            # for k in range(params.shape[0]):
-                # jacobian[:, k] = self.get_derivative(k)
-
-            # for item in results:
-            #     item.wait()
-            pool.close()
-            pool.join()
-
-            for idx, item in enumerate(results):
-                if item.ready():  # 进程函数是否已经启动了
-                    if item.successful():  # 进程函数是否执行成功
-                        r = item.get()
-                        print(r)
-                        jacobian[:, idx] = r
+            for k in range(params.shape[0]):
+                jacobian[:, k] = self.get_derivative(k)
 
             jtj = torch.matmul(jacobian.T, jacobian)
             jtj = jtj + u * torch.eye(jtj.shape[0], device=device)
