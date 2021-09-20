@@ -11,6 +11,7 @@ from minimal.models import KinematicModel, KinematicPCAWrapper
 import minimal.config as config
 from minimal.bridge import JointsBridge
 from minimal.input_loader import MinimalInput
+from minimal.utils import get_freer_gpu
 from dataloader.result_loader import MinimalLoader, ResultFileLoader
 from dataloader.utils import ymdhms_time, clean_dir, create_dir
 from visualization.utils import o3d_plot, o3d_coord, o3d_mesh, o3d_pcl, o3d_skeleton
@@ -188,12 +189,13 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
         _Wrapper = KinematicPCAWrapper
         _Solver = Solver
     else:
-        bot.print("{} : [Minimal] Running in GPU mode.".format(ymdhms_time()))
+        _device = torch.device(get_freer_gpu())
+        bot.print("{} : [Minimal] Running in GPU mode, {}".format(ymdhms_time(), _device))
         _Model = KinematicModelTorch
         _Wrapper = KinematicPCAWrapperTorch
         _Solver = SolverTorch
 
-    smpl = _Model().init_from_file(config.SMPL_MODEL_1_0_MALE_PATH, armatures.SMPLArmature)
+    smpl = _Model(device=_device).init_from_file(config.SMPL_MODEL_1_0_MALE_PATH, armatures.SMPLArmature)
     wrapper = _Wrapper(smpl)
     solver = _Solver(wrapper, plot_type=plot_type)
 
@@ -266,7 +268,6 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
     bot.print("{} : [Minimal] Configure start index {}".format(ymdhms_time(), start_idx))
 
     for i in range(start_idx, len(loader)):
-        # rid = inputs[i]["info"]["arbe"]["id"]
         rid = i+int(kwargs.get("skip_head", 0))
         init_pose = solver.pose_params
         results = {}
@@ -297,7 +298,7 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
         inputs.save_revert_transform(j, os.path.join(save_path, "trans", filename))
         inputs.remove(i-window_len)
 
-        bot.print("{} : [Minimal] Frame pcl={}_jnts={}_rid={} end up with loss {}".format(ymdhms_time(), i, j, rid, results[result_key]["loss"]))
+        bot.print("{} : [Minimal] {} Frame rid={} with loss {:.4}".format(ymdhms_time(), root_path[-21:-2], rid, results[result_key]["loss"]))
 
 
 def run():

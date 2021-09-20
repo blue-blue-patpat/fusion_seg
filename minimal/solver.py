@@ -91,6 +91,7 @@ class Solver:
 
             for k in range(params.shape[0]):
                 jacobian[:, k] = np.hstack([self.get_derivative(k)])
+
             jtj = np.matmul(jacobian.T, jacobian)
             jtj = jtj + u * np.eye(jtj.shape[0])
 

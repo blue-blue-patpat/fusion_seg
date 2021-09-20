@@ -2,7 +2,6 @@ import pickle
 import torch
 from torch.nn import Module
 from pytorch3d.structures import Meshes
-from alfred.dl.torch.common import device
 from vctoolkit import Timer
 
 
@@ -11,9 +10,10 @@ class KinematicModel(Module):
     Kinematic model that takes in model parameters and outputs mesh, keypoints,
     etc.
     """
-    def __init__(self):
+    def __init__(self, device=torch.device("cpu")):
         torch.backends.cudnn.benchmark=True
         super().__init__()
+        self.device = device
 
     def init_from_model(self, model):
         for name in ["pose_pca_basis", "pose_pca_mean", "J_regressor", "skinning_weights",
@@ -25,8 +25,8 @@ class KinematicModel(Module):
             _t = getattr(model, name)
             setattr(self, name, _t.clone())
 
-        self.pose = torch.zeros((self.n_joints, 3), device=device)
-        self.shape = torch.zeros(self.n_shape_params, device=device)
+        self.pose = torch.zeros((self.n_joints, 3), device=self.device)
+        self.shape = torch.zeros(self.n_shape_params, device=self.device)
 
         self.verts = None
         self.mesh = None
@@ -37,7 +37,6 @@ class KinematicModel(Module):
         self.J_regressor_ext = model.J_regressor_ext
 
         return self
-
 
     def init_from_file(self, model_path, armature, scale=1, compute_mesh=True):
 
@@ -54,44 +53,43 @@ class KinematicModel(Module):
         with open(model_path, 'rb') as f:
             params = pickle.load(f)
 
-            # pickle.load(file)注释:反序列化对象，将文件中的数据解析为一个python对象
-            self.pose_pca_basis = torch.from_numpy(params['pose_pca_basis']).to(device, torch.float32)
-            self.pose_pca_mean = torch.from_numpy(params['pose_pca_mean']).to(device, torch.float32)
+            self.pose_pca_basis = torch.from_numpy(params['pose_pca_basis']).to(self.device)
+            self.pose_pca_mean = torch.from_numpy(params['pose_pca_mean']).to(self.device)
 
-            self.J_regressor = torch.from_numpy(params['J_regressor']).to(device, torch.float32)
+            self.J_regressor = torch.from_numpy(params['J_regressor']).to(self.device)
 
-            self.skinning_weights = torch.from_numpy(params['skinning_weights']).to(device, torch.float32)
+            self.skinning_weights = torch.from_numpy(params['skinning_weights']).to(self.device)
 
-            self.mesh_pose_basis = torch.from_numpy(params['mesh_pose_basis']).to(device, torch.float32)  # pose blend shape
-            self.mesh_shape_basis = torch.from_numpy(params['mesh_shape_basis']).to(device, torch.float32)
-            self.mesh_template = torch.from_numpy(params['mesh_template']).to(device, torch.float32)
+            self.mesh_pose_basis = torch.from_numpy(params['mesh_pose_basis']).to(self.device)  # pose blend shape
+            self.mesh_shape_basis = torch.from_numpy(params['mesh_shape_basis']).to(self.device)
+            self.mesh_template = torch.from_numpy(params['mesh_template']).to(self.device)
 
-            self.faces = torch.from_numpy(params['faces'].astype(int)).to(device, torch.float32)
+            self.faces = torch.from_numpy(params['faces'].astype(int)).to(self.device)
 
             self.parents = params['parents']
 
         self.n_shape_params = self.mesh_shape_basis.shape[-1]
-        self.coord_origin = torch.tensor([0, 0, 0], device=device)
+        self.coord_origin = torch.tensor([0, 0, 0], device=self.device)
 
-        self.scale = torch.tensor(scale).to(device)
+        self.scale = torch.tensor(scale).to(self.device)
         self.compute_mesh = compute_mesh
         self.mesh = None
 
         self.armature = armature
         self.n_joints = self.armature.n_joints
-        self.pose = torch.zeros((self.n_joints, 3), device=device)
-        self.shape = torch.zeros(self.n_shape_params, device=device)
+        self.pose = torch.zeros((self.n_joints, 3), device=self.device)
+        self.shape = torch.zeros(self.n_shape_params, device=self.device)
         self.verts = None
         self.J = None
         self.R = None
         self.keypoints = None
 
         self.J_regressor_ext = \
-            torch.zeros([self.armature.n_keypoints, self.J_regressor.shape[1]]).to(device)
+            torch.zeros([self.armature.n_keypoints, self.J_regressor.shape[1]]).to(self.device)
         self.J_regressor_ext[:self.armature.n_joints] = self.J_regressor
         for i, v in enumerate(self.armature.keypoints_ext):
             self.J_regressor_ext[i + self.armature.n_joints, v] = 1
-        self.J_regressor_ext.to(device=device)
+        self.J_regressor_ext = self.J_regressor_ext.to(device=self.device, dtype=torch.float64)
         
         return self
 
@@ -130,7 +128,7 @@ class KinematicModel(Module):
             )[0] + self.pose_pca_mean
             self.pose = torch.reshape(self.pose, [self.n_joints - 1, 3])
             if pose_glb is None:
-                pose_glb = torch.zeros([1, 3]).to(device)
+                pose_glb = torch.zeros([1, 3]).to(self.device)
             pose_glb = torch.reshape(pose_glb, [1, 3])
             self.pose = torch.cat([pose_glb, self.pose])
         if shape is not None:
@@ -166,11 +164,11 @@ class KinematicModel(Module):
 
         G = G - self.pack(torch.matmul(
             G,
-            torch.hstack([self.J, torch.zeros([self.n_joints, 1], device=device)]) \
+            torch.hstack([self.J, torch.zeros([self.n_joints, 1], device=self.device)]) \
                 .reshape([self.n_joints, 4, 1])
         ))
         T = torch.tensordot(self.skinning_weights, G, dims=[[1], [0]])
-        verts = torch.hstack((verts, torch.ones([verts.shape[0], 1], device=device)))
+        verts = torch.hstack((verts, torch.ones([verts.shape[0], 1], device=self.device)))
 
         self.verts = \
             torch.matmul(T, verts.reshape([-1, 4, 1])).reshape([-1, 4])[:, :3]
@@ -180,9 +178,9 @@ class KinematicModel(Module):
         # center = self.verts.mean(0)
             verts = self.verts - self.coord_origin
             if self.mesh is None:
-                self.mesh = Meshes(verts=[verts], faces=[self.faces])
+                self.mesh = Meshes(verts=[verts.to(torch.float32)], faces=[self.faces])
             else:
-                self.mesh._verts_list = [verts]
+                self.mesh._verts_list = [verts.to(torch.float32)]
                 self.mesh._compute_packed(True)
 
         self.keypoints = torch.matmul(self.J_regressor_ext, self.verts)
@@ -326,7 +324,7 @@ class KinematicPCAWrapper():
         np.ndarray
           Global rotation.
         """
-        params = params.to(device)
+        params = params.to(self.core.device)
         coord_origin = params[:self.n_coord]
         pose_glb = params[self.n_coord:self.n_coord + self.n_glb]
         pose_pca = params[self.n_coord + self.n_glb:-self.n_shape]

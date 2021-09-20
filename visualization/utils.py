@@ -13,7 +13,7 @@ def o3d_plot(o3d_items: list, title="", show_coord=True, **kwargs):
     o3d.visualization.draw_geometries(_items, title)
 
 
-def o3d_coord(size=0.3, origin=[0, 0, 0]):
+def o3d_coord(size=0.1, origin=[0, 0, 0]):
     return o3d.geometry.TriangleMesh.create_coordinate_frame(size=size, origin=origin)
 
 

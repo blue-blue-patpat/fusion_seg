@@ -10,7 +10,7 @@ class KinematicModel():
     Kinematic model that takes in model parameters and outputs mesh, keypoints,
     etc.
     """
-    def __init__(self):
+    def __init__(self, device=None):
         pass
 
     def init_from_file(self, model_path, armature, scale=1, compute_mesh=True):
@@ -43,16 +43,17 @@ class KinematicModel():
             self.parents = params['parents']
 
         self.n_shape_params = self.mesh_shape_basis.shape[-1]
-        self.coord_origin = np.array([0, 0, 0])
         self.scale = scale
         self.compute_mesh = compute_mesh
-        self.mesh = None
 
         self.armature = armature
         self.n_joints = self.armature.n_joints
+        self.coord_origin = np.array([0, 0, 0])
         self.pose = np.zeros((self.n_joints, 3))
         self.shape = np.zeros(self.mesh_shape_basis.shape[-1])
         self.verts = None
+        self.mesh = None
+
         self.J = None
         self.R = None
         self.keypoints = None
@@ -145,7 +146,7 @@ class KinematicModel():
         if self.compute_mesh:
             # center = self.verts.mean(0)
             verts = self.verts - self.coord_origin
-            if False or self.mesh is None:
+            if self.mesh is None:
                 self.mesh = Meshes(verts=torch.tensor(verts, dtype=torch.float32, device=device).view(1, *verts.shape), faces=torch.tensor(self.faces, dtype=torch.float32, device=device).view(1, *self.faces.shape))
             else:
                 self.mesh._verts_list = [torch.tensor(verts, dtype=torch.float32, device=device)]

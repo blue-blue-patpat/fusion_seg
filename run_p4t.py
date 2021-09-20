@@ -77,6 +77,7 @@ def evaluate(model, criterion, data_loader, device, **kwargs):
                     arbe_frame = batch[len(batch)//2] * kwargs['scale'] - kwargs['offset']
                     pred = output[b].reshape(-1, 3) * kwargs['scale'] - kwargs['offset']
                     label = target[b].reshape(-1, 3) * kwargs['scale'] - kwargs['offset']
+                    print(np.sqrt(mean_squared_error(label, pred)))
                     yield dict(
                         arbe_pcl = dict(
                             pcl = arbe_frame,
@@ -219,7 +220,7 @@ def main(args):
         plot = NNPredLabelStreamPlot()
         print("Start testing")
         gen = evaluate(model, criterion, data_loader_test, device, visual=True, offset=dataset_all.normal_offset, scale=dataset_all.normal_scale)
-        plot.show(gen, fps=12)
+        plot.show(gen, fps=15)
     torch.cuda.empty_cache()
 
 def parse_args():

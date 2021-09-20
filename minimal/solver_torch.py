@@ -2,21 +2,16 @@ from builtins import isinstance
 from time import time
 from typing import Union
 
-from numpy.linalg.linalg import solve
 from visualization.utils import o3d_mesh, o3d_plot
 import numpy as np
 import torch
 from pytorch3d.loss import point_mesh_edge_distance, point_mesh_face_distance
 from pytorch3d.structures import Meshes, Pointclouds
-from alfred.dl.torch.common import device
 from minimal.models_torch import KinematicModel, KinematicPCAWrapper
 from minimal.utils import LossManager
 from minimal.config import VPOSER_DIR
-from alfred.dl.torch.common import device
 from human_body_prior.tools.model_loader import load_model
 from human_body_prior.models.vposer_model import VPoser
-from vctoolkit import Timer
-from multiprocessing.dummy import Pool
 
 
 class Solver:
@@ -36,15 +31,16 @@ class Solver:
         self.model = model
         self.eps = eps
         self.plot_type = plot_type
+        self.device = model.core.device
 
         # coord_origin + pose_params
-        self.pose_params = torch.zeros(self.model.n_pose + 3, device=device)
-        self.shape_params = torch.zeros(self.model.n_shape, device=device)
+        self.pose_params = torch.zeros(self.model.n_pose + 3, device=self.device)
+        self.shape_params = torch.zeros(self.model.n_shape, device=self.device)
 
         self.vp, _ = load_model(VPOSER_DIR, model_code=VPoser,
                               remove_words_in_model_weights='vp_model.',
                               disable_grad=True)
-        self.vp = self.vp.to(device)
+        self.vp = self.vp.to(self.device)
 
     def solve(self, jnts_target, pcls_target, solve_type="full", losses_with_weights=None, max_iter=30,
                     kpts_threshold=0.04, mse_threshold=1e-7, loss_threshold=1e-6, u=1e-3, v=1.5, dbg_level=0):
@@ -61,10 +57,10 @@ class Solver:
                 face_losses=100,
             )
 
-        jacobian = torch.zeros([jnts_target.size, params.shape[0]], device=device)
+        jacobian = torch.zeros([jnts_target.size, params.shape[0]], device=self.device)
 
-        jnts_target = torch.from_numpy(jnts_target).to(device)
-        pcls = Pointclouds([torch.tensor(pcls_target, dtype=torch.float32, device=device)])
+        jnts_target = torch.from_numpy(jnts_target).to(self.device)
+        pcls = Pointclouds([torch.tensor(pcls_target, dtype=torch.float32, device=self.device)])
 
         # accelerate draw
         pcls_vis = pcls_target[np.random.choice(np.arange(pcls_target.shape[0]), size=min(1000, pcls_target.shape[0]), replace=False)]
@@ -99,7 +95,7 @@ class Solver:
                 jacobian[:, k] = self.get_derivative(k)
 
             jtj = torch.matmul(jacobian.T, jacobian)
-            jtj = jtj + u * torch.eye(jtj.shape[0], device=device)
+            jtj = jtj + u * torch.eye(jtj.shape[0], device=self.device)
 
             delta = torch.matmul(
                 torch.matmul(torch.inverse(jtj), jacobian.T), residual.to(jacobian.dtype)
@@ -134,16 +130,16 @@ class Solver:
         return self.params(), losses
 
     def params(self):
-        return torch.cat([self.pose_params, self.shape_params])
+        return torch.cat([self.pose_params, self.shape_params]).to(torch.float64)
 
     def update_params(self, params: Union[np.lib.npyio.NpzFile, np.ndarray, torch.Tensor]):
         if isinstance(params, np.lib.npyio.NpzFile):
-            self.pose_params = torch.from_numpy(params["pose"]).to(device)
-            self.shape_params = torch.from_numpy(params["shape"]).to(device)
+            self.pose_params = torch.from_numpy(params["pose"]).to(self.device)
+            self.shape_params = torch.from_numpy(params["shape"]).to(self.device)
             return
 
         if isinstance(params, np.ndarray):
-            params = torch.from_numpy(params).to(device)
+            params = torch.from_numpy(params).to(self.device)
 
         if params.shape[0] == self.model.n_pose + self.model.n_coord:
             self.pose_params = params
@@ -153,9 +149,9 @@ class Solver:
             raise RuntimeError("Invalid params")
 
     def vpose_mapper(self):
-        poseSMPL = self.pose_params[6:69]
+        poseSMPL = self.pose_params[6:69].to(torch.float32)
         poZ = self.vp.encode(poseSMPL.view(1, poseSMPL.shape[0])).mean
-        self.pose_params[6:69] = self.vp.decode(poZ)['pose_body'].contiguous().reshape(poseSMPL.shape[0])
+        self.pose_params[6:69] = self.vp.decode(poZ)['pose_body'].contiguous().reshape(poseSMPL.shape[0]).to(torch.float64)
 
     def get_derivative(self, n):
         """
@@ -237,7 +233,7 @@ def decode_wrapper(model, params):
 
 def jnts_distance(kpts_updated: torch.Tensor, kpts_target: torch.Tensor, activate_distance):
     d = (kpts_updated - kpts_target)
-    _filter = torch.norm(d, dim=1) < torch.tensor(activate_distance, device=device)
-    residual = torch.where(_filter.view(_filter.shape[0], 1).expand(d.shape), 0., d).to(device)
-    loss_jnts = torch.mean(torch.square(residual)).to(device)
+    _filter = torch.norm(d, dim=1) < torch.tensor(activate_distance, device=d.device)
+    residual = torch.where(_filter.view(_filter.shape[0], 1).expand(d.shape), 0., d).to(d.device)
+    loss_jnts = torch.mean(torch.square(residual)).to(d.device)
     return loss_jnts, residual.view(-1)
