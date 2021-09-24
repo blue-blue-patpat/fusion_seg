@@ -328,7 +328,7 @@ def run():
         task_dict[args.task](**args_dict)
     except Exception as e:
         args_dict["msg_bot"].enable()
-        args_dict["msg_bot"].add_task("{} : {}".format(ymdhms_time, e), MSG_ERROR)
+        args_dict["msg_bot"].add_task("{} : task={}, path={}\ndetails: {}".format(ymdhms_time, args.task, args.root_path, e), MSG_ERROR)
         raise e
 
 if __name__ == "__main__":

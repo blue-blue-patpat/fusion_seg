@@ -131,7 +131,7 @@ class Solver:
         return np.hstack([self.pose_params, self.shape_params])
 
     def update_params(self, params: Union[np.lib.npyio.NpzFile, np.ndarray]):
-        if isinstance(params, np.lib.npyio.NpzFile):
+        if isinstance(params, (np.lib.npyio.NpzFile, dict)):
             self.pose_params = params["pose"]
             self.shape_params = params["shape"]
         elif params.shape[0] == self.model.n_pose + self.model.n_coord:

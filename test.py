@@ -64,11 +64,11 @@ if __name__ == "__main__":
     
     # from visualization.o3d_plot import OptitrackArbeStreamPlot
     # from multiprocessing import Pool
-    root_path = "/media/nesc525/perple/2021-09-10_11-27-22_D"
+    # root_path = "/media/nesc525/perple/2021-09-10_11-27-22_D"
 
 
-    plot = OptitrackArbeStreamPlot(root_path, [0,-1,0,10])
-    plot.show()
+    # plot = OptitrackArbeStreamPlot(root_path, [0,-1,0,10])
+    # plot.show()
 
     # plot = KinectOfflineStreamPlotCpp(root_path, start_frame=30, write_ply=False)
     # plot.show()
@@ -96,3 +96,7 @@ if __name__ == "__main__":
 
     # data_loader = torch.utils.data.DataLoader(dataset, batch_size=1000, shuffle=True, pin_memory=True)
     # print(data_loader)
+
+    import numpy as np
+    arr = np.load("/home/nesc525/chen/3DSVC/__test__/default/arbe/id=92_st=1632382661.6592233_dt=1632382661.6915216.npy")
+    print(max(arr[:,8]))

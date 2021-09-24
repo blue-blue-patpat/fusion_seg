@@ -92,9 +92,11 @@ def run():
     import time
     import os
     import curses
+    import argparse
+    import json
     from dataloader.utils import MultiSubClient, ymdhms_time, print_log
     from dataloader.kinect_loader import KinectSubscriber, KinectMKVSubscriber, KinectSkeletonSubscriber
-    import argparse
+    
     parser = argparse.ArgumentParser(usage='"run_dataloader.py -h" to show help.')
     parser.add_argument('-e', '--env', dest='env', type=str, choices=[
                         'dev', 'prod'], default='dev', help='Environment, default "dev". dev: save in ./default; prod: save by timestamp')
@@ -106,12 +108,14 @@ def run():
                         action="store_true", help='Disable pannel, default False')
     parser.add_argument('-nvis', '--disableVisualization', dest='disable_visualization',
                         action="store_true", help='Disable visualization, default False')
+    parser.add_argument('-i', '--information', dest='information', help='Log information like distance, gender ...')
     args = parser.parse_args()
     # log obj, None if log is disabled
     log_obj = None
 
     # default cmd, equals to last cmd
     default_cmd = None
+
 
     client = MultiSubClient()
 
@@ -131,6 +135,11 @@ def run():
 
         if not os.path.exists(parent_path):
             os.makedirs(parent_path+"/optitrack")
+
+        if args.information is not None:
+            info_dict = dict([arg.split('=') for arg in args.information.split(',') if '=' in arg])
+            with open(parent_path + "/infomation.json", 'w') as f:
+                json.dump(info_dict, f)
 
         # init log file obj
         if not args.disable_log:

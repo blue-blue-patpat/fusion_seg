@@ -7,7 +7,6 @@ import torch
 import torch.utils.data
 from torch import nn
 import torchvision
-from torchsummary import summary
 from sklearn.metrics import mean_squared_error
 import matplotlib.pyplot as plt
 import cv2
@@ -15,10 +14,8 @@ import cv2
 from nn.p4t import utils
 from nn.p4t.scheduler import WarmupMultiStepLR
 from nn.p4t.datasets.mmbody import MMBody3D
-import nn.p4t.modules.mmbody as Models
-
+import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
-from visualization.utils import o3d_pcl, o3d_plot, o3d_skeleton
 from visualization.o3d_plot import NNPredLabelStreamPlot
 from optitrack.config import marker_lines
 
@@ -30,17 +27,17 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
     metric_logger.add_meter('clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.3f}'))
 
     header = 'Epoch: [{}]'.format(epoch)
-    for clip, target, _ in metric_logger.log_every(data_loader, print_freq, header):
+    for xyz_clip, feature_clip, target, _ in metric_logger.log_every(data_loader, print_freq, header):
         start_time = time.time()
-        clip, target = clip.to(device), target.to(device)
-        output = model(clip)
+        xyz_clip, feature_clip, target = xyz_clip.to(device), feature_clip.to(device), target.to(device)
+        output = model(xyz_clip, feature_clip)
         loss = criterion(output, target)
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        batch_size = clip.shape[0]
+        batch_size = xyz_clip.shape[0]
         metric_logger.update(loss=loss.item(), lr=optimizer.param_groups[0]["lr"])
         metric_logger.meters['clips/s'].update(batch_size / (time.time() - start_time))
         lr_scheduler.step()
@@ -48,36 +45,36 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
     return list(metric_logger.meters['loss'].deque)
 
 
-def evaluate(model, criterion, data_loader, device, **kwargs):
+def evaluate(model, criterion, data_loader, device, visual=False, scale=1):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
     rmse_list = []
     with torch.no_grad():
-        for clip, target, _ in metric_logger.log_every(data_loader, 100, header):
-            clip = clip.to(device, non_blocking=True)
+        for xyz_clip, feature_clip, target, _ in metric_logger.log_every(data_loader, 100, header):
+            xyz_clip = xyz_clip.to(device, non_blocking=True)
+            feature_clip = feature_clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
-            output = model(clip)
+            output = model(xyz_clip, feature_clip)
             loss = criterion(output, target)
 
             # FIXME need to take into account that the datasets
             # could have been padded in distributed setup
-            batch_size = clip.shape[0]
+            xyz_clip = xyz_clip.cpu().numpy()
             output = output.cpu().numpy()
             target = target.cpu().numpy()
-            rmse = np.sqrt(mean_squared_error(target, output))
-            rmse_list.append(rmse)
-            
+            rmse = np.sqrt(mean_squared_error(target, output)) * scale
+
+            batch_size = xyz_clip.shape[0]
             metric_logger.update(loss=loss.item())
             metric_logger.meters['rmse'].update(rmse, n=batch_size)
-                        
-            if kwargs['visual']:
-                clip = clip.cpu().numpy()
-                for b, batch in enumerate(clip):
-                    arbe_frame = batch[len(batch)//2] * kwargs['scale'] - kwargs['offset']
-                    pred = output[b].reshape(-1, 3) * kwargs['scale'] - kwargs['offset']
-                    label = target[b].reshape(-1, 3) * kwargs['scale'] - kwargs['offset']
-                    print(np.sqrt(mean_squared_error(label, pred)))
+            torch.cuda.empty_cache()
+
+            if visual:
+                for b, batch in enumerate(xyz_clip):
+                    arbe_frame = batch[-1] * scale
+                    pred = output[b].reshape(-1, 3) * scale
+                    label = target[b].reshape(-1, 3) * scale
                     yield dict(
                         arbe_pcl = dict(
                             pcl = arbe_frame,
@@ -94,12 +91,14 @@ def evaluate(model, criterion, data_loader, device, **kwargs):
                             colors = np.asarray([[0,0,1]] * len(marker_lines))
                         )
                     )
-            torch.cuda.empty_cache()
+            else:
+                yield rmse
+            print("batch rmse:", rmse)
+            rmse_list.append(rmse)
+        print("RMSE:", np.mean(rmse_list))
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-
-    return rmse_list
 
 
 def main(args):
@@ -126,7 +125,7 @@ def main(args):
             frames_per_clip=args.clip_len,
             step_between_clips=1,
             num_points=args.num_points,
-            train=bool(args.train)
+            train=args.train
     )
 
     train_size = int(0.9 * len(dataset_all))
@@ -144,7 +143,7 @@ def main(args):
                   temporal_kernel_size=args.temporal_kernel_size, temporal_stride=args.temporal_stride,
                   emb_relu=args.emb_relu,
                   dim=args.dim, depth=args.depth, heads=args.heads, dim_head=args.dim_head,
-                  mlp_dim=args.mlp_dim, num_classes=dataset_all.num_classes)
+                  mlp_dim=args.mlp_dim, num_classes=dataset_all.output_dim)
 
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
@@ -173,18 +172,17 @@ def main(args):
     if args.train:
         print("Start training")
         start_time = time.time()
-        summary(model, (2*args.clip_len+1, args.num_points, 3))
         fig = plt.figure()
         loss_list = []
         rmse_list = []
         bot =TimerBot()
-        dingbot = False
+        dingbot = True
         for epoch in range(args.start_epoch, args.epochs):
             loss = train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq)
             loss_list += loss
 
-            rmse = evaluate(model, criterion, data_loader_eval, device)
-            rmse_list.append(np.mean(rmse))
+            rmse_gen = evaluate(model, criterion, data_loader_eval, device)
+            rmse_list.append(np.mean(list(rmse_gen)))
 
             fig.add_subplot(1, 1, 1).plot(loss_list)
             fig.canvas.draw()
@@ -193,7 +191,7 @@ def main(args):
                 cv2.imwrite(os.path.join(args.output_dir, 'loss.png'), img)
 
             if dingbot:
-                bot.add_md("tran_mmbody", "【LOSS】 \n ![img]({}) \n 【RMSE】\n epoch={}, rmse={}".format(bot.img2b64(img), epoch, rmse_list))
+                bot.add_md("tran_mmbody", "【LOSS】 \n ![img]({}) \n 【RMSE】\n epoch={}, rmse={}".format(bot.img2b64(img), epoch, rmse_list[-1]))
                 bot.enable()
             
             if args.output_dir:
@@ -219,52 +217,50 @@ def main(args):
         data_loader_test = torch.utils.data.DataLoader(dataset_all, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
         plot = NNPredLabelStreamPlot()
         print("Start testing")
-        gen = evaluate(model, criterion, data_loader_test, device, visual=True, offset=dataset_all.normal_offset, scale=dataset_all.normal_scale)
+        gen = evaluate(model, criterion, data_loader_test, device, visual=True, scale=dataset_all.normal_scale)
         plot.show(gen, fps=15)
-    torch.cuda.empty_cache()
 
 def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description='P4Transformer Model Training')
 
-    parser.add_argument('--data-path', default='/media/nesc525/perple', type=str, help='dataset')
+    parser.add_argument('--data_path', default='/media/nesc525/perple', type=str, help='dataset')
     parser.add_argument('--seed', default=0, type=int, help='random seed')
     parser.add_argument('--model', default='P4Transformer', type=str, help='model')
     # input
-    parser.add_argument('--clip-len', default=2, type=int, metavar='N', help='number of frames per clip')
-    parser.add_argument('--num-points', default=2048, type=int, metavar='N', help='number of points per frame')
+    parser.add_argument('--clip_len', default=5, type=int, metavar='N', help='number of frames per clip')
+    parser.add_argument('--num_points', default=1024, type=int, metavar='N', help='number of points per frame')
     # P4D
     parser.add_argument('--radius', default=0.7, type=float, help='radius for the ball query')
     parser.add_argument('--nsamples', default=32, type=int, help='number of neighbors for the ball query')
-    parser.add_argument('--spatial-stride', default=32, type=int, help='spatial subsampling rate')
-    parser.add_argument('--temporal-kernel-size', default=3, type=int, help='temporal kernel size')
-    parser.add_argument('--temporal-stride', default=1, type=int, help='temporal stride')
+    parser.add_argument('--spatial_stride', default=32, type=int, help='spatial subsampling rate')
+    parser.add_argument('--temporal_kernel_size', default=3, type=int, help='temporal kernel size')
+    parser.add_argument('--temporal_stride', default=1, type=int, help='temporal stride')
     # embedding
-    parser.add_argument('--emb-relu', default=False, action='store_true')
+    parser.add_argument('--emb_relu', default=False, action='store_true')
     # transformer
     parser.add_argument('--dim', default=1024, type=int, help='transformer dim')
     parser.add_argument('--depth', default=5, type=int, help='transformer depth')
     parser.add_argument('--heads', default=8, type=int, help='transformer head')
-    parser.add_argument('--dim-head', default=128, type=int, help='transformer dim for each head')
-    parser.add_argument('--mlp-dim', default=2048, type=int, help='transformer mlp dim')
-    parser.add_argument('--num_classes', default=111, type=int, help='number of classes')
+    parser.add_argument('--dim_head', default=128, type=int, help='transformer dim for each head')
+    parser.add_argument('--mlp_dim', default=2048, type=int, help='transformer mlp dim')
     # training
-    parser.add_argument('-b', '--batch-size', default=14, type=int)
+    parser.add_argument('-b', '--batch_size', default=14, type=int)
     parser.add_argument('--epochs', default=50, type=int, metavar='N', help='number of total epochs to run')
     parser.add_argument('-j', '--workers', default=10, type=int, metavar='N', help='number of data loading workers (default: 16)')
     parser.add_argument('--lr', default=0.01, type=float, help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')
-    parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float, metavar='W', help='weight decay (default: 1e-4)', dest='weight_decay')
-    parser.add_argument('--lr-milestones', nargs='+', default=[20, 30], type=int, help='decrease lr on milestones')
-    parser.add_argument('--lr-gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
-    parser.add_argument('--lr-warmup-epochs', default=10, type=int, help='number of warmup epochs')
+    parser.add_argument('--wd', '--weight_decay', default=1e-4, type=float, metavar='W', help='weight decay (default: 1e-4)', dest='weight_decay')
+    parser.add_argument('--lr_milestones', nargs='+', default=[20, 30], type=int, help='decrease lr on milestones')
+    parser.add_argument('--lr_gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
+    parser.add_argument('--lr_warmup_epochs', default=10, type=int, help='number of warmup epochs')
     # output
-    parser.add_argument('--print-freq', default=10, type=int, help='print frequency')
-    parser.add_argument('--output-dir', default='', type=str, help='path where to save')
+    parser.add_argument('--print_freq', default=10, type=int, help='print frequency')
+    parser.add_argument('--output_dir', default='', type=str, help='path where to save')
     # resume
     parser.add_argument('--resume', default='', help='resume from checkpoint')
-    parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='start epoch')
-    parser.add_argument('--train', default=1, type=int, help='train or test')
+    parser.add_argument('--start_epoch', default=0, type=int, metavar='N', help='start epoch')
+    parser.add_argument('--train', dest="train", action="store_true", help='train or test')
 
     args = parser.parse_args()
 

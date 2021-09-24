@@ -187,7 +187,7 @@ def run_modify_offset(kwargs):
     plt = KinectArbeOptitrackStreamPlot(root_path, skip_head=skip_head, skip_tail=skip_tail, enabled_sources=enabled_sources)
 
     while True:
-        plt.show()
+        plt.show(fps=30)
         print("Current Offsets:")
         print(plt.file_loader.offsets)
         print("\n----")

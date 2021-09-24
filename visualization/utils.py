@@ -3,6 +3,7 @@ from typing import Callable, Dict, Generator, Iterable, Union, overload
 import numpy as np
 import open3d as o3d
 from pytorch3d.structures import Meshes
+import torch
 
 
 def o3d_plot(o3d_items: list, title="", show_coord=True, **kwargs):
@@ -76,6 +77,47 @@ def o3d_mesh(mesh: Union[Meshes, Iterable] = None, color: list = None,
             _mesh.paint_uniform_color(color)
         _mesh.compute_vertex_normals()
     return _mesh
+
+
+def o3d_smpl_mesh(params: Union[np.ndarray, np.lib.npyio.NpzFile, dict], color: list = None,
+             model = None, device = "cpu", last_update = None):
+    from minimal.models import KinematicModel, KinematicPCAWrapper
+    from minimal.models_torch import KinematicModel as KinematicModelTorch, KinematicPCAWrapper as KinematicPCAWrapperTorch
+
+    _mesh = last_update
+    if _mesh is None:
+        _mesh = o3d.geometry.TriangleMesh()
+    
+    if model is None:
+        if device == "cpu":
+            model = KinematicPCAWrapper(KinematicModel().init_from_file())
+        else:
+            model = KinematicPCAWrapperTorch(KinematicModelTorch(torch.device(device)).init_from_file())
+
+    assert isinstance(model, (KinematicPCAWrapper, KinematicPCAWrapperTorch)), "Undefined model"
+
+    # Unzip dict params
+    if isinstance(params, np.lib.npyio.NpzFile) or (isinstance(params, dict) and isinstance(params.values()[0], np.ndarray)):
+        # Numpy dict input
+        pose_params = params["pose"]
+        shape_params = params["shape"]
+        params = np.hstack([pose_params, shape_params])
+
+    elif isinstance(params, dict) and isinstance(params.values()[0], torch.Tensor):
+        # Torch Tensor dict input
+        pose_params = params["pose"]
+        shape_params = params["shape"]
+        params = torch.cat([pose_params, shape_params]).to(torch.float64)
+
+    # Convert unmatched data types
+    if isinstance(model, KinematicPCAWrapper) and isinstance(params, torch.Tensor):
+        params = params.cpu().numpy()
+    elif isinstance(model, KinematicModelTorch) and isinstance(params, np.ndarray):
+        params = torch.from_numpy(params).to(device=model.device, dtype=torch.float64)
+
+    mesh, _ = model.run(params)
+
+    return o3d_mesh(mesh, color, _mesh)
 
 
 def pcl_filter(pcl_a, pcl_b, bound=0.5):
@@ -169,8 +211,10 @@ class O3DStreamPlot():
         duration = 1/fps
         while True:
             while time.time() - tick < duration:
-                time.sleep(0.002)
-            
+                continue
+
+            tick = time.time()
+
             try:
                 if not self.pause:
                     update_dict = next(gen)
@@ -182,7 +226,6 @@ class O3DStreamPlot():
                     continue
                 self.updater_dict[updater_key].update(update_params)
             self.update_plot()
-            tick = time.time()
 
         self.close_view()
 

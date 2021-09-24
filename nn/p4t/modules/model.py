@@ -20,7 +20,7 @@ class P4Transformer(nn.Module):
                  mlp_dim, num_classes):                                                 # output
         super().__init__()
 
-        self.tube_embedding = P4DConv(in_planes=0, mlp_planes=[dim], mlp_batch_norm=[False], mlp_activation=[False],
+        self.tube_embedding = P4DConv(in_planes=3, mlp_planes=[dim], mlp_batch_norm=[False], mlp_activation=[False],
                                   spatial_kernel_size=[radius, nsamples], spatial_stride=spatial_stride,
                                   temporal_kernel_size=temporal_kernel_size, temporal_stride=temporal_stride, temporal_padding=[1, 0],
                                   operator='+', spatial_pooling='max', temporal_pooling='max')
@@ -37,11 +37,9 @@ class P4Transformer(nn.Module):
             nn.Linear(mlp_dim, num_classes),
         )
 
-        self.norm = nn.Sigmoid()
-
-    def forward(self, input):                                                                                                               # [B, L, N, 3]
-        device = input.get_device()
-        xyzs, features = self.tube_embedding(input)                                                                                         # [B, L, n, 3], [B, L, C, n] 
+    def forward(self, xyz_input, feature_input=None):                                                                                                               # [B, L, N, 3]
+        device = xyz_input.get_device()
+        xyzs, features = self.tube_embedding(xyz_input, feature_input)                                                                                         # [B, L, n, 3], [B, L, C, n] 
 
         xyzts = []
         xyzs = torch.split(tensor=xyzs, split_size_or_sections=1, dim=1)
@@ -65,5 +63,4 @@ class P4Transformer(nn.Module):
         output = self.transformer(embedding)
         output = torch.max(input=output, dim=1, keepdim=False, out=None)[0]
         output = self.mlp_head(output)
-        output = self.norm(output)
         return output
