@@ -227,7 +227,7 @@ class O3DStreamPlot():
                 self.updater_dict[updater_key].update(update_params)
             self.update_plot()
 
-        self.close_view()
+        # self.close_view()
 
     def show_manual(self, update_dict):
         for updater_key, update_params in update_dict.items():

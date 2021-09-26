@@ -232,6 +232,26 @@ class MinimalLoader(ResultLoader):
 
 
 class ResultFileLoader():
+    """
+    Load files from sources
+
+    Sources:
+        arbe:
+            directory: auto load
+            arbe_pcl file <N*3 ndarray>: "arbe" or "arbe_pcl"
+            arbe_feature <N*5? ndarray>: "arbe_feature"
+        kinect:
+            directory: "master", "sub1", "sub2". if "kinect_skeleton" exists, load files by skid.
+            $device$_skeleton <person_count*K*3 ndarray>: "kinect_skeleton"
+            $device$_pcl <N*3 ndarray>: "kinect_pcl"; if "kinect_pcl_remove_zeros" enabled, return valid points.
+        optitrack:
+            directory: "optitrack"
+            optitrack <person_count*K*3 ndarray>: "optitrack"
+        mesh:
+            directory: "mesh"
+            mesh_param {pose: <10, ndarray>, shape: <72, ndarray>, vertices: <2,100~*3 ndarray>, keypoints: <23*3 ndarray>}: "mesh_param"
+            mesh_obj (verts, faces): "mesh_obj"
+    """
     def __init__(self, root_path: str, skip_head: int=0, skip_tail: int=0,
                  enabled_sources: list=None, disabled_sources: list=[],
                  offsets: dict=None) -> None:
@@ -350,17 +370,25 @@ class ResultFileLoader():
         """
         if k_loader.device in self.offsets.keys():
             _t = t + self.offsets[k_loader.device] / self.fps
-            res_skeleton = k_loader.select_item_in_tag(_t, "st", "kinect/{}/skeleton".format(k_loader.device), False)
-            res = k_loader.select_by_skid(res_skeleton["skid"])
+            # Use index: skid
+            if "kinect_skeleton" in self.sources:
+                res_skeleton = k_loader.select_item_in_tag(_t, "st", "kinect/{}/skeleton".format(k_loader.device), False)
+                res = k_loader.select_by_skid(res_skeleton["skid"])
+            else:
+                res = k_loader.select_item(_t, "st", False)
 
         elif "master" in self.offsets.keys():
             _t = t + self.offsets["master"] / self.fps
+            # Init loader if None
             if self.k_mas_loader is None:
                 self.k_mas_loader = KinectResultLoader(self.root_path, device="master")
-            mas_res_skeleton = self.k_mas_loader.select_item_in_tag(_t, "st", "kinect/master/skeleton", False)
-            mas_res = self.k_mas_loader.select_by_skid(mas_res_skeleton["skid"])
-
-            res = k_loader.select_item(mas_res["kinect/master/pcls"]["id"], "id", False)
+            # Use index: skid
+            if "kinect_skeleton" in self.sources:
+                mas_res_skeleton = self.k_mas_loader.select_item_in_tag(_t, "st", "kinect/master/skeleton", False)
+                mas_res = self.k_mas_loader.select_by_skid(mas_res_skeleton["skid"])
+                res = k_loader.select_item(mas_res["kinect/master/pcls"]["id"], "id", False)
+            else:
+                res = k_loader.select_item(_t, "st", False)
 
         trans_mat = self.trans["kinect_{}".format(k_loader.device)]
         if "kinect_skeleton" in self.sources:
@@ -414,6 +442,12 @@ class ResultFileLoader():
                 mesh_t=trans_param["t"],
                 mesh_scale=trans_param["scale"]
             ))
+        if "mesh_vtx_jnt" in self.sources:
+            vtx_jnt = np.load(res["minimal/vtx_jnt"]["filepath"])
+            self.results.update(dict(
+                mesh_vtx=vtx_jnt["vtx"],
+                mesh_jnt=vtx_jnt["jnt"],
+            ))
         if "mesh_obj" in self.sources:
             verts, faces, _ = load_obj(res["minimal/obj"]["filepath"])
             # TODO: change to origin R
@@ -433,9 +467,17 @@ class ResultFileLoader():
         self.results = self.info = {}
         arbe_res = self.a_loader[i]
 
-        if "arbe" in self.sources:
+        arbe_arr = None
+        if "arbe_pcl" in self.sources or "arbe" in self.sources:
+            arbe_arr = np.load(arbe_res["arbe"]["filepath"])
             self.results = dict(
-                arbe=np.load(arbe_res["arbe"]["filepath"])[:,:3]
+                arbe_pcl=arbe_arr[:,:3]
+            )
+        if "arbe_feature" in self.sources:
+            if arbe_arr is None:
+                arbe_arr = np.load(arbe_res["arbe"]["filepath"])
+            self.results = dict(
+                arbe_feature=arbe_arr[:,3:]
             )
         self.info = dict(
             arbe=arbe_res["arbe"]
@@ -443,15 +485,15 @@ class ResultFileLoader():
 
         t = float(arbe_res["arbe"]["st"])
         rid = int(arbe_res["arbe"]["id"])
-        if self.k_mas_loader:
+        if self.k_mas_loader is not None:
             self.select_kinect_trans_item_by_t(self.k_mas_loader, t)
-        if self.k_sub1_loader:
+        if self.k_sub1_loader is not None:
             self.select_kinect_trans_item_by_t(self.k_sub1_loader, t)
-        if self.k_sub2_loader:
+        if self.k_sub2_loader is not None:
             self.select_kinect_trans_item_by_t(self.k_sub2_loader, t)
-        if self.o_loader:
+        if self.o_loader is not None:
             self.select_trans_optitrack_item_by_t(self.o_loader, t)
-        if self.mesh_loader:
+        if self.mesh_loader is not None:
             self.select_trans_mesh_item_by_rid(self.mesh_loader, rid)
         return self.results, self.info
 

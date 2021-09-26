@@ -64,20 +64,20 @@ if __name__ == "__main__":
     
     # from visualization.o3d_plot import OptitrackArbeStreamPlot
     # from multiprocessing import Pool
-    # root_path = "/media/nesc525/perple/2021-09-10_11-27-22_D"
-
+    root_path = "/media/nesc525/perple2"
 
     # plot = OptitrackArbeStreamPlot(root_path, [0,-1,0,10])
     # plot.show()
 
-    # plot = KinectOfflineStreamPlotCpp(root_path, start_frame=30, write_ply=False)
+    # plot = KinectOfflineStreamPlotCpp(root_path, start_frame=120, write_ply=False)
     # plot.show()
 
     # plot = KinectArbeStreamPlot(root_path, ["master"], [0,-1,0,2])
     # plot.show()
 
     # from kinect.kinect_skeleton import extract_skeleton
-    # import os
+    import os
+    # extract_skeleton(root_path, "master")
     # from dataloader.result_loader import OptitrackCSVLoader
     # root_path = "/media/nesc525/perple"
     # csv_file = OptitrackCSVLoader(root_path)
@@ -97,6 +97,11 @@ if __name__ == "__main__":
     # data_loader = torch.utils.data.DataLoader(dataset, batch_size=1000, shuffle=True, pin_memory=True)
     # print(data_loader)
 
-    import numpy as np
-    arr = np.load("/home/nesc525/chen/3DSVC/__test__/default/arbe/id=92_st=1632382661.6592233_dt=1632382661.6915216.npy")
-    print(max(arr[:,8]))
+    # import numpy as np
+    # arr = np.load("/home/nesc525/chen/3DSVC/__test__/default/arbe/id=92_st=1632382661.6592233_dt=1632382661.6915216.npy")
+    # print(max(arr[:,8]))
+
+    from run_postprocess import postprocess
+    for p in os.listdir(root_path):
+        if p[-1] == 'T':
+            postprocess(os.path.join(root_path, p))

@@ -9,6 +9,8 @@ from optitrack.optitrack_loader import parse_opti_csv
 def postprocess(root_path, *devices, output_path=""):
     if not devices:
         devices = ["master","sub1","sub2"]
+    if not output_path:
+        output_path = root_path
     params = []
     pool = Pool()
 
@@ -31,7 +33,9 @@ def postprocess(root_path, *devices, output_path=""):
         process(device)
     mkvs = KinectMKVtLoader(root_path, params)
     mkv_list = [m.loc[0,"filepath"] for m in mkvs.file_dict.values()]
-    pool.map_async(extract_mkv, mkv_list)
+    # pool.map_async(extract_mkv, mkv_list)
+    for mkv in mkv_list:
+        extract_mkv(mkv)
 
     pool.close()
     pool.join()

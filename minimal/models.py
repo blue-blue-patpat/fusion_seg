@@ -142,23 +142,23 @@ class KinematicModel():
         self.verts = \
         np.matmul(T, verts.reshape([-1, 4, 1])).reshape([-1, 4])[:, :3]
 
+        # update verts
+        self.verts *= self.scale
+        self.verts -= self.coord_origin
+
         # update mesh
         if self.compute_mesh:
             # center = self.verts.mean(0)
-            verts = self.verts - self.coord_origin
             if self.mesh is None:
-                self.mesh = Meshes(verts=torch.tensor(verts, dtype=torch.float32, device=device).view(1, *verts.shape), faces=torch.tensor(self.faces, dtype=torch.float32, device=device).view(1, *self.faces.shape))
+                self.mesh = Meshes(verts=torch.tensor(self.verts, dtype=torch.float32, device=device).view(1, *self.verts.shape), faces=torch.tensor(self.faces, dtype=torch.float32, device=device).view(1, *self.faces.shape))
             else:
-                self.mesh._verts_list = [torch.tensor(verts, dtype=torch.float32, device=device)]
+                self.mesh._verts_list = [torch.tensor(self.verts, dtype=torch.float32, device=device)]
                 self.mesh._compute_packed(True)
         # update keypoints
         # self.keypoints = self.J_regressor_ext.dot(self.mesh.verts_packed()) *self.scale
-        self.keypoints = self.J_regressor_ext.dot(self.verts) *self.scale
+        self.keypoints = self.J_regressor_ext.dot(self.verts)
 
-        # update verts
-        self.verts *= self.scale
-
-        return self.mesh, self.keypoints - self.coord_origin
+        return self.mesh, self.keypoints
 
     def rodrigues(self, r):
         """

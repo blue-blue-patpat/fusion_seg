@@ -1,3 +1,4 @@
+import time
 from visualization.utils import O3DStreamPlot, o3d_coord, o3d_mesh, o3d_pcl, o3d_plot, o3d_skeleton, pcl_filter
 import numpy as np
 import open3d as o3d
@@ -336,7 +337,8 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
     def init_updater(self):
         self.plot_funcs = dict(
             optitrack=o3d_skeleton,
-            kinect_skeleton = o3d_skeleton,
+            kinect_skeleton=o3d_skeleton,
+            kinect_pcl=o3d_pcl,
             arbe=o3d_pcl)
 
     def init_show(self):
@@ -353,16 +355,13 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
             #load numpy from file
             frame, info = self.file_loader[i]
 
-            # filter pcl with naive bounding box
-            arbe_pcl = pcl_filter(frame["optitrack"], frame["arbe"], 0.5)
 
-            # init lines
-            opti_lines = marker_lines
-            if frame["optitrack_person_count"] > 1:
-                for p in range(1, frame["optitrack_person_count"]):
-                    kinect_lines = np.vstack((kinect_lines,kinect_lines+p*32))
-                    opti_lines = np.vstack((opti_lines,opti_lines+p*37))
-            opti_colors = np.array([[1,0,0]]*len(opti_lines))
+            arbe_pcl = {}
+            if "arbe" in self.enabled_sources:
+                arbe_pcl = dict(
+                    pcl = pcl_filter(frame["optitrack"], frame["arbe"], 0.2),
+                    color = [0,1,0]
+                )
 
             kinect_skeleton = {}
             if "kinect_skeleton" in self.enabled_sources:
@@ -373,18 +372,37 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
                     lines = kinect_lines,
                     colors = kinect_colors
                 )
-            
-            yield dict(
-                kinect_skeleton = kinect_skeleton,
-                arbe = dict(
-                    pcl = arbe_pcl,
-                    color = [0,1,0]
-                ),
+
+            kinect_pcl = {}
+            if "kinect_pcl" in self.enabled_sources:
+                kin_pcl = frame["{}_pcl".format(self.main_device)]
+                r = np.random.choice(kin_pcl.shape[0], size=3000, replace=False)
+                pcl = pcl_filter(frame["optitrack"], kin_pcl[r,:], 0.2)
+                kinect_pcl = dict(
+                    pcl = pcl,
+                    color = [0,0,1]
+                )
+
+            optitrack={}
+            if "optitrack" in self.enabled_sources:
+                # init lines
+                opti_lines = marker_lines
+                if frame["optitrack_person_count"] > 1:
+                    for p in range(1, frame["optitrack_person_count"]):
+                        kinect_lines = np.vstack((kinect_lines,kinect_lines+p*32))
+                        opti_lines = np.vstack((opti_lines,opti_lines+p*37))
+                opti_colors = np.array([[1,0,0]]*len(opti_lines))
                 optitrack = dict(
                     skeleton = frame["optitrack"],
                     lines = opti_lines,
                     colors = opti_colors
                 )
+            
+            yield dict(
+                kinect_skeleton=kinect_skeleton,
+                kinect_pcl=kinect_pcl,
+                arbe=arbe_pcl,
+                optitrack=optitrack
             )
 
 

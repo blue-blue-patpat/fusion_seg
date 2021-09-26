@@ -194,7 +194,7 @@ class Solver:
             shape=self.shape_params.cpu().numpy()
         else:
             shape = self.shape_params
-        np.savez(file_path, pose=self.pose_params.cpu().numpy(), shape=shape)
+        np.savez(file_path, pose=self.pose_params.cpu().numpy(), shape=shape, vertices=self.model.core.verts.cpu().numpy(), keypoints=self.model.core.keypoints.cpu().numpy())
 
     def save_model(self, file_path):
         self.model.core.save_obj(file_path)
