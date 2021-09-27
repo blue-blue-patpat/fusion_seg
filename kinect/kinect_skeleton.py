@@ -7,7 +7,7 @@ import numpy as np
 from dataloader.utils import clean_dir, ymdhms_time
 from dataloader.result_loader import KinectResultLoader
 
-def extract_skeleton(parent_path, *devices):
+def extract_skeleton(root_path, *devices):
     """
     Extract skeleton from kinect
     Parameters:
@@ -17,7 +17,7 @@ def extract_skeleton(parent_path, *devices):
     if not devices:
         devices = ("master","sub1","sub2")
     for device in devices:
-        file_path = os.path.join(parent_path, "kinect", device)
+        file_path = os.path.join(root_path, "kinect", device)
         clean_dir(os.path.join(file_path, "skeleton"))
         with open(os.path.join(file_path, "out.json"),'r',encoding="utf8") as f:
             json_data = json.load(f)

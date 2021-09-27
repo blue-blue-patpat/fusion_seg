@@ -185,6 +185,7 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
 
     if device == "cpu":
         bot.print("{} : [Minimal] Running in CPU mode.".format(ymdhms_time()))
+        _device = None
         _Model = KinematicModel
         _Wrapper = KinematicPCAWrapper
         _Solver = Solver
@@ -216,6 +217,12 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
 
     data_type = "optitrack"
 
+    losses_w = dict(
+        kpts_losses=1,
+        edge_losses=25,
+        face_losses=25,
+    )
+
     if os.path.exists(os.path.join(save_path, "init_params.npz")) and os.path.exists(os.path.join(save_path, "init_transform.npz")):
         # load init shape & pose
         bot.print("{} : [Minimal] Load current init params".format(ymdhms_time()))
@@ -230,7 +237,7 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
             jnts_brg.init_input(result["optitrack"], np.vstack([result["master_pcl"], result["sub1_pcl"], result["sub2_pcl"]]))
             _jnts, _pcl = jnts_brg.map(data_type)
 
-            _, losses = solver.solve(_jnts, _pcl, "full", dbg_level=dbg_level, max_iter=100)
+            _, losses = solver.solve(_jnts, _pcl, "full", dbg_level=dbg_level, max_iter=100, losses_with_weights=losses_w)
             
             shape_params.append(solver.shape_params)
             del losses
@@ -275,11 +282,11 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
             solver.update_params(init_pose)
             _, losses = solver.solve(inputs[j]["jnts"], inputs[i]["pcl"], "pose", max_iter=40, kpts_threshold=0.02, loss_threshold=0.0005, mse_threshold=0.0001, dbg_level=dbg_level, losses_with_weights=losses_w)
         
-            filename = "id={}#{}_rid={}".format(i, j, rid)
-            solver.save_param(os.path.join(temp_path, "param", filename))
-            solver.save_model(os.path.join(temp_path, "obj", filename+".obj"))
-            inputs.save_revert_transform(j, os.path.join(temp_path, "trans", filename))
-            losses.save_losses(os.path.join(temp_path, "loss", filename))
+            # filename = "id={}#{}_rid={}".format(i, j, rid)
+            # solver.save_param(os.path.join(temp_path, "param", filename))
+            # solver.save_model(os.path.join(temp_path, "obj", filename+".obj"))
+            # inputs.save_revert_transform(j, os.path.join(temp_path, "trans", filename))
+            # losses.save_losses(os.path.join(temp_path, "loss", filename))
             results[j] = dict(
                 pose = solver.pose_params,
                 loss = losses[-1]

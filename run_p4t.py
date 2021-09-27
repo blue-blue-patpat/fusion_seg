@@ -13,7 +13,7 @@ import cv2
 
 from nn.p4t import utils
 from nn.p4t.scheduler import WarmupMultiStepLR
-from nn.p4t.datasets.mmbody import MMBody3D
+from nn.p4t.datasets.dataset import MMBody3D
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
 from visualization.o3d_plot import NNPredLabelStreamPlot
@@ -64,6 +64,7 @@ def evaluate(model, criterion, data_loader, device, visual=False, scale=1):
             output = output.cpu().numpy()
             target = target.cpu().numpy()
             rmse = np.sqrt(mean_squared_error(target, output)) * scale
+            print("batch rmse:", rmse)
 
             batch_size = xyz_clip.shape[0]
             metric_logger.update(loss=loss.item())
@@ -93,7 +94,6 @@ def evaluate(model, criterion, data_loader, device, visual=False, scale=1):
                     )
             else:
                 yield rmse
-            print("batch rmse:", rmse)
             rmse_list.append(rmse)
         print("RMSE:", np.mean(rmse_list))
 
@@ -181,8 +181,9 @@ def main(args):
             loss = train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq)
             loss_list += loss
 
-            rmse_gen = evaluate(model, criterion, data_loader_eval, device)
-            rmse_list.append(np.mean(list(rmse_gen)))
+            rmse = np.mean(list(evaluate(model, criterion, data_loader_eval, device)))
+            print("RMSE:", rmse)
+            rmse_list.append(rmse)
 
             fig.add_subplot(1, 1, 1).plot(loss_list)
             fig.canvas.draw()
@@ -191,7 +192,7 @@ def main(args):
                 cv2.imwrite(os.path.join(args.output_dir, 'loss.png'), img)
 
             if dingbot:
-                bot.add_md("tran_mmbody", "【LOSS】 \n ![img]({}) \n 【RMSE】\n epoch={}, rmse={}".format(bot.img2b64(img), epoch, rmse_list[-1]))
+                bot.add_md("tran_mmbody", "【LOSS】 \n ![img]({}) \n 【RMSE】\n epoch={}, rmse={}".format(bot.img2b64(img), epoch, rmse))
                 bot.enable()
             
             if args.output_dir:

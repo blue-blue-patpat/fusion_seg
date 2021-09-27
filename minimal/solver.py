@@ -183,7 +183,7 @@ class Solver:
         return d.ravel()
 
     def save_param(self, file_path):
-        np.savez(file_path, pose=self.pose_params, shape=self.shape_params)
+        np.savez(file_path, pose=self.pose_params, shape=self.shape_params, vertices=self.model.core.verts, keypoints=self.model.core.keypoints)
 
     def save_model(self, file_path):
         self.model.core.save_obj(file_path)

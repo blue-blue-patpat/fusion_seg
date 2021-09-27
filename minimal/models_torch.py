@@ -173,21 +173,21 @@ class KinematicModel(Module):
         self.verts = \
             torch.matmul(T, verts.reshape([-1, 4, 1])).reshape([-1, 4])[:, :3]
 
+        # update verts
+        self.verts *= self.scale
+        self.verts -= self.coord_origin
+
         # update mesh
         if self.compute_mesh:
-        # center = self.verts.mean(0)
-            verts = self.verts - self.coord_origin
             if self.mesh is None:
-                self.mesh = Meshes(verts=[verts.to(torch.float32)], faces=[self.faces])
+                self.mesh = Meshes(verts=[self.verts.to(torch.float32)], faces=[self.faces])
             else:
-                self.mesh._verts_list = [verts.to(torch.float32)]
+                self.mesh._verts_list = [self.verts.to(torch.float32)]
                 self.mesh._compute_packed(True)
 
         self.keypoints = torch.matmul(self.J_regressor_ext, self.verts)
 
-        self.verts *= self.scale
-
-        return self.mesh, self.keypoints - self.coord_origin
+        return self.mesh, self.keypoints
 
     def rodrigues(self, r: torch.Tensor):
         """
