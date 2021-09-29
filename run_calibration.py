@@ -179,10 +179,10 @@ def run_modify_offset(kwargs):
     skip_head = kwargs.get("skip_head", 0)
     skip_tail = kwargs.get("skip_tail", 0)
     enabled_sources = kwargs.get("enabled_sources", None)
-    if enabled_sources:
+    if enabled_sources is not None:
         enabled_sources = enabled_sources.split(',')
             
-    print(ResultFileLoader(root_path, enabled_sources=["arbe", "master", "optitrack"]))
+    print(ResultFileLoader(root_path, enabled_sources=enabled_sources))
     
     main_device = kwargs.get("main_device", "master")
     plt = KinectArbeOptitrackStreamPlot(root_path, main_device=main_device,skip_head=skip_head, skip_tail=skip_tail, enabled_sources=enabled_sources)

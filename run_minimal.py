@@ -190,7 +190,9 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
         _Wrapper = KinematicPCAWrapper
         _Solver = Solver
     else:
-        _device = torch.device(get_freer_gpu())
+        device_id = get_freer_gpu()
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(device_id)
+        _device = torch.device("cuda:{}".format(device_id))
         bot.print("{} : [Minimal] Running in GPU mode, {}".format(ymdhms_time(), _device))
         _Model = KinematicModelTorch
         _Wrapper = KinematicPCAWrapperTorch
@@ -306,6 +308,7 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
         inputs.remove(i-window_len)
 
         bot.print("{} : [Minimal] {} Frame rid={} with loss {:.4}".format(ymdhms_time(), root_path[-21:-2], rid, results[result_key]["loss"]))
+    bot.print("{} : [Minimal] {} finished.".format(ymdhms_time(), root_path[-21:-2]))
 
 
 def run():

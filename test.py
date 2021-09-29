@@ -69,7 +69,7 @@ if __name__ == "__main__":
     # plot = OptitrackArbeStreamPlot(root_path, [0,-1,0,10])
     # plot.show()
 
-    # plot = KinectOfflineStreamPlotCpp(root_path, start_frame=120, write_ply=False)
+    # plot = KinectOfflineStreamPlotCpp(root_path, start_frame=1000, write_ply=False)
     # plot.show()
 
     # plot = KinectArbeStreamPlot(root_path, ["master"], [0,-1,0,2])
@@ -103,5 +103,5 @@ if __name__ == "__main__":
 
     from run_postprocess import postprocess
     for p in os.listdir(root_path):
-        if p[-1] == 'T':
+        if p[-1] == 'E':
             postprocess(os.path.join(root_path, p))

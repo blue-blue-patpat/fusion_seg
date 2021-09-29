@@ -471,7 +471,7 @@ class ResultFileLoader():
         if "arbe_pcl" in self.sources or "arbe" in self.sources:
             arbe_arr = np.load(arbe_res["arbe"]["filepath"])
             self.results = dict(
-                arbe_pcl=arbe_arr[:,:3]
+                arbe=arbe_arr[:,:3]
             )
         if "arbe_feature" in self.sources:
             if arbe_arr is None:

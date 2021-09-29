@@ -141,6 +141,7 @@ class P4DConv(nn.Module):
                 t_displacement = torch.ones((xyz_displacement.size()[0], 1, xyz_displacement.size()[2], xyz_displacement.size()[3]), dtype=torch.float32, device=device) * (i-t)
                 displacement = torch.cat(tensors=(xyz_displacement, t_displacement), dim=1, out=None)                               # (B, 4, N//spatial_stride, k)
                 displacement = self.conv_d(displacement)
+                displacement = torch.zeros_like(displacement)
 
                 if self.in_planes != 0:
                     neighbor_feature_grouped = pointnet2_utils.grouping_operation(features[i], idx)                                 # (B, in_planes, N//spatial_stride, k)

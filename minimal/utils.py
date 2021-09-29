@@ -145,7 +145,7 @@ class LossManager():
         return sum([loss[i] for loss in self.losses.values()])
 
 
-def get_freer_gpu():
+def get_freer_gpu() -> int:
     os.system('nvidia-smi -q -d Memory |grep -A4 GPU|grep Free > ./ignoredata/tmp')
     memory_available = [int(x.split()[2]) for x in open('./ignoredata/tmp', 'r').readlines()]
-    return "cuda:"+str(np.argmax(memory_available))
+    return np.argmax(memory_available)

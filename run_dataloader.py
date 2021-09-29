@@ -55,7 +55,7 @@ def run_kinect_loader_multi(client=None, **kwargs):
     id_dict = _get_device_ids()
     print_log("[{}] {} devices found.".format(kwargs.get("name", "KinectMulti"), len(id_dict)), log_obj)
 
-    client.add_sub("KinectSub2", sub_type=sub_type, config=_get_config("sub") if mode == "mas_sub" else _get_config("alone"),
+    client.add_sub("KinectSub2", sub_type=sub_type, config=_get_config("sub") if mode == "calib" else _get_config("alone"),
                    device_id=id_dict[SUB2],
                    save_path=os.path.join(kwargs.get(
                        "save_path", "./__test__/default/kinect/"), "sub2"),
@@ -63,7 +63,7 @@ def run_kinect_loader_multi(client=None, **kwargs):
                    disable_visualization=kwargs.get("disable_visualization", False))
     client.start_sub("KinectSub2")
 
-    client.add_sub("KinectSub1", sub_type=sub_type, config=_get_config("sub") if mode == "mas_sub" else _get_config("alone"),
+    client.add_sub("KinectSub1", sub_type=sub_type, config=_get_config("sub") if mode == "calib" else _get_config("alone"),
                    device_id=id_dict[SUB1],
                    save_path=os.path.join(kwargs.get(
                        "save_path", "./__test__/default/kinect/"), "sub1"),
@@ -71,7 +71,7 @@ def run_kinect_loader_multi(client=None, **kwargs):
                    disable_visualization=kwargs.get("disable_visualization", False))
     client.start_sub("KinectSub1")
 
-    client.add_sub("KinectMaster", sub_type=sub_type, config=_get_config("mas") if mode == "mas_sub" else _get_config("alone"),
+    client.add_sub("KinectMaster", sub_type=sub_type, config=_get_config("mas") if mode == "calib" else _get_config("alone"),
                    device_id=id_dict[MAS],
                    save_path=os.path.join(kwargs.get(
                        "save_path", "./__test__/default/kinect/"), "master"),
