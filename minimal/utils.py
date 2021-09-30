@@ -148,11 +148,10 @@ class LossManager():
 
 
 def get_freer_gpu(key="util") -> int:
-    os.system('nvidia-smi -q -d Memory |grep -A4 GPU|grep Free > ./ignoredata/gpu_memory')
-    os.system('nvidia-smi -q -d UTILIZATION |grep -A4 GPU|grep Gpu > ./ignoredata/gpu_util')
+    import subprocess
 
-    memory_available = [int(x.split()[2]) for x in open('./ignoredata/gpu_memory', 'r').readlines()]
-    util_available = 100 - np.array([int(x.split()[2]) for x in open('./ignoredata/gpu_util', 'r').readlines()])
+    memory_available = [int(x.split()[2]) for x in subprocess.check_output('nvidia-smi -q -d Memory |grep -A4 GPU|grep Free', shell=True).decode().split("\n") if x]
+    util_available = 100 - np.array([int(x.split()[2]) for x in subprocess.check_output('nvidia-smi -q -d UTILIZATION |grep -A4 GPU|grep Gpu', shell=True).decode().split("\n") if x])
 
     print("Memory: ", memory_available)
     print("Util: ", util_available)

@@ -192,7 +192,6 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
     ))
 
     save_path = os.path.join(root_path, "minimal")
-    temp_path = os.path.join(root_path, "minimal_temp")
     dbg_level = int(dbg_level)
     window_len = int(window_len)
 
@@ -218,11 +217,6 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
     create_dir(os.path.join(save_path, "obj"))
     create_dir(os.path.join(save_path, "trans"))
     create_dir(os.path.join(save_path, "loss"))
-
-    create_dir(os.path.join(temp_path, "param"))
-    create_dir(os.path.join(temp_path, "obj"))
-    create_dir(os.path.join(temp_path, "trans"))
-    create_dir(os.path.join(temp_path, "loss"))
 
     jnts_brg = JointsBridge()
 
@@ -297,11 +291,6 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
             pcl_source = inputs[i]
             _, losses = solver.solve(inputs[j]["jnts"], pcl_source["pcl"] if "pcl" in pcl_source.keys() else empty_pcl, "pose", max_iter=40, kpts_threshold=0.02, loss_threshold=0.0005, mse_threshold=0.0001, dbg_level=dbg_level, losses_with_weights=losses_w)
         
-            # filename = "id={}#{}_rid={}".format(i, j, rid)
-            # solver.save_param(os.path.join(temp_path, "param", filename))
-            # solver.save_model(os.path.join(temp_path, "obj", filename+".obj"))
-            # inputs.save_revert_transform(j, os.path.join(temp_path, "trans", filename))
-            # losses.save_losses(os.path.join(temp_path, "loss", filename))
             results[j] = dict(
                 pose = solver.pose_params,
                 loss = losses[-1]
