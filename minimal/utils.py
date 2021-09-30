@@ -1,7 +1,7 @@
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-from visualization.mesh_plot import MinimalStreamPlot
+
 
 class WeightLoss(list):
     def __init__(self, weight=1) -> None:
@@ -23,6 +23,8 @@ class WeightLoss(list):
 
 class LossManager():
     def __init__(self, losses_with_weights={}, mse_threshold=1e-8, loss_threshold=1e-8, plot_type="matplotlib") -> None:
+        from visualization.mesh_plot import MinimalStreamPlot
+        
         self.losses = {}
         self.epoch = 0
         self.mse_threshold = mse_threshold
@@ -145,7 +147,15 @@ class LossManager():
         return sum([loss[i] for loss in self.losses.values()])
 
 
-def get_freer_gpu() -> int:
-    os.system('nvidia-smi -q -d Memory |grep -A4 GPU|grep Free > ./ignoredata/tmp')
-    memory_available = [int(x.split()[2]) for x in open('./ignoredata/tmp', 'r').readlines()]
-    return np.argmax(memory_available)
+def get_freer_gpu(key="util") -> int:
+    os.system('nvidia-smi -q -d Memory |grep -A4 GPU|grep Free > ./ignoredata/gpu_memory')
+    os.system('nvidia-smi -q -d UTILIZATION |grep -A4 GPU|grep Gpu > ./ignoredata/gpu_util')
+
+    memory_available = [int(x.split()[2]) for x in open('./ignoredata/gpu_memory', 'r').readlines()]
+    util_available = 100 - np.array([int(x.split()[2]) for x in open('./ignoredata/gpu_util', 'r').readlines()])
+
+    print("Memory: ", memory_available)
+    print("Util: ", util_available)
+
+    gpu_id = str(np.argmax(util_available if key == "util" else util_available))
+    return gpu_id

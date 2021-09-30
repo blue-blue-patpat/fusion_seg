@@ -1,21 +1,18 @@
 import os
+import gc
 import argparse
+from time import sleep
 import numpy as np
 import torch
 
-from minimal.solver_torch import Solver as SolverTorch
-from minimal.solver import Solver
 from minimal import armatures
-from minimal.models_torch import KinematicModel as KinematicModelTorch, KinematicPCAWrapper as KinematicPCAWrapperTorch
-from minimal.models import KinematicModel, KinematicPCAWrapper
 import minimal.config as config
 from minimal.bridge import JointsBridge
 from minimal.input_loader import MinimalInput
 from minimal.utils import get_freer_gpu
 from dataloader.result_loader import MinimalLoader, ResultFileLoader
 from dataloader.utils import ymdhms_time, clean_dir, create_dir
-from visualization.utils import o3d_plot, o3d_coord, o3d_mesh, o3d_pcl, o3d_skeleton
-from visualization.mesh_plot import MinimalResultStreamPlot
+# from visualization.mesh_plot import MinimalResultStreamPlot
 from message.dingtalk import MSG_ERROR, MSG_INFO, TimerBot
 
 
@@ -34,6 +31,8 @@ def kinect_input(root_path, **kwargs):
 
 
 def optitrack_single_frame(**kwargs):
+    from visualization.utils import o3d_plot, o3d_pcl
+
     loader = optitrack_input(**kwargs)
 
     result, info = loader[kwargs.get("id", 0)]
@@ -49,6 +48,8 @@ def optitrack_single_frame(**kwargs):
 
 
 def kinect_single_frame(**kwargs):
+    from visualization.utils import o3d_plot, o3d_pcl
+
     loader = kinect_input(**kwargs)
 
     result, info = loader[kwargs.get("id", 0)]
@@ -81,6 +82,10 @@ def kinect_stream(**kwargs):
 
 
 def singel_minimal(jnts, pcl, save_path, scale=1, dbg_level=-1, plot_type="open3d", **kwargs):
+    from visualization.utils import o3d_plot, o3d_pcl
+    from minimal.models import KinematicModel, KinematicPCAWrapper
+    from minimal.solver import Solver
+
     dbg_level = int(dbg_level)
 
     mesh = KinematicModel(config.SMPL_MODEL_1_0_MALE_PATH, armatures.SMPLArmature)
@@ -108,6 +113,9 @@ def singel_minimal(jnts, pcl, save_path, scale=1, dbg_level=-1, plot_type="open3
 
 
 def stream_minimal(root_path: str, dbg_level: int=0, plot_type="open3d", **kwargs):
+    from minimal.models import KinematicModel, KinematicPCAWrapper
+    from minimal.solver import Solver
+
     save_path = os.path.join(root_path, "minimal")
     dbg_level = int(dbg_level)
 
@@ -170,6 +178,11 @@ def stream_minimal(root_path: str, dbg_level: int=0, plot_type="open3d", **kwarg
 
 
 def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2, plot_type="open3d", device="cpu", **kwargs):
+    from minimal.models import KinematicModel, KinematicPCAWrapper
+    from minimal.solver import Solver
+    from minimal.models_torch import KinematicModel as KinematicModelTorch, KinematicPCAWrapper as KinematicPCAWrapperTorch
+    from minimal.solver_torch import Solver as SolverTorch
+    
     bot = kwargs.pop("msg_bot")
     assert isinstance(bot, TimerBot)
     bot.enable()
@@ -190,10 +203,8 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
         _Wrapper = KinematicPCAWrapper
         _Solver = Solver
     else:
-        device_id = get_freer_gpu()
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(device_id)
-        _device = torch.device("cuda:{}".format(device_id))
-        bot.print("{} : [Minimal] Running in GPU mode, {}".format(ymdhms_time(), _device))
+        _device = torch.device("cuda:0")
+        bot.print("{} : [Minimal] Running in GPU mode, {}".format(ymdhms_time(), device))
         _Model = KinematicModelTorch
         _Wrapper = KinematicPCAWrapperTorch
         _Solver = SolverTorch
@@ -279,10 +290,12 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
     for i in range(start_idx, len(loader)):
         rid = i+int(kwargs.get("skip_head", 0))
         init_pose = solver.pose_params
+        empty_pcl = np.array([[0,0,0]])
         results = {}
         for j in range(max(0, i-window_len), min(len(loader), i+window_len)):
             solver.update_params(init_pose)
-            _, losses = solver.solve(inputs[j]["jnts"], inputs[i]["pcl"], "pose", max_iter=40, kpts_threshold=0.02, loss_threshold=0.0005, mse_threshold=0.0001, dbg_level=dbg_level, losses_with_weights=losses_w)
+            pcl_source = inputs[i]
+            _, losses = solver.solve(inputs[j]["jnts"], pcl_source["pcl"] if "pcl" in pcl_source.keys() else empty_pcl, "pose", max_iter=40, kpts_threshold=0.02, loss_threshold=0.0005, mse_threshold=0.0001, dbg_level=dbg_level, losses_with_weights=losses_w)
         
             # filename = "id={}#{}_rid={}".format(i, j, rid)
             # solver.save_param(os.path.join(temp_path, "param", filename))
@@ -308,7 +321,14 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
         inputs.remove(i-window_len)
 
         bot.print("{} : [Minimal] {} Frame rid={} with loss {:.4}".format(ymdhms_time(), root_path[-21:-2], rid, results[result_key]["loss"]))
+        gc.collect()
     bot.print("{} : [Minimal] {} finished.".format(ymdhms_time(), root_path[-21:-2]))
+
+
+def check(root_path, **kwargs):
+    from visualization.mesh_plot import MinimalResultStreamPlot
+
+    MinimalResultStreamPlot(root_path, skip_head=kwargs.get("skip_head", 0), skip_tail=kwargs.get("skip_tail", 0)).show()
 
 
 def run():
@@ -319,7 +339,7 @@ def run():
         kinect_stream_minimal=stream_minimal,
         optitrack_stream_minimal=stream_minimal,
         optitrack_stream_windowed=optitrack_stream_windowed_minimal,
-        check=lambda **kwargs : MinimalResultStreamPlot(kwargs.get("root_path"), skip_head=kwargs.get("skip_head", 0), skip_tail=kwargs.get("skip_tail", 0)).show(),
+        check=check,
     )
     parser = argparse.ArgumentParser(usage='"run_minimal.py -h" to show help.')
     parser.add_argument('-p', '--path', dest='root_path', type=str, help='File Root Path, default "./__test__/default"')
@@ -332,13 +352,26 @@ def run():
     args_dict = dict([arg.split('=') for arg in args.addition.split('#') if '=' in arg])
     args_dict.update(dict(args._get_kwargs()))
 
-    args_dict["msg_bot"] = TimerBot(args_dict.get("interval", 30))
+    args_dict["msg_bot"] = TimerBot(args_dict.get("interval", 10))
+    
+    if args_dict.get("device", "cpu") == "cpu":
+        print("CPU mode")
+    elif args_dict.get("device", "cpu").split(":")[-1].isdigit():
+        gpu_id = args_dict.get("device", "cpu").split(":")[-1]
+        print("Custom GPU {}".format(gpu_id))
+        os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
+    else:
+        gpu_id = get_freer_gpu()
+        print("Auto select GPU {}".format(gpu_id))
+        os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
+        args_dict["device"] = "cuda:{}".format(gpu_id)
 
     try:
         task_dict[args.task](**args_dict)
     except Exception as e:
         args_dict["msg_bot"].enable()
         args_dict["msg_bot"].add_task("{} : task={}, path={}\ndetails: {}".format(ymdhms_time, args.task, args.root_path, e), MSG_ERROR)
+        sleep(15)
         raise e
 
 if __name__ == "__main__":
