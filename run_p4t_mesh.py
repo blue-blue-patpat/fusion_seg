@@ -13,7 +13,7 @@ import cv2
 
 from nn.p4t import utils
 from nn.p4t.scheduler import WarmupMultiStepLR
-from nn.p4t.datasets.dataset import MMBody3D
+from nn.p4t.datasets.dataset import MMMesh3D
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
 from visualization.o3d_plot import NNPredLabelStreamPlot
@@ -120,7 +120,7 @@ def main(args):
     # Data loading code
     print("Loading data")
 
-    dataset_all = MMBody3D(
+    dataset_all = MMMesh3D(
             root_path=args.data_path,
             frames_per_clip=args.clip_len,
             step_between_clips=1,

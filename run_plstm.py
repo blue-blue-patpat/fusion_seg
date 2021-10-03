@@ -22,13 +22,14 @@ class Processor():
         self.device = GpuDataParallel()
         self.recoder = Recorder(self.arg.work_dir, self.arg.print_log)
         self.data_loader = {}
-        self.topk = (1, 3)
+        self.topk = (1, 111)
         self.stat = Stat(self.arg.model_args['num_classes'], self.topk)
         self.model, self.optimizer = self.Loading()
         self.loss = self.criterion()
 
     def criterion(self):
-        loss = nn.CrossEntropyLoss(reduction="none")
+        # loss = nn.CrossEntropyLoss(reduction="none")
+        loss = nn.MSELoss(reduce=False)
         return self.device.criterion_to_device(loss)
 
     def train(self, epoch):
@@ -65,17 +66,20 @@ class Processor():
         for l_name in loader_name:
             loader = self.data_loader[l_name]
             loss_mean = []
-            for batch_idx, data in enumerate(loader):
-                image = self.device.data_to_device(data[0])
-                label = self.device.data_to_device(data[1])
-                # Cal = CalculateParasAndFLOPs()
-                # Cal.reset()
-                # Cal.calculate_all(self.model, image)
-                with torch.no_grad():
-                    output = self.model(image)
-                # loss = torch.mean(self.loss(output, label))
-                loss_mean += self.loss(output, label).cpu().detach().numpy().tolist()
-                self.stat.update_accuracy(output.data.cpu(), label.cpu(), topk=self.topk)
+            try:
+                for batch_idx, data in enumerate(loader):
+                    image = self.device.data_to_device(data[0])
+                    label = self.device.data_to_device(data[1])
+                    # Cal = CalculateParasAndFLOPs()
+                    # Cal.reset()
+                    # Cal.calculate_all(self.model, image)
+                    with torch.no_grad():
+                        output = self.model(image)
+                    # loss = torch.mean(self.loss(output, label))
+                    loss_mean += self.loss(output, label).cpu().detach().numpy().tolist()
+                    # self.stat.update_accuracy(output.data.cpu(), label.cpu(), topk=self.topk)
+            except:
+                print(batch_idx)
             self.recoder.print_log('mean loss: ' + str(np.mean(loss_mean)))
 
     def Loading(self):
@@ -119,13 +123,25 @@ class Processor():
         Feeder = import_class(self.arg.dataloader)
         self.data_loader = dict()
         if self.arg.train_loader_args != {}:
+            dataset_all = Feeder(**self.arg.train_loader_args)
+            train_size = int(0.9 * len(dataset_all))
+            eval_size = len(dataset_all) - train_size
+            dataset_train, dataset_eval = torch.utils.data.random_split(dataset_all, [train_size, eval_size])
             self.data_loader['train'] = torch.utils.data.DataLoader(
-                dataset=Feeder(**self.arg.train_loader_args),
+                dataset=dataset_train,
                 batch_size=self.arg.batch_size,
                 shuffle=True,
                 drop_last=True,
                 num_workers=self.arg.num_worker,
             )
+            self.data_loader['valid'] = torch.utils.data.DataLoader(
+                dataset=dataset_eval,
+                batch_size=self.arg.batch_size,
+                shuffle=False,
+                drop_last=False,
+                num_workers=self.arg.num_worker,
+            )
+        '''
         if self.arg.valid_loader_args != {}:
             self.data_loader['valid'] = torch.utils.data.DataLoader(
                 dataset=Feeder(**self.arg.valid_loader_args),
@@ -134,6 +150,7 @@ class Processor():
                 drop_last=False,
                 num_workers=self.arg.num_worker,
             )
+        '''
         if self.arg.test_loader_args != {}:
             test_dataset = Feeder(**self.arg.test_loader_args)
             self.stat.test_size = len(test_dataset)
@@ -154,28 +171,32 @@ class Processor():
                              (epoch + 1 == self.arg.num_epoch)
                 eval_model = ((epoch + 1) % self.arg.eval_interval == 0) or \
                              (epoch + 1 == self.arg.num_epoch)
-                self.train(epoch)
+                # self.train(epoch)
                 if save_model:
                     model_path = '{}/epoch{}_model.pt'.format(self.arg.work_dir, epoch + 1)
                     self.save_model(epoch, self.model, self.optimizer, model_path)
                 if eval_model:
-                    if self.arg.valid_loader_args != {}:
-                        self.stat.reset_statistic()
-                        self.eval(loader_name=['valid'])
-                        self.print_inf_log(epoch + 1, "Valid")
+                    # if self.arg.valid_loader_args != {}:
+                    # self.stat.reset_statistic()
+                    self.eval(loader_name=['valid'])
+                    # self.print_inf_log(epoch + 1, "Valid")
+                    '''
                     if self.arg.test_loader_args != {}:
                         self.stat.reset_statistic()
                         self.eval(loader_name=['test'])
                         self.print_inf_log(epoch + 1, "Test")
+                    '''
         elif self.arg.phase == 'test':
             if self.arg.weights is None:
                 raise ValueError('Please appoint --weights.')
             self.recoder.print_log('Model:   {}.'.format(self.arg.model))
             self.recoder.print_log('Weights: {}.'.format(self.arg.weights))
+            '''
             if self.arg.valid_loader_args != {}:
                 self.stat.reset_statistic()
                 self.eval(loader_name=['valid'])
                 self.print_inf_log(self.arg.optimizer_args['start_epoch'], "Valid")
+            '''
             if self.arg.test_loader_args != {}:
                 self.stat.reset_statistic()
                 self.eval(loader_name=['test'])

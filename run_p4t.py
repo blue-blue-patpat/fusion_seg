@@ -13,7 +13,7 @@ import cv2
 
 from nn.p4t import utils
 from nn.p4t.scheduler import WarmupMultiStepLR
-from nn.p4t.datasets.dataset import MMBody3D
+from nn.p4t.datasets.mmbody import MMBody3D
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
 from visualization.o3d_plot import NNPredLabelStreamPlot
@@ -72,7 +72,7 @@ def evaluate(model, criterion, data_loader, device, visual=False, scale=1):
 
             if visual:
                 for b, batch in enumerate(clip):
-                    arbe_frame = batch[-1] * scale
+                    arbe_frame = batch[-1][:,:3] * scale
                     pred = output[b].reshape(-1, 3) * scale
                     label = target[b].reshape(-1, 3) * scale
                     yield dict(
@@ -128,12 +128,12 @@ def main(args):
     )
 
     train_size = int(0.9 * len(dataset_all))
-    test_size = len(dataset_all) - train_size
-    dataset_train, dataset_eval = torch.utils.data.random_split(dataset_all, [train_size, test_size])
+    eval_size = len(dataset_all) - train_size
+    dataset_train, dataset_eval = torch.utils.data.random_split(dataset_all, [train_size, eval_size])
 
     print("Creating data loaders")
 
-    data_loader_train = torch.utils.data.DataLoader(dataset_train, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=True)
+    data_loader_train = torch.utils.data.DataLoader(dataset_train, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
     data_loader_eval = torch.utils.data.DataLoader(dataset_eval, batch_size=args.batch_size, num_workers=args.workers, pin_memory=True)
 
     print("Creating model")
@@ -211,7 +211,6 @@ def main(args):
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         print('Training time {}'.format(total_time_str))
-        print('RMSE {}'.format(rmse_list))
         
     else:
         data_loader_test = torch.utils.data.DataLoader(dataset_all, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)

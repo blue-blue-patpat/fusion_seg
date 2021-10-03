@@ -20,7 +20,7 @@ class P4Transformer(nn.Module):
                  mlp_dim, num_classes):                                                 # output
         super().__init__()
 
-        self.tube_embedding = P4DConv(in_planes=6, mlp_planes=[dim], mlp_batch_norm=[False], mlp_activation=[False],
+        self.tube_embedding = P4DConv(in_planes=3, mlp_planes=[dim], mlp_batch_norm=[False], mlp_activation=[False],
                                   spatial_kernel_size=[radius, nsamples], spatial_stride=spatial_stride,
                                   temporal_kernel_size=temporal_kernel_size, temporal_stride=temporal_stride, temporal_padding=[1, 1],
                                   operator='+', spatial_pooling='max', temporal_pooling='max')
@@ -39,7 +39,7 @@ class P4Transformer(nn.Module):
 
     def forward(self, input):                                                                                                               # [B, L, N, 3]
         device = input.get_device()
-        xyzs, features = self.tube_embedding(input[:,:,:,:3], input.permute(0,1,3,2))                                                                                         # [B, L, n, 3], [B, L, C, n] 
+        xyzs, features = self.tube_embedding(input[:,:,:,:3], input[:,:,:,3:].permute(0,1,3,2))                                                                                         # [B, L, n, 3], [B, L, C, n] 
 
         xyzts = []
         xyzs = torch.split(tensor=xyzs, split_size_or_sections=1, dim=1)
@@ -54,7 +54,6 @@ class P4Transformer(nn.Module):
         features = features.permute(0, 1, 3, 2)                                                                                             # [B, L,   n, C]
         features = torch.reshape(input=features, shape=(features.shape[0], features.shape[1]*features.shape[2], features.shape[3]))         # [B, L*n, C]
         xyzts = self.pos_embedding(xyzts.permute(0, 2, 1)).permute(0, 2, 1)
-        xyzts = torch.zeros_like(xyzts)
 
         embedding = xyzts + features
 

@@ -1,4 +1,5 @@
 import os
+import cv2
 import numpy as np
 import pandas as pd
 from pytorch3d.io import load_obj
@@ -327,14 +328,17 @@ class ResultFileLoader():
         self.k_mas_loader = KinectResultLoader(self.root_path, device="master", params=[
             dict(tag="kinect/master/pcls", ext=".npy"),
             dict(tag="kinect/master/skeleton", ext=".npy"),
+            dict(tag="kinect/master/color", ext=".png"),
         ]) if "master" in self.sources else None
         self.k_sub1_loader = KinectResultLoader(self.root_path, device="sub1", params=[
             dict(tag="kinect/sub1/pcls", ext=".npy"),
             dict(tag="kinect/sub1/skeleton", ext=".npy"),
+            dict(tag="kinect/sub1/color", ext=".png"),
         ]) if "sub1" in self.sources else None
         self.k_sub2_loader = KinectResultLoader(self.root_path, device="sub2", params=[
             dict(tag="kinect/sub2/pcls", ext=".npy"),
             dict(tag="kinect/sub2/skeleton", ext=".npy"),
+            dict(tag="kinect/sub2/color", ext=".png"),
         ]) if "sub2" in self.sources else None
 
     def init_optitrack_source(self):
@@ -408,6 +412,10 @@ class ResultFileLoader():
             self.info.update({
                 "{}_pcl".format(k_loader.device): res["kinect/{}/pcls".format(k_loader.device)]
             })
+        if "kinect_color" in self.sources:
+            self.results.update({
+                "{}_color".format(k_loader.device): cv2.imread(res["kinect/{}/color".format(k_loader.device)]["filepath"]),
+            })
 
     def select_trans_optitrack_item_by_t(self, o_loader: OptitrackResultLoader, t: float) -> None:
         """
@@ -442,16 +450,8 @@ class ResultFileLoader():
                 mesh_t=trans_param["t"],
                 mesh_scale=trans_param["scale"]
             ))
-        if "mesh_vtx_jnt" in self.sources:
-            vtx_jnt = np.load(res["minimal/vtx_jnt"]["filepath"])
-            self.results.update(dict(
-                mesh_vtx=vtx_jnt["vtx"],
-                mesh_jnt=vtx_jnt["jnt"],
-            ))
         if "mesh_obj" in self.sources:
             verts, faces, _ = load_obj(res["minimal/obj"]["filepath"])
-            # TODO: change to origin R
-            # verts = (verts @ np.linalg.inv(trans_param["R"]) + trans_param["t"]) * trans_param["scale"]
             verts = (verts @ trans_param["R"] + trans_param["t"]) * trans_param["scale"]
             self.results.update(dict(
                 mesh_obj=(verts, faces[0]),
@@ -469,7 +469,10 @@ class ResultFileLoader():
 
         arbe_arr = None
         if "arbe_pcl" in self.sources or "arbe" in self.sources:
-            arbe_arr = np.load(arbe_res["arbe"]["filepath"])
+            try:
+                arbe_arr = np.load(arbe_res["arbe"]["filepath"])
+            except:
+                print(i)
             self.results = dict(
                 arbe=arbe_arr[:,:3]
             )

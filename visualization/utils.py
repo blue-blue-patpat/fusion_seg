@@ -72,7 +72,8 @@ def o3d_mesh(mesh: Union[Meshes, Iterable] = None, color: list = None,
             _mesh.triangles = o3d.utility.Vector3iVector(mesh.faces_packed().cpu())
         else:
             _mesh.vertices = o3d.utility.Vector3dVector(mesh[0])
-            _mesh.triangles = o3d.utility.Vector3iVector(mesh[1])
+            if mesh[1] is not None:
+                _mesh.triangles = o3d.utility.Vector3iVector(mesh[1])
         if color is not None:
             _mesh.paint_uniform_color(color)
         _mesh.compute_vertex_normals()
