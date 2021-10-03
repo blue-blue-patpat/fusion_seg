@@ -311,7 +311,8 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
 
         bot.print("{} : [Minimal] {} Frame rid={} with loss {:.4}".format(ymdhms_time(), root_path[-21:-2], rid, results[result_key]["loss"]))
         gc.collect()
-    bot.print("{} : [Minimal] {} finished.".format(ymdhms_time(), root_path[-21:-2]))
+    bot.add_task("{} : [Minimal] {} finished.".format(ymdhms_time(), root_path[-21:-2]), MSG_ERROR)
+    sleep(15)
 
 
 def check(root_path, **kwargs):

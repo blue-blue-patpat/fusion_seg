@@ -325,20 +325,26 @@ class ResultFileLoader():
         """
         Init Azure Kinect results
         """
+        params_template = []
+
+        if "kinect_pcl" in self.sources:
+            params_template.append(dict(tag="kinect/{}/pcls", ext=".npy"))
+
+        if "kinect_skeleton" in self.sources:
+            params_template.append(dict(tag="kinect/{}/skeleton", ext=".npy"))
+
+        if "kinect_color" in self.sources:
+            params_template.append(dict(tag="kinect/{}/color", ext=".png"))
+
+
         self.k_mas_loader = KinectResultLoader(self.root_path, device="master", params=[
-            dict(tag="kinect/master/pcls", ext=".npy"),
-            dict(tag="kinect/master/skeleton", ext=".npy"),
-            dict(tag="kinect/master/color", ext=".png"),
+            dict(tag=item["tag"].format("master"), ext=item["ext"]) for item in params_template
         ]) if "master" in self.sources else None
         self.k_sub1_loader = KinectResultLoader(self.root_path, device="sub1", params=[
-            dict(tag="kinect/sub1/pcls", ext=".npy"),
-            dict(tag="kinect/sub1/skeleton", ext=".npy"),
-            dict(tag="kinect/sub1/color", ext=".png"),
+            dict(tag=item["tag"].format("sub1"), ext=item["ext"]) for item in params_template
         ]) if "sub1" in self.sources else None
         self.k_sub2_loader = KinectResultLoader(self.root_path, device="sub2", params=[
-            dict(tag="kinect/sub2/pcls", ext=".npy"),
-            dict(tag="kinect/sub2/skeleton", ext=".npy"),
-            dict(tag="kinect/sub2/color", ext=".png"),
+            dict(tag=item["tag"].format("sub2"), ext=item["ext"]) for item in params_template
         ]) if "sub2" in self.sources else None
 
     def init_optitrack_source(self):
