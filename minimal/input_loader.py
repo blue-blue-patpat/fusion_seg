@@ -5,13 +5,28 @@ from dataloader.result_loader import ResultFileLoader
 from dataloader.utils import ymdhms_time
 from minimal.bridge import JointsBridge
 
- 
+
+OPTI_DATA = "optitrack"
+KINECT_DATA = "kinect"
+
+OPTI_SOURCE = OPTI_DATA
+KINECT_SOURCES = ["sub1_skeleton", "sub2_skeleton", "master_skeleton"]
+KINECT_SUB1_SOURCE = 0
+KINECT_SUB2_SOURCE = 1
+KINECT_MAS_SOURCE = 2
+KINECT_SUB_MEAN_SOURCE = "sub1_sub2_mean_skeleton"
+
+
 class MinimalInput:
     def __init__(self, loader: ResultFileLoader, scale: float, data_type: str) -> None:
         self.input_dict = {}
         self.loader = loader
         self.scale = scale
         self.data_type = data_type
+        if data_type == OPTI_DATA:
+            self.jnts_source = OPTI_SOURCE
+        elif data_type == KINECT_DATA:
+            self.jnts_source = KINECT_SUB_MEAN_SOURCE
         self.pool = Pool(5)
 
     def update(self, idx: int, pre_update: int=0):
@@ -39,7 +54,13 @@ def update(self: MinimalInput, idx: int):
     result, info = self.loader[idx]
     brg = JointsBridge()
     brg.set_scale(self.scale)
-    brg.init_input(result["optitrack"], np.vstack([result["master_pcl"], result["sub1_pcl"], result["sub2_pcl"]]))
+    if self.jnts_source == OPTI_SOURCE:
+        raw_jnts = result[OPTI_SOURCE]
+    elif self.jnts_source == KINECT_SUB_MEAN_SOURCE:
+        raw_jnts = np.mean([result[KINECT_SOURCES[KINECT_SUB1_SOURCE]], result[KINECT_SOURCES[KINECT_SUB2_SOURCE]]], axis=0)
+    else:
+        raw_jnts = result[KINECT_SOURCES[self.jnts_source]]
+    brg.init_input(raw_jnts, np.vstack([result["master_pcl"], result["sub1_pcl"], result["sub2_pcl"]]))
     _jnts, _pcl = brg.map(self.data_type)
     R, t, scale = brg.revert_transform()
     self.input_dict[idx] = dict(
@@ -50,6 +71,6 @@ def update(self: MinimalInput, idx: int):
             R=R, t=t, scale=scale
         )
     )
-    if np.isnan(result["optitrack"]).sum() > 0:
+    if np.isnan(raw_jnts).sum() > 0:
         self.input_dict[idx]["info"]["nan"] = True
-    print("{} : [MinimalInput] Frame {} successfully loaded.".format(ymdhms_time(), idx))
+    print("{} : [MinimalInput] Frame {} successfully loaded as {} type.".format(ymdhms_time(), idx, self.jnts_source))

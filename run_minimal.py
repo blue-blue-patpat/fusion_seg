@@ -8,11 +8,10 @@ import torch
 from minimal import armatures
 import minimal.config as config
 from minimal.bridge import JointsBridge
-from minimal.input_loader import MinimalInput
+from minimal.input_loader import KINECT_SUB1_SOURCE, OPTI_DATA, KINECT_DATA, MinimalInput
 from minimal.utils import get_freer_gpu
 from dataloader.result_loader import MinimalLoader, ResultFileLoader
 from dataloader.utils import ymdhms_time, clean_dir, create_dir
-# from visualization.mesh_plot import MinimalResultStreamPlot
 from message.dingtalk import MSG_ERROR, MSG_INFO, TimerBot
 
 
@@ -177,7 +176,7 @@ def stream_minimal(root_path: str, dbg_level: int=0, plot_type="open3d", **kwarg
         del losses
 
 
-def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2, plot_type="open3d", device="cpu", **kwargs):
+def stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2, plot_type="open3d", device="cpu", data_type=OPTI_DATA, switch_skel_loss_threshold=1.0, **kwargs):
     from minimal.models import KinematicModel, KinematicPCAWrapper
     from minimal.solver import Solver
     from minimal.models_torch import KinematicModel as KinematicModelTorch, KinematicPCAWrapper as KinematicPCAWrapperTorch
@@ -220,9 +219,14 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
 
     jnts_brg = JointsBridge()
 
-    loader = optitrack_input(root_path, **kwargs)
-
-    data_type = "optitrack"
+    if data_type == OPTI_DATA:
+        loader = optitrack_input(root_path, **kwargs)
+    elif data_type == KINECT_DATA:
+        loader = kinect_input(root_path, **kwargs)
+    else:
+        raise NotImplementedError
+    
+    bot.print("{} : [Minimal] Running {} fitting.".format(ymdhms_time(), data_type))
 
     losses_w = dict(
         kpts_losses=1,
@@ -241,7 +245,14 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
         shape_params = []
         for i in range(window_len*2+1):
             result, info = loader[i]
-            jnts_brg.init_input(result["optitrack"], np.vstack([result["master_pcl"], result["sub1_pcl"], result["sub2_pcl"]]))
+            if data_type == OPTI_DATA:
+                jnts_brg.init_input(result["optitrack"], np.vstack([result["master_pcl"], result["sub1_pcl"], result["sub2_pcl"]]))
+            elif data_type == KINECT_DATA:
+                # input is mean of sub1 & sub2
+                jnts_brg.init_input(np.mean([result["sub1_skeleton"], result["sub2_skeleton"]], axis=0), np.vstack([result["master_pcl"], result["sub1_pcl"], result["sub2_pcl"]]))
+            else:
+                raise NotImplementedError
+
             _jnts, _pcl = jnts_brg.map(data_type)
 
             _, losses = solver.solve(_jnts, _pcl, "full", dbg_level=dbg_level, max_iter=100, losses_with_weights=losses_w)
@@ -269,6 +280,11 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
     bot.print("{} : [Minimal] Losses: {}".format(ymdhms_time(), losses_w))
 
     inputs = MinimalInput(loader, jnts_brg.scale, data_type)
+
+    # set init skeleton source as sub1
+    if data_type == KINECT_DATA:
+        inputs.jnts_source = KINECT_SUB1_SOURCE
+
     current_minimal = MinimalLoader(root_path)
 
     start_idx = 0
@@ -290,11 +306,24 @@ def optitrack_stream_windowed_minimal(root_path: str, dbg_level: int=0, window_l
             solver.update_params(init_pose)
             pcl_source = inputs[i]
             _, losses = solver.solve(inputs[j]["jnts"], pcl_source["pcl"] if "pcl" in pcl_source.keys() else empty_pcl, "pose", max_iter=40, kpts_threshold=0.02, loss_threshold=0.0005, mse_threshold=0.0001, dbg_level=dbg_level, losses_with_weights=losses_w)
-        
+
             results[j] = dict(
                 pose = solver.pose_params,
                 loss = losses[-1]
             )
+
+            # if loss exceeds threshold, try switching to another skeleton source
+            if data_type == KINECT_DATA and losses[-1] > switch_skel_loss_threshold:
+                _, new_losses = solver.solve(inputs[j]["jnts"], pcl_source["pcl"] if "pcl" in pcl_source.keys() else empty_pcl, "pose", max_iter=40, kpts_threshold=0.02, loss_threshold=0.0005, mse_threshold=0.0001, dbg_level=dbg_level, losses_with_weights=losses_w)
+                if new_losses[-1] < losses[-1]:
+                    results[j] = dict(
+                        pose = solver.pose_params,
+                        loss = new_losses[-1]
+                    )
+                    # switch to skeleton source of another device
+                    inputs.jnts_source = 1 - inputs.jnts_source
+                del new_losses
+
             del losses
         result_key = min(results, key=lambda key: results[key]["loss"])
         solver.update_params(results[result_key]["pose"])
@@ -328,7 +357,7 @@ def run():
         optitrack_single_minimal=optitrack_single_frame,
         kinect_stream_minimal=stream_minimal,
         optitrack_stream_minimal=stream_minimal,
-        optitrack_stream_windowed=optitrack_stream_windowed_minimal,
+        stream_windowed=stream_windowed_minimal,
         check=check,
     )
     parser = argparse.ArgumentParser(usage='"run_minimal.py -h" to show help.')

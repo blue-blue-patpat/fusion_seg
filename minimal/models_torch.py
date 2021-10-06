@@ -2,7 +2,6 @@ import pickle
 import torch
 from torch.nn import Module
 from pytorch3d.structures import Meshes
-from vctoolkit import Timer
 
 
 class KinematicModel(Module):
@@ -146,7 +145,6 @@ class KinematicModel(Module):
         np.ndarray, shape [K, 3]
           Keypoints coordinates of the model, scale applied.
         """
-        t = Timer()
         verts = self.mesh_template + torch.matmul(self.mesh_shape_basis, self.shape)
         self.J = torch.matmul(self.J_regressor,verts)
         self.R = self.rodrigues(self.pose.view((-1, 1, 3)))
