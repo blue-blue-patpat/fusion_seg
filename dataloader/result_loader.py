@@ -387,18 +387,26 @@ class ResultFileLoader():
             else:
                 res = k_loader.select_item(_t, "st", False)
 
-        elif "master" in self.offsets.keys():
-            _t = t + self.offsets["master"] / self.fps
-            # Init loader if None
-            if self.k_mas_loader is None:
-                self.k_mas_loader = KinectResultLoader(self.root_path, device="master")
-            # Use index: skid
-            if "kinect_skeleton" in self.sources:
-                mas_res_skeleton = self.k_mas_loader.select_item_in_tag(_t, "st", "kinect/master/skeleton", False)
-                mas_res = self.k_mas_loader.select_by_skid(mas_res_skeleton["skid"])
-                res = k_loader.select_item(mas_res["kinect/master/pcls"]["id"], "id", False)
-            else:
-                res = k_loader.select_item(_t, "st", False)
+        else:
+            device_list = {
+                "master": self.k_mas_loader,
+                "sub1": self.k_sub1_loader,
+                "sub2": self.k_sub2_loader,
+            }
+            for device_name in device_list.keys():
+                if device_name in self.offsets.keys():
+                    _loader = device_list[device_name]
+                    _t = t + self.offsets[device_name] / self.fps
+                    # Init loader if None
+                    if _loader is None:
+                        _loader = KinectResultLoader(self.root_path, device=device_name)
+                    # Use index: skid
+                    if "kinect_skeleton" in self.sources:
+                        device_res_skeleton = _loader.select_item_in_tag(_t, "st", "kinect/{}/skeleton".format(device_name), False)
+                        device_res = _loader.select_by_skid(device_res_skeleton["skid"])
+                        res = k_loader.select_item(device_res["kinect/{}/pcls".format(device_name)]["id"], "id", False)
+                    else:
+                        res = k_loader.select_item(_t, "st", False)
 
         trans_mat = self.trans["kinect_{}".format(k_loader.device)]
         if "kinect_skeleton" in self.sources:
@@ -475,19 +483,16 @@ class ResultFileLoader():
 
         arbe_arr = None
         if "arbe_pcl" in self.sources or "arbe" in self.sources:
-            try:
-                arbe_arr = np.load(arbe_res["arbe"]["filepath"])
-            except:
-                print(i)
-            self.results = dict(
+            arbe_arr = np.load(arbe_res["arbe"]["filepath"])
+            self.results.update(dict(
                 arbe=arbe_arr[:,:3]
-            )
+            ))
         if "arbe_feature" in self.sources:
             if arbe_arr is None:
                 arbe_arr = np.load(arbe_res["arbe"]["filepath"])
-            self.results = dict(
+            self.results.update(dict(
                 arbe_feature=arbe_arr[:,3:]
-            )
+            ))
         self.info = dict(
             arbe=arbe_res["arbe"]
         )

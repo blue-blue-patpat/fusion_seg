@@ -81,21 +81,16 @@ class Transformer(nn.Module):
                 Residual(PreNorm(dim, FeedForward(dim, mlp_dim, dropout = dropout)))
             ]))
 
-    def forward(self, input):
-        input = torch.split(input, split_size_or_sections=1, dim=0)
-        output = []
+    def forward(self, x):
         y = None
-        for x in input:
-            # encoder
-            for attn, ff in self.encoder:
-                x = attn(x)
-                x = ff(x)
-            # decoder
-            y = x if y is None else y
-            for mask_attn, attn, ff in self.decoder:
-                y = mask_attn(y)
-                y = attn(x, y)
-                y = ff(y)
-            output.append(y)
-        output = torch.cat(output, dim=0)
-        return output
+        # encoder
+        for attn, ff in self.encoder:
+            x = attn(x)
+            x = ff(x)
+        # decoder
+        y = x if y is None else y
+        for mask_attn, attn, ff in self.decoder:
+            y = mask_attn(y)
+            y = attn(x, y)
+            y = ff(y)
+        return y

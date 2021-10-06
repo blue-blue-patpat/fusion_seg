@@ -31,7 +31,7 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
         start_time = time.time()
         clip, target = clip.to(device), target.to(device)
         output = model(clip)
-        loss = criterion(output, target)
+        loss = criterion(output, target[:,-1])
 
         optimizer.zero_grad()
         loss.backward()
@@ -45,24 +45,25 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
     return list(metric_logger.meters['loss'].deque)
 
 
-def evaluate(model, criterion, data_loader, device, visual=False, scale=1):
+def evaluate(model, criterion, data_loader, device, visual=False, scale=1, output_path=''):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
     rmse_list = []
+    frame_rmse = []
     with torch.no_grad():
-        for clip, target, _ in metric_logger.log_every(data_loader, 100, header):
+        for clip, target, index_map in metric_logger.log_every(data_loader, 100, header):
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output = model(clip)
-            loss = criterion(output, target)
+            loss = criterion(output, target[:,-1])
 
             # FIXME need to take into account that the datasets
             # could have been padded in distributed setup
             clip = clip.cpu().numpy()
             output = output.cpu().numpy()
             target = target.cpu().numpy()
-            rmse = np.sqrt(mean_squared_error(target, output)) * scale
+            rmse = mean_squared_error(target[:,-1], output, squared=False) * scale
             print("batch rmse:", rmse)
 
             batch_size = clip.shape[0]
@@ -74,7 +75,8 @@ def evaluate(model, criterion, data_loader, device, visual=False, scale=1):
                 for b, batch in enumerate(clip):
                     arbe_frame = batch[-1][:,:3] * scale
                     pred = output[b].reshape(-1, 3) * scale
-                    label = target[b].reshape(-1, 3) * scale
+                    label = target[b, -1].reshape(-1, 3) * scale
+                    frame_rmse.append((index_map[0].numpy()[b], index_map[1].numpy()[b], mean_squared_error(pred, label, squared=False)))
                     yield dict(
                         arbe_pcl = dict(
                             pcl = arbe_frame,
@@ -94,6 +96,16 @@ def evaluate(model, criterion, data_loader, device, visual=False, scale=1):
             else:
                 yield rmse
             rmse_list.append(rmse)
+        if visual and output_path:
+            frame_rmse.sort(key=lambda v: v[2])
+            hist, bin_edges = np.histogram(np.asarray(frame_rmse)[:,2], bins=10, range=[0,0.2])
+            cdf = np.cumsum(hist)
+            plt.plot(bin_edges[:-1], cdf)
+            plt.savefig(output_path+"/rmse.png")
+            with open(output_path+"/rmse.txt", 'w') as f:
+                f.write(str(np.mean(rmse_list)))
+            plt.close("all")
+            np.save(output_path+"/rmse", np.asarray(frame_rmse))
         print("RMSE:", np.mean(rmse_list))
 
     # gather the stats from all processes
@@ -114,7 +126,7 @@ def main(args):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    device = torch.device('cuda')
+    device = torch.device('cuda:0')
 
     # Data loading code
     print("Loading data")
@@ -181,7 +193,6 @@ def main(args):
             loss_list += loss
 
             rmse = np.mean(list(evaluate(model, criterion, data_loader_eval, device)))
-            print("RMSE:", rmse)
             rmse_list.append(rmse)
 
             fig.add_subplot(1, 1, 1).plot(loss_list)
@@ -191,7 +202,7 @@ def main(args):
                 cv2.imwrite(os.path.join(args.output_dir, 'loss.png'), img)
 
             if dingbot:
-                bot.add_md("tran_mmbody", "【LOSS】 \n ![img]({}) \n 【RMSE】\n epoch={}, rmse={}".format(bot.img2b64(img), epoch, rmse))
+                bot.add_md("train_mmbody", "【LOSS】 \n ![img]({}) \n 【RMSE】\n epoch={}, rmse={}".format(bot.img2b64(img), epoch, rmse))
                 bot.enable()
             
             if args.output_dir:
@@ -216,7 +227,7 @@ def main(args):
         data_loader_test = torch.utils.data.DataLoader(dataset_all, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
         plot = NNPredLabelStreamPlot()
         print("Start testing")
-        gen = evaluate(model, criterion, data_loader_test, device, visual=True, scale=dataset_all.normal_scale)
+        gen = evaluate(model, criterion, data_loader_test, device, visual=True, scale=dataset_all.normal_scale, output_path=args.output_dir)
         plot.show(gen, fps=15)
 
 def parse_args():

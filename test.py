@@ -64,12 +64,12 @@ if __name__ == "__main__":
     
     # from visualization.o3d_plot import OptitrackArbeStreamPlot
     # from multiprocessing import Pool
-    root_path = "/media/nesc525/perple2"
+    # root_path = "/media/nesc525/perple1t/2021-10-05_10-39-29"
 
     # plot = OptitrackArbeStreamPlot(root_path, [0,-1,0,10])
     # plot.show()
 
-    # plot = KinectOfflineStreamPlotCpp(root_path, start_frame=1000, write_ply=False)
+    # plot = KinectOfflineStreamPlotCpp(root_path, start_frame=150, write_ply=False)
     # plot.show()
 
     # plot = KinectArbeStreamPlot(root_path, ["master"], [0,-1,0,2])
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     import os
     # extract_skeleton(root_path, "master")
     # from dataloader.result_loader import OptitrackCSVLoader
-    # root_path = "/media/nesc525/perple"
+    root_path = "/media/nesc525/perple2"
     # csv_file = OptitrackCSVLoader(root_path)
     # if len(csv_file):
     #     parse_opti_csv(csv_file.file_dict["optitrack"].loc[0,"filepath"])
@@ -101,7 +101,28 @@ if __name__ == "__main__":
     # arr = np.load("/home/nesc525/chen/3DSVC/__test__/default/arbe/id=92_st=1632382661.6592233_dt=1632382661.6915216.npy")
     # print(max(arr[:,8]))
 
-    from run_postprocess import postprocess
-    for p in os.listdir(root_path):
-        if p[-1] == 'E':
-            postprocess(os.path.join(root_path, p))
+    # from run_postprocess import postprocess
+    # for p in os.listdir(root_path):
+    #     if p[-1] == 'N':
+    #         postprocess(os.path.join(root_path, p))
+
+    from nn.p4t.datasets.mmbody import MMBody3D
+    import pickle
+    import numpy as np
+
+    dataset_all = MMBody3D(
+            root_path=root_path,
+            frames_per_clip=1,
+            step_between_clips=1,
+            num_points=1024,
+            train=True
+    )
+    train_data = []
+    label_data = []
+    for clip, label, _ in dataset_all:
+        train_data.append(np.squeeze(clip))
+        label_data.append(np.reshape(label, (37, 3)))
+    with open("ignoredata/p4t/train_data", 'wb') as f:
+        pickle.dump(train_data, f)
+    with open("ignoredata/p4t/label_data", 'wb') as f:
+        pickle.dump(label_data, f)

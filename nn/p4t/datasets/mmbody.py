@@ -6,7 +6,6 @@ from torch.utils.data import Dataset
 from dataloader.result_loader import ResultFileLoader
 from visualization.utils import pcl_filter
 
-
 class MMBody3D(Dataset):
     def __init__(self, root_path, frames_per_clip=5, step_between_clips=1, num_points=1024,
             train=True, normal_scale = 1.2, output_dim=111, skip_head=200, skip_tail=0):
@@ -84,6 +83,7 @@ class MMBody3D(Dataset):
         video_loader = self.video_loaders[index]
         ids = self.id_list[index]
         clip = []
+        clip_label = []
         i = ids.index(id)
 
         while True:
@@ -97,16 +97,17 @@ class MMBody3D(Dataset):
         clip_ids = ids[i-self.clip_range+1:i:self.step_between_clips]
         for clip_id in clip_ids:
             # get xyz and features
-            clip_frame, clip_label = self.get_data(video_loader, clip_id)
+            clip_frame, frame_label = self.get_data(video_loader, clip_id)
             # remove bad frame
             if clip_frame is None:
                 clip_frame = anchor_frame
             # padding
             clip.append(clip_frame)
+            clip_label.append(frame_label)
         clip.append(anchor_frame)
+        clip_label.append(label)
 
         clip = np.asarray(clip, dtype=np.float32)
-        if True in np.isnan(label):
-            print(np.argwhere(np.isnan(label)))
-            label = np.nan_to_num(label)
-        return clip, label, index
+        clip_label = np.asarray(clip_label, dtype=np.float32)
+
+        return clip, clip_label, self.index_map[idx]

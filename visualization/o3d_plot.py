@@ -197,36 +197,36 @@ class KinectOfflineStreamPlotCpp(O3DStreamPlot):
             params = []
             for device in self.devices:
                 params.append(dict(tag="kinect/{}/pcls".format(device), ext=".npy"))
-                params.append(dict(tag="kinect/{}/color".format(device), ext=".png"))
+                # params.append(dict(tag="kinect/{}/color".format(device), ext=".png"))
             loader = KinectResultLoader(root_path, params)
             for f in range(self.start_frame, len(loader)):
                 result = {}
                 pcl_frame = loader[f]
                 for dev in self.devices:
                     pcl = np.load(pcl_frame["kinect/{}/pcls".format(dev)]["filepath"]).reshape(-1,3)/1000
-                    color = cv2.imread(pcl_frame["kinect/{}/color".format(dev)]["filepath"])
-                    result[dev] = o3d_pcl(pcl, colors=np.fliplr(color.reshape(-1, 3)/255)).transform(transform_mats[dev])
+                    # color = cv2.imread(pcl_frame["kinect/{}/color".format(dev)]["filepath"])
+                    result[dev] = o3d_pcl(pcl).transform(transform_mats[dev])
                     if self.write_ply:
                         o3d.io.write_point_cloud(os.path.join(root_path+"/calib/kinect/ply", "{}.ply".format(dev+str(f))), result[dev])
                 yield result
 
         else:
             pcl_params = []
-            color_params = []
+            # color_params = []
             for device in self.devices:
                 pcl_params.append(dict(tag="kinect/{}/pcls".format(device), ext=".npy"))
-                color_params.append(dict(tag="kinect/{}/color".format(device), ext=".png"))
+                # color_params.append(dict(tag="kinect/{}/color".format(device), ext=".png"))
             pcl_loader = KinectResultLoader(root_path, pcl_params)
-            color_loader = KinectResultLoader(root_path, color_params)
+            # color_loader = KinectResultLoader(root_path, color_params)
             for i in range(self.start_frame, len(pcl_loader)):
                 pcl_frame = pcl_loader.select_item(pcl_loader[i]["kinect/master/pcls"]["st"], "st", False)
                 result = {}
 
                 for dev in self.devices:
                     pcl = np.load(pcl_frame["kinect/{}/pcls".format(dev)]["filepath"]).reshape(-1,3)/1000
-                    color_frame = color_loader.select_by_id(pcl_frame["kinect/{}/pcls".format(dev)]["id"])
-                    color = cv2.imread(color_frame["kinect/{}/color".format(dev)]["filepath"])
-                    result[dev] = o3d_pcl(pcl, colors=np.fliplr(color.reshape(-1, 3)/255)).transform(transform_mats[dev])
+                    # color_frame = color_loader.select_by_id(pcl_frame["kinect/{}/pcls".format(dev)]["id"])
+                    # color = cv2.imread(color_frame["kinect/{}/color".format(dev)]["filepath"])
+                    result[dev] = o3d_pcl(pcl).transform(transform_mats[dev])
                     if self.write_ply:
                         o3d.io.write_point_cloud(os.path.join(root_path+"/calib/kinect/plys", "{}.ply".format(dev+str(i))), result[dev])
                 yield result
@@ -358,10 +358,16 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
 
             arbe_pcl = {}
             if "arbe" in self.enabled_sources:
-                arbe_pcl = dict(
-                    pcl = pcl_filter(frame["optitrack"], frame["arbe"], 0.2),
-                    color = [0,1,0]
-                )
+                if "optitrack" in self.enabled_sources:
+                    arbe_pcl = dict(
+                        pcl = pcl_filter(frame["optitrack"], frame["arbe"], 0.2),
+                        color = [0,1,0]
+                    )
+                else:
+                    arbe_pcl = dict(
+                        pcl = pcl_filter(frame["{}_skeleton".format(self.main_device)], frame["arbe"], 0.2),
+                        color = [0,1,0]
+                    )
 
             kinect_skeleton = {}
             if "kinect_skeleton" in self.enabled_sources:

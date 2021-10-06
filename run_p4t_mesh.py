@@ -13,7 +13,7 @@ import cv2
 
 from nn.p4t import utils
 from nn.p4t.scheduler import WarmupMultiStepLR
-from nn.p4t.datasets.dataset import MMMesh3D
+from nn.p4t.datasets.mmmesh import MMMesh3D
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
 from visualization.o3d_plot import NNPredLabelStreamPlot
@@ -27,17 +27,17 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
     metric_logger.add_meter('clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.3f}'))
 
     header = 'Epoch: [{}]'.format(epoch)
-    for xyz_clip, feature_clip, target, _ in metric_logger.log_every(data_loader, print_freq, header):
+    for clip, target, _ in metric_logger.log_every(data_loader, print_freq, header):
         start_time = time.time()
-        xyz_clip, feature_clip, target = xyz_clip.to(device), feature_clip.to(device), target.to(device)
-        output = model(xyz_clip, feature_clip)
+        clip, target = clip.to(device), target.to(device)
+        output = model(clip)
         loss = criterion(output, target)
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        batch_size = xyz_clip.shape[0]
+        batch_size = clip.shape[0]
         metric_logger.update(loss=loss.item(), lr=optimizer.param_groups[0]["lr"])
         metric_logger.meters['clips/s'].update(batch_size / (time.time() - start_time))
         lr_scheduler.step()
@@ -51,29 +51,28 @@ def evaluate(model, criterion, data_loader, device, visual=False, scale=1):
     header = 'Test:'
     rmse_list = []
     with torch.no_grad():
-        for xyz_clip, feature_clip, target, _ in metric_logger.log_every(data_loader, 100, header):
-            xyz_clip = xyz_clip.to(device, non_blocking=True)
-            feature_clip = feature_clip.to(device, non_blocking=True)
+        for clip, target, _ in metric_logger.log_every(data_loader, 100, header):
+            clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
-            output = model(xyz_clip, feature_clip)
+            output = model(clip)
             loss = criterion(output, target)
 
             # FIXME need to take into account that the datasets
             # could have been padded in distributed setup
-            xyz_clip = xyz_clip.cpu().numpy()
+            clip = clip.cpu().numpy()
             output = output.cpu().numpy()
             target = target.cpu().numpy()
             rmse = np.sqrt(mean_squared_error(target, output)) * scale
             print("batch rmse:", rmse)
 
-            batch_size = xyz_clip.shape[0]
+            batch_size = clip.shape[0]
             metric_logger.update(loss=loss.item())
             metric_logger.meters['rmse'].update(rmse, n=batch_size)
             torch.cuda.empty_cache()
 
             if visual:
-                for b, batch in enumerate(xyz_clip):
-                    arbe_frame = batch[-1] * scale
+                for b, batch in enumerate(clip):
+                    arbe_frame = batch[-1][:,:3] * scale
                     pred = output[b].reshape(-1, 3) * scale
                     label = target[b].reshape(-1, 3) * scale
                     yield dict(
@@ -212,7 +211,6 @@ def main(args):
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         print('Training time {}'.format(total_time_str))
-        print('RMSE {}'.format(rmse_list))
         
     else:
         data_loader_test = torch.utils.data.DataLoader(dataset_all, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)

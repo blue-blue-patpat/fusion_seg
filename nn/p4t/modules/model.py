@@ -22,7 +22,7 @@ class P4Transformer(nn.Module):
 
         self.tube_embedding = P4DConv(in_planes=3, mlp_planes=[dim], mlp_batch_norm=[False], mlp_activation=[False],
                                   spatial_kernel_size=[radius, nsamples], spatial_stride=spatial_stride,
-                                  temporal_kernel_size=temporal_kernel_size, temporal_stride=temporal_stride, temporal_padding=[1, 1],
+                                  temporal_kernel_size=temporal_kernel_size, temporal_stride=temporal_stride, temporal_padding=[0, 0],
                                   operator='+', spatial_pooling='max', temporal_pooling='max')
 
         self.pos_embedding = nn.Conv1d(in_channels=4, out_channels=dim, kernel_size=1, stride=1, padding=0, bias=True)
@@ -39,7 +39,7 @@ class P4Transformer(nn.Module):
 
     def forward(self, input):                                                                                                               # [B, L, N, 3]
         device = input.get_device()
-        xyzs, features = self.tube_embedding(input[:,:,:,:3], input[:,:,:,3:].permute(0,1,3,2))                                                                                         # [B, L, n, 3], [B, L, C, n] 
+        xyzs, features = self.tube_embedding(input[:,:,:,:3], input[:,:,:,3:].permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
 
         xyzts = []
         xyzs = torch.split(tensor=xyzs, split_size_or_sections=1, dim=1)

@@ -8,7 +8,7 @@ from visualization.utils import pcl_filter
 
 class MMMesh3D(Dataset):
     def __init__(self, root_path, frames_per_clip=5, step_between_clips=1, num_points=1024,
-            train=True, normal_scale = 1.2, output_dim=111, skip_head=200, skip_tail=0):
+            train=True, normal_scale = 1.2, output_dim=111, skip_head=100, skip_tail=100):
         super(MMMesh3D, self).__init__()
         self.root_path = root_path
         # range of frame index in a clip
@@ -34,7 +34,7 @@ class MMMesh3D(Dataset):
 
         for idx, path in enumerate(videos_path):
             # init result loader
-            video_loader = ResultFileLoader(root_path=path, enabled_sources=["arbe", "mesh", "mesh_param", "mesh_vtx_jnt"])
+            video_loader = ResultFileLoader(root_path=path, enabled_sources=["arbe", "arbe_feature", "mesh", "mesh_param"])
             # add video to list
             self.video_loaders.append(video_loader)
             # remove deduplicated arbe frames and head frames
@@ -57,35 +57,36 @@ class MMMesh3D(Dataset):
 
     def get_data(self, video_loader, idx):
         frame, info = video_loader[idx]
-        arbe_pcl = np.load(video_loader.a_loader[idx]["arbe"]["filepath"])[:,[0,1,2,3,7,8]]
+        arbe_pcl = frame["arbe"]
+        arbe_feature = frame["arbe_feature"][:, [0,4,5]]
 
         # param: pose, shape
-        mesh_param = frame["mesh_param"]
-        mesh_vtx = frame["mesh_vtx"]
-        mesh_jnt = frame["mesh_jnt"]
+        mesh_pose = frame["mesh_param"]["pose"]
+        mesh_shape = frame["mesh_param"]["shape"]
+
         mesh_R = frame["mesh_R"]
         mesh_t = frame["mesh_t"]
         mesh_scale = frame["mesh_scale"]
 
+        mesh_vtx = (frame["mesh_param"]["vertices"] @ mesh_R + mesh_t) * mesh_scale
+        # mesh_jnt = frame["mesh_jnt"]["keypoints"]
+
         center = (mesh_vtx.max(axis=0) + mesh_vtx.min(axis=0))/2
 
         # filter radar_pcl with optitrack bounding box
-        data = pcl_filter(mesh_vtx, arbe_pcl, 0.2)
-        if data.shape[0] < 50:
+        pcl_filtered = pcl_filter(mesh_vtx, arbe_pcl, 0.2)
+        if pcl_filtered.shape[0] < 50:
             # remove bad frame
             data = None
         else:
             # normalization
-            data[:,:3] = (data[:,:3] - center)/self.normal_scale
-            data[:,3] /= 5e-38
-            data[:,4] /= 5
-            data[:,5] /= 150
+            data = (pcl_filtered - center)/self.normal_scale
+            arbe_feature /= np.array([5e-38, 5, 150])
+            data = np.vstack((data, arbe_feature))
             # padding
             data = self.pad_data(data)
 
-        label = dict(
-            param=mesh_param, vtx=mesh_vtx, jnt=mesh_jnt, R=mesh_R, t=mesh_t, sacle=mesh_scale
-        )
+        label = np.concatenate((mesh_pose, mesh_shape, mesh_R.reshape(-1), mesh_t, mesh_scale.reshape(-1)), axis=0)
         return data, label
 
     def __len__(self):
@@ -118,9 +119,7 @@ class MMMesh3D(Dataset):
         clip.append(data)
 
         clip = np.asarray(clip, dtype=np.float32)
-        xyz_clip = clip[:,:,:3]
-        feature_clip = clip[:,:,3:6].reshape(-1, 3, self.num_points)
         
         if True in np.isnan(label):
             label = np.nan_to_num(label)
-        return xyz_clip, feature_clip, label, video_idx
+        return clip, label, video_idx

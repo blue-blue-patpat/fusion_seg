@@ -87,7 +87,7 @@ def train(args, io):
 
     device = torch.device("cuda" if args.cuda else "cpu")
     if args.arch == 'dgcnn':
-        from model.DGCNN_PAConv_copy_wF import PAConv
+        from model.DGCNN_PAConv_copy_wF_copy import PAConv
         model = PAConv(args).to(device)
     elif args.arch == 'pointnet':
         from model.PointNet_PAConv import PAConv
@@ -282,11 +282,11 @@ def test(args, io):
     io.cprint(outstr)
 
 def test2(args, io):
-    dataset_test = MMBody3D(root_path='/media/nesc525/perple2',frames_per_clip=2,step_between_clips=1,num_points=args.num_points,train=False)
-    test_loader2 = DataLoader(dataset_test,num_workers=args.workers, batch_size=args.batch_size, shuffle=True, drop_last=True)
+    dataset_test = MMBody3D(root_path='/media/nesc525/perple2',frames_per_clip=5,step_between_clips=1,num_points=args.num_points,train=False)
+    test_loader2 = DataLoader(dataset_test,num_workers=args.workers, batch_size=1, shuffle=True, drop_last=True)
     criterion = nn.MSELoss()
-
-    
+    f = open('/home/nesc525/chen/3DSVC/ignoredata/paconv/test_result/test_RMSE.txt' ,'w')
+    print(len(dataset_test))
     device = torch.device("cuda" if args.cuda else "cpu")
 
     # Try to load models:
@@ -303,7 +303,7 @@ def test2(args, io):
 
     model = nn.DataParallel(model)
     #需要修改模型位置
-    model.load_state_dict(torch.load("ignoredata/paconv/checkpoints/20211003-wF6/best_model.t7"))
+    model.load_state_dict(torch.load("/home/nesc525/chen/3DSVC/ignoredata/paconv/checkpoints/20211003-wF6-0.181834/best_model.t7"))
     #model.load_state_dict(torch.load("/home/nesc525/chen/3DSVC/nn/paconv/20210919-11:13/best_model.t7"))
     model = model.eval()
     count = 0.0
@@ -317,7 +317,7 @@ def test2(args, io):
         batch_size = data.size()[0]
         with torch.no_grad():
             logits = model(data)
-        logits = logits.float()
+        logits = logits.float().squeeze()
         label = label.float()
         loss = criterion(logits, label)
         count += batch_size
@@ -330,6 +330,10 @@ def test2(args, io):
         test_pred.append(preds)
         data = data.cpu().numpy()
     outstr = 'Test %d, loss: %.6f, test RMSE: %.6f,' % (1, test_loss * 1.0 / count, np.mean(rmse_list))
+    rmse_list.sort()
+    for line in rmse_list:
+        f.write(str(line)+'\n')
+    f.close()
     io.cprint(outstr)
 
 if __name__ == "__main__":

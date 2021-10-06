@@ -5,7 +5,6 @@ import sys
 import pdb
 import yaml
 import torch
-import random
 import numpy as np
 import torch.nn as nn
 
@@ -76,7 +75,7 @@ class Processor():
                     with torch.no_grad():
                         output = self.model(image)
                     # loss = torch.mean(self.loss(output, label))
-                    loss_mean += self.loss(output, label).cpu().detach().numpy().tolist()
+                    loss_mean += np.sqrt(self.loss(output, label).cpu().detach().numpy()).tolist()
                     # self.stat.update_accuracy(output.data.cpu(), label.cpu(), topk=self.topk)
             except:
                 print(batch_idx)
@@ -171,7 +170,7 @@ class Processor():
                              (epoch + 1 == self.arg.num_epoch)
                 eval_model = ((epoch + 1) % self.arg.eval_interval == 0) or \
                              (epoch + 1 == self.arg.num_epoch)
-                # self.train(epoch)
+                self.train(epoch)
                 if save_model:
                     model_path = '{}/epoch{}_model.pt'.format(self.arg.work_dir, epoch + 1)
                     self.save_model(epoch, self.model, self.optimizer, model_path)
