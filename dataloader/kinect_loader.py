@@ -502,7 +502,7 @@ Only 10pfs
 
 import kinect.k4a._k4a as _k4a
 from kinect.k4a.config import config
-from kinect import pyK4ASkeleton
+from kinect.k4a import pyKinectAzure
 
 class KinectSkeletonSubscriber(Process):
     def __init__(self, name="KinectSub", topic_type=None, callback=None, callback_args={}) -> None:

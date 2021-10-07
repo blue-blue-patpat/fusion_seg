@@ -2,8 +2,11 @@ import os
 import cv2
 import numpy as np
 import pandas as pd
+from pyk4a.calibration import Calibration
+from pyk4a.config import ColorResolution, DepthMode
 from pytorch3d.io import load_obj
 from sklearn.neighbors import KNeighborsClassifier
+from dataloader.kinect_loader import _get_config
 from dataloader.utils import file_paths_from_dir, filename_decoder
 from sync.offsets import Offsets
 
@@ -160,6 +163,11 @@ class KinectResultLoader(ResultLoader):
             self.params = params
         self.run()
 
+    def load_calibration(self):
+        config =  _get_config("alone")
+        with open(os.path.join(self.path, "kinect/{}/calibration_raw.json"), "r") as f:
+            self.calib = Calibration.from_raw(f.readline(), config.depth_mode, config.color_resolution)
+
     def select_by_skid(self, skid):
         idx = -1
         try:
@@ -190,6 +198,7 @@ class KinectMKVtLoader(ResultLoader):
         else:
             self.params = params
         self.run()
+        self.mkvs = dict([(k, v.loc[0,"filepath"]) for k, v in self.file_dict.items()])
 
 
 class KinectJsonLoader(ResultLoader):
@@ -291,7 +300,6 @@ class ResultFileLoader():
 
         # Init calib
         self.init_calib_source()
-        self.init_skip()
 
         # Verify if offsets can be restored from file
         if Offsets.verify_file(root_path):
@@ -303,6 +311,12 @@ class ResultFileLoader():
         else:
             # Init empty offsets
             self.offsets = Offsets(dict(zip(self.sources, [0]*len(self.sources))), base=self.sources[0])
+
+        # triggered by source mesh
+        self.init_skip()
+
+        # triggered by source reindex
+        self.init_reindex()
 
         self.fps = 30
 
@@ -326,6 +340,7 @@ class ResultFileLoader():
         Init Azure Kinect results
         """
         params_template = []
+        self.kinect_devices = ["master", "sub1", "sub2"]
 
         if "kinect_pcl" in self.sources:
             params_template.append(dict(tag="kinect/{}/pcls", ext=".npy"))
@@ -336,16 +351,13 @@ class ResultFileLoader():
         if "kinect_color" in self.sources:
             params_template.append(dict(tag="kinect/{}/color", ext=".png"))
 
+        for device in self.kinect_devices:
+            self.__dict__["k_{}_loader".format(device)] = KinectResultLoader(self.root_path, device=device, params=[
+                dict(tag=item["tag"].format(device), ext=item["ext"]) for item in params_template
+            ]) if device in self.sources else None
 
-        self.k_mas_loader = KinectResultLoader(self.root_path, device="master", params=[
-            dict(tag=item["tag"].format("master"), ext=item["ext"]) for item in params_template
-        ]) if "master" in self.sources else None
-        self.k_sub1_loader = KinectResultLoader(self.root_path, device="sub1", params=[
-            dict(tag=item["tag"].format("sub1"), ext=item["ext"]) for item in params_template
-        ]) if "sub1" in self.sources else None
-        self.k_sub2_loader = KinectResultLoader(self.root_path, device="sub2", params=[
-            dict(tag=item["tag"].format("sub2"), ext=item["ext"]) for item in params_template
-        ]) if "sub2" in self.sources else None
+            if "kinect_skeleton" in self.sources:
+                self.__dict__["k_{}_loader".format(device)].load_calibration()
 
     def init_optitrack_source(self):
         """
@@ -374,6 +386,34 @@ class ResultFileLoader():
         self.skip_head = max(self.skip_head, rid_arr.min())
         self.skip_tail = max(self.skip_tail, len(self.a_loader) - 1 - rid_arr.max())
 
+    def init_reindex(self):
+        if "reindex" not in self.sources:
+            return
+
+        assert isinstance(self.a_loader.file_dict["arbe"], pd.DataFrame)
+
+        # copy and sort by dt
+        sorted_a_df = self.a_loader.file_dict["arbe"].sort_values("dt", ascending=True, inplace=False)
+
+        # remove skipped frames
+        if self.skip_head > 0:
+            sorted_a_df.drop(range(self.skip_head), axis=0, inplace=True)
+        
+        if self.skip_tail > 0:
+            sorted_a_df.drop(range(len(sorted_a_df) - self.skip_tail, len(sorted_a_df)), axis=0, inplace=True)
+
+        # remove duplicate frames
+        sorted_a_df.drop_duplicates(subset=["dt"],keep="first", inplace=True)
+
+        # re-index id
+        sorted_a_df.drop("id", axis=1, inplace=True)
+        sorted_a_df.insert(0, "id", range(len(sorted_a_df)))
+
+        self.a_loader.file_dict["arbe"] = sorted_a_df
+        self.a_loader.clfs = {}
+
+        self.skip_head = self.skip_tail = 0
+
     def select_kinect_trans_item_by_t(self, k_loader: KinectResultLoader, t: float) -> None:
         """
         Select Kinect transformed results by timestamp
@@ -388,30 +428,31 @@ class ResultFileLoader():
                 res = k_loader.select_item(_t, "st", False)
 
         else:
-            device_list = {
-                "master": self.k_mas_loader,
-                "sub1": self.k_sub1_loader,
-                "sub2": self.k_sub2_loader,
-            }
-            for device_name in device_list.keys():
-                if device_name in self.offsets.keys():
-                    _loader = device_list[device_name]
-                    _t = t + self.offsets[device_name] / self.fps
+            for device in self.kinect_devices:
+                if device in self.offsets.keys():
+                    _loader = self.__dict__["k_{}_loader".format(device)]
+                    _t = t + self.offsets[device] / self.fps
                     # Init loader if None
                     if _loader is None:
-                        _loader = KinectResultLoader(self.root_path, device=device_name)
+                        _loader = KinectResultLoader(self.root_path, device=device)
                     # Use index: skid
                     if "kinect_skeleton" in self.sources:
-                        device_res_skeleton = _loader.select_item_in_tag(_t, "st", "kinect/{}/skeleton".format(device_name), False)
+                        device_res_skeleton = _loader.select_item_in_tag(_t, "st", "kinect/{}/skeleton".format(device), False)
                         device_res = _loader.select_by_skid(device_res_skeleton["skid"])
-                        res = k_loader.select_item(device_res["kinect/{}/pcls".format(device_name)]["id"], "id", False)
+                        res = k_loader.select_item(device_res["kinect/{}/pcls".format(device)]["id"], "id", False)
                     else:
                         res = k_loader.select_item(_t, "st", False)
 
         trans_mat = self.trans["kinect_{}".format(k_loader.device)]
-        if "kinect_skeleton" in self.sources:
+        if "kinect_skeleton" in self.sources:            
+            skeleton = []
+            for row in np.load(res["kinect/{}/skeleton".format(k_loader.device)]["filepath"])[:,:,:3].reshape(-1,3):
+                skeleton.append(k_loader.calib.depth_to_color_3d(row))
+
+            skeleton = np.vstack(skeleton)
+            
             self.results.update({
-                "{}_skeleton".format(k_loader.device): np.load(res["kinect/{}/skeleton".format(k_loader.device)]["filepath"])[:,:,:3].reshape(-1,3) / 1000 @ trans_mat["R"].T + trans_mat["t"]
+                "{}_skeleton".format(k_loader.device): skeleton / 1000 @ trans_mat["R"].T + trans_mat["t"]
             })
             self.info.update({
                 k_loader.device: res["kinect/{}/skeleton".format(k_loader.device)]
@@ -499,12 +540,11 @@ class ResultFileLoader():
 
         t = float(arbe_res["arbe"]["st"])
         rid = int(arbe_res["arbe"]["id"])
-        if self.k_mas_loader is not None:
-            self.select_kinect_trans_item_by_t(self.k_mas_loader, t)
-        if self.k_sub1_loader is not None:
-            self.select_kinect_trans_item_by_t(self.k_sub1_loader, t)
-        if self.k_sub2_loader is not None:
-            self.select_kinect_trans_item_by_t(self.k_sub2_loader, t)
+        
+        for device in self.kinect_devices:
+            if self.__dict__["k_{}_loader".format(device)] is not None:
+                self.select_kinect_trans_item_by_t(self.__dict__["k_{}_loader".format(device)], t)
+
         if self.o_loader is not None:
             self.select_trans_optitrack_item_by_t(self.o_loader, t)
         if self.mesh_loader is not None:
@@ -525,7 +565,7 @@ class ResultFileLoader():
             res += "----\n"
 
         if "master" in self.sources:
-            res += str(self.k_mas_loader)
+            res += str(self.k_master_loader)
             res += "----\n"
 
         if "sub1" in self.sources:

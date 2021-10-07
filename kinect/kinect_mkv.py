@@ -9,7 +9,7 @@ import numpy as np
 from pyk4a import ImageFormat, PyK4APlayback
 from pyk4a.capture import PyK4ACapture
 
-from dataloader.utils import clean_dir, ymdhms_time
+from dataloader.utils import create_dir, ymdhms_time
 
 
 def convert_to_bgra_if_required(color_format: ImageFormat, color_image):
@@ -114,9 +114,12 @@ def extract_mkv(filename, enable_view=False) -> None:
     with open(os.path.join(save_path, "info.txt"), 'r') as f:
         params = dict([param.split('=') for param in f.readline().split('_')])
 
-    clean_dir(os.path.join(save_path, "color"))
-    clean_dir(os.path.join(save_path, "depth"))
-    clean_dir(os.path.join(save_path, "pcls"))
+    with open(os.path.join(save_path, "calibration_raw.json"), 'w') as f:
+        f.write(playback.calibration_raw)
+
+    create_dir(os.path.join(save_path, "color"))
+    create_dir(os.path.join(save_path, "depth"))
+    create_dir(os.path.join(save_path, "pcls"))
 
     info(playback)
     if enable_view:
