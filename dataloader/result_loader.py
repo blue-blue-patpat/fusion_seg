@@ -2,8 +2,6 @@ import os
 import cv2
 import numpy as np
 import pandas as pd
-from pyk4a.calibration import Calibration
-from pyk4a.config import ColorResolution, DepthMode
 from pytorch3d.io import load_obj
 from sklearn.neighbors import KNeighborsClassifier
 from dataloader.kinect_loader import _get_config
@@ -164,9 +162,15 @@ class KinectResultLoader(ResultLoader):
         self.run()
 
     def load_calibration(self):
-        config =  _get_config("alone")
+        import json
         with open(os.path.join(self.path, "kinect/{}/calibration_raw.json"), "r") as f:
-            self.calib = Calibration.from_raw(f.readline(), config.depth_mode, config.color_resolution)
+            d = json.load(f)
+        cameras = d["CalibrationInformation"]["Cameras"]
+        for camera in cameras:
+            if camera["Location"] == "CALIBRATION_CameraLocationPV0":
+                self.R = np.array(camera["Rt"]["Rotation"]).reshape((3,3))
+                self.t = np.array(camera["Rt"]["Translation"]) * 1000
+                break
 
     def select_by_skid(self, skid):
         idx = -1
@@ -444,15 +448,12 @@ class ResultFileLoader():
                         res = k_loader.select_item(_t, "st", False)
 
         trans_mat = self.trans["kinect_{}".format(k_loader.device)]
-        if "kinect_skeleton" in self.sources:            
-            skeleton = []
-            for row in np.load(res["kinect/{}/skeleton".format(k_loader.device)]["filepath"])[:,:,:3].reshape(-1,3):
-                skeleton.append(k_loader.calib.depth_to_color_3d(row))
-
-            skeleton = np.vstack(skeleton)
-            
+        if "kinect_skeleton" in self.sources:
             self.results.update({
-                "{}_skeleton".format(k_loader.device): skeleton / 1000 @ trans_mat["R"].T + trans_mat["t"]
+                "{}_skeleton".format(k_loader.device): (np.load(
+                    res["kinect/{}/skeleton".format(k_loader.device)]["filepath"]
+                    )[:,:,:3].reshape(-1,3) @ k_loader.R.T + k_loader.t)
+                    / 1000 @ trans_mat["R"].T + trans_mat["t"]
             })
             self.info.update({
                 k_loader.device: res["kinect/{}/skeleton".format(k_loader.device)]
