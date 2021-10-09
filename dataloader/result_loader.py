@@ -163,7 +163,13 @@ class KinectResultLoader(ResultLoader):
 
     def load_calibration(self):
         import json
-        with open(os.path.join(self.path, "kinect/{}/calibration_raw.json"), "r") as f:
+        calib_path = os.path.join(self.path, "kinect/{}/calibration_raw.json")
+        if not os.path.exists(calib_path):
+            print("[KinectResultLoader] WARNING: Camera Clibration file not found.")
+            self.R = np.eye(3)
+            self.t = np.zeros(3)
+            return
+        with open(calib_path, "r") as f:
             d = json.load(f)
         cameras = d["CalibrationInformation"]["Cameras"]
         for camera in cameras:
@@ -360,7 +366,7 @@ class ResultFileLoader():
                 dict(tag=item["tag"].format(device), ext=item["ext"]) for item in params_template
             ]) if device in self.sources else None
 
-            if "kinect_skeleton" in self.sources:
+            if "kinect_skeleton" in self.sources and device in self.sources:
                 self.__dict__["k_{}_loader".format(device)].load_calibration()
 
     def init_optitrack_source(self):
@@ -410,8 +416,8 @@ class ResultFileLoader():
         sorted_a_df.drop_duplicates(subset=["dt"],keep="first", inplace=True)
 
         # re-index id
-        sorted_a_df.drop("id", axis=1, inplace=True)
-        sorted_a_df.insert(0, "id", range(len(sorted_a_df)))
+        # sorted_a_df.drop("id", axis=1, inplace=True)
+        sorted_a_df.insert(0, "reindexed_id", range(len(sorted_a_df)))
 
         self.a_loader.file_dict["arbe"] = sorted_a_df
         self.a_loader.clfs = {}
@@ -492,7 +498,7 @@ class ResultFileLoader():
         """
         Select Mesh transformed results by radar id
         """
-        res = mesh_loader.select_item(rid, "rid")
+        res = mesh_loader.select_item(rid, "rid", False)
         if len(res["minimal/param"]) == 0:
             self.results.update(dict(mesh_param=None, mesh_obj=None))
             self.info.update(dict(mesh=None))
@@ -521,7 +527,11 @@ class ResultFileLoader():
         if index not in range(0, self.__len__()):
             raise IndexError("[ResultFileLoader] Index out of range {}.".format(range(0, self.__len__())))
         self.results = self.info = {}
-        arbe_res = self.a_loader[i]
+
+        if "reindex" in self.sources:
+            arbe_res = self.a_loader.select_item(i, "reindexed_id")
+        else:
+            arbe_res = self.a_loader[i]
 
         arbe_arr = None
         if "arbe_pcl" in self.sources or "arbe" in self.sources:
