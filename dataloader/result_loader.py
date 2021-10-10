@@ -444,7 +444,7 @@ class ResultFileLoader():
                     _t = t + self.offsets[device] / self.fps
                     # Init loader if None
                     if _loader is None:
-                        _loader = KinectResultLoader(self.root_path, device=device)
+                        _loader = self.__dict__["k_{}_loader".format(device)] = KinectResultLoader(self.root_path, device=device)
                     # Use index: skid
                     if "kinect_skeleton" in self.sources:
                         device_res_skeleton = _loader.select_item_in_tag(_t, "st", "kinect/{}/skeleton".format(device), False)
@@ -553,7 +553,7 @@ class ResultFileLoader():
         rid = int(arbe_res["arbe"]["id"])
         
         for device in self.kinect_devices:
-            if self.__dict__["k_{}_loader".format(device)] is not None:
+            if self.__dict__["k_{}_loader".format(device)] is not None and device in self.sources:
                 self.select_kinect_trans_item_by_t(self.__dict__["k_{}_loader".format(device)], t)
 
         if self.o_loader is not None:
