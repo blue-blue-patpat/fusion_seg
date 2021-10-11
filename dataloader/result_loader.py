@@ -244,7 +244,7 @@ class MinimalLoader(ResultLoader):
             self.params = [
                 dict(tag="minimal/obj", ext=".obj"),
                 dict(tag="minimal/param", ext=".npz"),
-                dict(tag="minimal/trans", ext=".npz"),
+                # dict(tag="minimal/trans", ext=".npz"),
             ]
         else:
             self.params = params

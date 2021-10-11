@@ -80,20 +80,25 @@ def o3d_mesh(mesh: Union[Meshes, Iterable] = None, color: list = None,
     return _mesh
 
 
-def o3d_smpl_mesh(params: Union[np.ndarray, np.lib.npyio.NpzFile, dict], color: list = None,
+def o3d_smpl_mesh(params: Union[np.ndarray, np.lib.npyio.NpzFile, dict] = None, color: list = None,
              model = None, device = "cpu", last_update = None):
     from minimal.models import KinematicModel, KinematicPCAWrapper
     from minimal.models_torch import KinematicModel as KinematicModelTorch, KinematicPCAWrapper as KinematicPCAWrapperTorch
+    import minimal.config as config
+    import minimal.armatures as armatures
 
     _mesh = last_update
     if _mesh is None:
         _mesh = o3d.geometry.TriangleMesh()
+
+    if params is None:
+        return o3d_mesh(None, color, _mesh)
     
     if model is None:
         if device == "cpu":
-            model = KinematicPCAWrapper(KinematicModel().init_from_file())
+            model = KinematicPCAWrapper(KinematicModel().init_from_file(config.SMPL_MODEL_1_0_MALE_PATH, armatures.SMPLArmature, compute_mesh=False))
         else:
-            model = KinematicPCAWrapperTorch(KinematicModelTorch(torch.device(device)).init_from_file())
+            model = KinematicPCAWrapperTorch(KinematicModelTorch(torch.device(device)).init_from_file(config.SMPL_MODEL_1_0_MALE_PATH, armatures.SMPLArmature, compute_mesh=False))
 
     assert isinstance(model, (KinematicPCAWrapper, KinematicPCAWrapperTorch)), "Undefined model"
 
@@ -116,9 +121,14 @@ def o3d_smpl_mesh(params: Union[np.ndarray, np.lib.npyio.NpzFile, dict], color: 
     elif isinstance(model, KinematicModelTorch) and isinstance(params, np.ndarray):
         params = torch.from_numpy(params).to(device=model.device, dtype=torch.float64)
 
-    mesh, _ = model.run(params)
+    model.run(params)
 
-    return o3d_mesh(mesh, color, _mesh)
+    if isinstance(model, KinematicPCAWrapper):
+        mesh = [model.core.verts, model.core.faces]
+    else:
+        mesh = [model.core.verts.cpu().numpy(), model.core.faces.cpu().numpy()]
+
+    return o3d_mesh(mesh, color, last_update=_mesh)
 
 
 def pcl_filter(pcl_a, pcl_b, bound=0.5):

@@ -213,8 +213,8 @@ def stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2,
 
     # save to $root_path$/minimal/(param,obj,trans)
     create_dir(os.path.join(save_path, "param"))
-    create_dir(os.path.join(save_path, "obj"))
-    create_dir(os.path.join(save_path, "trans"))
+    # create_dir(os.path.join(save_path, "obj"))
+    # create_dir(os.path.join(save_path, "trans"))
     create_dir(os.path.join(save_path, "loss"))
 
     jnts_brg = JointsBridge()
@@ -234,11 +234,11 @@ def stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2,
         face_losses=25,
     )
 
-    if os.path.exists(os.path.join(save_path, "init_params.npz")) and os.path.exists(os.path.join(save_path, "init_transform.npz")):
+    if os.path.exists(os.path.join(save_path, "init_params.npz")):
         # load init shape & pose
         bot.print("{} : [Minimal] Load current init params".format(ymdhms_time()))
         solver.update_params(np.load(os.path.join(save_path, "init_params.npz")))
-        jnts_brg.set_scale(np.load(os.path.join(save_path, "init_transform.npz"))["scale"])
+        # jnts_brg.set_scale(np.load(os.path.join(save_path, "init_transform.npz"))["scale"])
     else:
         # solve init shape
         bot.print("{} : [Minimal] Start solving init params...".format(ymdhms_time()))
@@ -255,6 +255,13 @@ def stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2,
 
             _jnts, _pcl = jnts_brg.map(data_type)
 
+            init_pose = np.zeros(solver.model.n_pose + solver.model.n_coord)
+            # translation
+            init_pose[:3] = -(_jnts.max(axis=0) + _jnts.min(axis=0))/2
+            # rotation
+            init_pose[3] = 0.5
+            solver.update_params(init_pose)
+
             _, losses = solver.solve(_jnts, _pcl, "full", dbg_level=dbg_level, max_iter=100, losses_with_weights=losses_w)
             
             shape_params.append(solver.shape_params)
@@ -265,7 +272,7 @@ def stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2,
         else:
             solver.shape_params = torch.vstack(shape_params).mean(0)
         solver.save_param(os.path.join(save_path, "init_params"))
-        jnts_brg.save_revert_transform(os.path.join(save_path, "init_transform"))
+        # jnts_brg.save_revert_transform(os.path.join(save_path, "init_transform"))
 
     # disable mesh update
     # solver.model.core.compute_mesh = False
@@ -335,7 +342,7 @@ def stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2,
 
         solver.save_param(os.path.join(save_path, "param", filename))
         solver.save_model(os.path.join(save_path, "obj", filename+".obj"))
-        inputs.save_revert_transform(j, os.path.join(save_path, "trans", filename))
+        # inputs.save_revert_transform(j, os.path.join(save_path, "trans", filename))
         inputs.remove(i-window_len)
 
         bot.print("{} : [Minimal] {} Frame rid={} with loss {:.4}".format(ymdhms_time(), root_path[-21:-2], rid, results[result_key]["loss"]))

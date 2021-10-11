@@ -111,7 +111,7 @@ class Solver:
 
             if dbg_level > 0 and i%dbg_level == 0:
                 if mesh_updated is None:
-                    mesh_updated = [self.model.core.verts - self.pose_params[:self.model.n_coord], self.model.core.faces]
+                    mesh_updated = [self.model.core.verts, self.model.core.faces]
                     
                 losses.show_losses()
                 if self.plot_type == "matplotlib":

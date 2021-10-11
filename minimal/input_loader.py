@@ -53,7 +53,7 @@ def update(self: MinimalInput, idx: int):
     self.input_dict[idx] = {}
     result, info = self.loader[idx]
     brg = JointsBridge()
-    brg.set_scale(self.scale)
+    # brg.set_scale(self.scale)
     if self.jnts_source == OPTI_SOURCE:
         raw_jnts = result[OPTI_SOURCE]
     elif self.jnts_source == KINECT_SUB_MEAN_SOURCE:
@@ -62,14 +62,14 @@ def update(self: MinimalInput, idx: int):
         raw_jnts = result[KINECT_SOURCES[self.jnts_source]]
     brg.init_input(raw_jnts, np.vstack([result["master_pcl"], result["sub1_pcl"], result["sub2_pcl"]]))
     _jnts, _pcl = brg.map(self.data_type)
-    R, t, scale = brg.revert_transform()
+    # R, t, scale = brg.revert_transform()
     self.input_dict[idx] = dict(
         jnts=_jnts,
         pcl=_pcl,
         info=info,
-        transform=dict(
-            R=R, t=t, scale=scale
-        )
+        # transform=dict(
+        #     R=R, t=t, scale=scale
+        # )
     )
     if np.isnan(raw_jnts).sum() > 0:
         self.input_dict[idx]["info"]["nan"] = True

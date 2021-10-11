@@ -355,7 +355,6 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
             #load numpy from file
             frame, info = self.file_loader[i]
 
-
             arbe_pcl = {}
             if "arbe" in self.enabled_sources:
                 if "optitrack" in self.enabled_sources:

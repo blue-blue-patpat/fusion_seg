@@ -25,8 +25,8 @@ class JointsBridge():
             self.kinect_jnts_to_smpl()
         else:
             pass
-        self.smpl_joints_transform()
-        self.normalization()
+        # self.smpl_joints_transform()
+        # self.normalization()
         return self.jnts, self.pcl
 
     def save_revert_transform(self, file_path):
