@@ -1,3 +1,4 @@
+import time
 import numpy as np
 from multiprocessing.dummy import Pool
 
@@ -44,13 +45,18 @@ class MinimalInput:
 
     def __getitem__(self, idx):
         self.update(idx, 2)
+        while idx not in self.input_dict.keys() or self.input_dict[idx].get("lock", True):
+            time.sleep(1)
+            print("{} : [MinimalInput] Waiting for sub-process to collect data...")
         return self.input_dict[idx]
 
 
 def update(self: MinimalInput, idx: int):
     if idx in self.input_dict.keys() or idx >= len(self.loader):
         return
-    self.input_dict[idx] = {}
+    self.input_dict[idx] = dict(
+        lock=True
+    )
     result, info = self.loader[idx]
     brg = JointsBridge()
     # brg.set_scale(self.scale)
@@ -67,6 +73,7 @@ def update(self: MinimalInput, idx: int):
         jnts=_jnts,
         pcl=_pcl,
         info=info,
+        lock=False
         # transform=dict(
         #     R=R, t=t, scale=scale
         # )

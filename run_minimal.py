@@ -215,7 +215,7 @@ def stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2,
     create_dir(os.path.join(save_path, "param"))
     create_dir(os.path.join(save_path, "obj"))
     # create_dir(os.path.join(save_path, "trans"))
-    create_dir(os.path.join(save_path, "loss"))
+    # create_dir(os.path.join(save_path, "loss"))
 
     jnts_brg = JointsBridge()
 
