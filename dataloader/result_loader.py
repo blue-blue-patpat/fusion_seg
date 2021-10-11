@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 from pytorch3d.io import load_obj
 from sklearn.neighbors import KNeighborsClassifier
-from dataloader.kinect_loader import _get_config
 from dataloader.utils import file_paths_from_dir, filename_decoder
 from sync.offsets import Offsets
 
