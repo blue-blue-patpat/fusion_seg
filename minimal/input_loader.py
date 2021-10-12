@@ -45,9 +45,13 @@ class MinimalInput:
 
     def __getitem__(self, idx):
         self.update(idx, 2)
+        wait_count = 0
         while idx not in self.input_dict.keys() or self.input_dict[idx].get("lock", True):
             time.sleep(1)
-            print("{} : [MinimalInput] Waiting for sub-process to collect data...")
+            print("{} : [MinimalInput] Waiting for sub-process to collect data...".format(ymdhms_time()))
+            wait_count += 1
+            if wait_count > 180:
+                raise RuntimeError("[MinimalInput] Waiting for too long and exit.")
         return self.input_dict[idx]
 
 
