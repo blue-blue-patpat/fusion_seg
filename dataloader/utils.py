@@ -209,13 +209,15 @@ def create_dir(dir):
         os.makedirs(dir)
 
 
-def ymdhms_time() -> str:
+def ymdhms_time(t: float = None) -> str:
     """
     Return current time str for print use
 
     :return: time str
     """
-    return time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime(time.time()))
+    if t is None:
+        t = time.time()
+    return time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime(t))
 
 
 def print_log(content, log_obj=None, always_console=False):
@@ -237,7 +239,7 @@ def print_log(content, log_obj=None, always_console=False):
         print("{} : {}".format(ymdhms_time(), content))
 
 
-def file_paths_from_dir(path, extension='.png', enable_print=True) -> list:
+def file_paths_from_dir(path, extension='*', enable_print=True, collect_dir=False) -> list:
     """
     return specific files of the path and its sub-paths
     """
@@ -246,11 +248,14 @@ def file_paths_from_dir(path, extension='.png', enable_print=True) -> list:
     dir = os.listdir(path)
     filepaths = []
     for f in dir:
-      if os.path.isdir(os.path.join(path, f)):
-        file_paths_from_dir(os.path.join(path, f))
+        _path = os.path.join(path, f)
+        if os.path.isdir(_path):
+            if collect_dir:
+                filepaths.append(_path)
+            filepaths.extend(file_paths_from_dir(_path, extension, enable_print, collect_dir))
 
-      if os.path.splitext(f)[1] == extension:
-        filepaths.append(os.path.join(path, f))
+        elif extension != '!' and (extension == '*' or os.path.splitext(f)[1] == extension):
+            filepaths.append(_path)
     return filepaths
 
 
