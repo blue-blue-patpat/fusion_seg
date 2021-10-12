@@ -68,12 +68,13 @@ class TimerBot(Process):
         if self.enabled.value:
             self.add_task(text)
 
-    def add_md(self, title: str, text: str, is_at_all: bool = False):
+    def add_md(self, title: str, text: str, is_at_all: bool = False, at_mobiles: list = []):
         self.keep_queue_available(self.md_queue)
         self.md_queue.put(dict(
             title=title,
             text=text,
             is_at_all=is_at_all,
+            at_mobiles=at_mobiles
         ))
 
     def img2b64(self, img, quality: int = 50):

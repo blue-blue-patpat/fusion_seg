@@ -1,21 +1,24 @@
 import os
 import time
+import numpy as np
+import pandas as pd
 from dataloader.result_loader import ResultLoader
 from dataloader.utils import file_paths_from_dir, ymdhms_time
 from message.dingtalk import TimerBot
 
 
 class FileMonitor():
-    def __init__(self, root_path, dir_key, interval: int = 600) -> None:
+    def __init__(self, root_path, dir_key, ext: str = "*", interval: int = 600, at_mobiles: str = "") -> None:
         self.root_path = root_path
         self.dir_key = dir_key
         self.interval = interval
+        self.at_mobiles = at_mobiles
 
         self.files = ResultLoader(root_path)
         self.files.params = self.update_dir()
         self.files.run()
 
-        self.bot = TimerBot(60)
+        self.bot = TimerBot(interval/5)
         self.bot.enable()
 
         self.info = {}
@@ -23,46 +26,53 @@ class FileMonitor():
     def run(self):
         while True:
             msg = self.check_files()
-            self.bot.print(msg)
+            self.bot.add_md("Monitor Report", msg, at_mobiles=self.at_mobiles)
             time.sleep(self.interval)
 
     def update_dir(self):
         dir_list = file_paths_from_dir(self.root_path, '!', enable_print=True, collect_dir=True)
         params = [
-            dict(tag=d, ext="*") for d in dir_list if self.dir_key in d
+            dict(tag=d, ext="*") for d in dir_list if d[-len(self.dir_key):] == self.dir_key
         ]
         return params
 
     def check_files(self):
-        msg = "{} : [FileMonitor]\n".format(ymdhms_time())
+        self.files.run()
+
+        msg = "# 【FileMonitor】 : {}  \n| task | mdf | cnt | avr |  \n| ---- | ---- | ---- | ---- |  \n".format(ymdhms_time())
         
         for key, value in self.files.file_dict.items():
-            if key not in self.info:
-                self.init_info(key)
-            if len(value) == 0:
-                self.update_info(key, 0)
+            assert isinstance(value, pd.DataFrame)
+            if value.empty or "id" not in value.columns:
                 continue
-            res = self.files.select_item_in_tag(len(value)-1, "id", key)
-            self.update_info(key, len(value), os.path.getmtime(res["filepath"]))
-
-        for key, info in self.info.items():
-            self.clean_info(key)
-
+            
             task = key.split('/')[-3]
 
-            if len(info["counts"]) == 0:
-                msg += "{} is empty for {:.2f} minutes.\n".format(task, (info["utimes"][-1] - info["itime"]) / 60)
+            value.dropna(axis=0, how='any', inplace=True)
+            value["id"] = value["id"].astype(int)
+            value.sort_values("id", ascending=True, inplace=True)
+            
+            if len(value) == 0:
+                msg += "| <font color=#FF0000>{}</font>; | 0; | 0; | 0; |  \n".format(task)
                 continue
 
-            if len(info["counts"]) < 5:
-                speed = -1
+            count = value.iloc[-1]["id"]
+            last_mtime = os.path.getmtime(value.iloc[-1]["filepath"])
+
+            if len(value) <= 10:
+                speed = (last_mtime - os.path.getmtime(value.iloc[0]["filepath"])) / len(value)
             else:
-                count = (info["counts"][-1] - info["counts"][-5])
-                if count != 0:
-                    speed = (info["utimes"][-1] - info["utimes"][-5])
-                else:
-                    speed = -1
-            msg += "{} last modify at {}, total {}, {:.2f} s/frame.\n".format(task, ymdhms_time(info["mtimes"][-1]), info["counts"][-1], speed)
+                speed = (last_mtime - os.path.getmtime(value.iloc[-10]["filepath"])) / 10
+            
+            if speed > 180:
+                color = "#FF0000"
+            elif speed > 120:
+                color = "#FF7F00"
+            else:
+                color = "#00FF00"
+            
+            msg += "| <font color={}>{}</font>; | {}; | {}; | {:.2f}; |  \n".format(color, task, ymdhms_time(last_mtime)[-8:], count, speed)
+
         return msg
 
     def init_info(self, key):
