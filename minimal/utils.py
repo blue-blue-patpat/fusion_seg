@@ -147,7 +147,7 @@ class LossManager():
         return sum([loss[i] for loss in self.losses.values()])
 
 
-def get_freer_gpu(key="util") -> int:
+def get_freer_gpu(key="util", required_memory=2000) -> int:
     import subprocess
 
     memory_available = [int(x.split()[2]) for x in subprocess.check_output('nvidia-smi -q -d Memory |grep -A4 GPU|grep Free', shell=True).decode().split("\n") if x]
@@ -156,5 +156,11 @@ def get_freer_gpu(key="util") -> int:
     print("Memory: ", memory_available)
     print("Util: ", util_available)
 
-    gpu_id = str(np.argmax(util_available if key == "util" else util_available))
+    for idx in range(len(memory_available)):
+        if memory_available[idx] < required_memory:
+            util_available[idx] = -1
+            memory_available[idx] = -1
+
+    gpu_id = str(np.argmax(util_available if key == "util" else memory_available))
+    
     return gpu_id
