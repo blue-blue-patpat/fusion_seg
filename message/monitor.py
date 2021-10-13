@@ -15,13 +15,10 @@ class FileMonitor():
         self.at_mobiles = at_mobiles
 
         self.files = ResultLoader(root_path)
-        self.files.params = self.update_dir()
-        self.files.run()
+        self.update_dir()
 
         self.bot = TimerBot(interval/5)
         self.bot.enable()
-
-        self.info = {}
 
     def run(self):
         while True:
@@ -34,10 +31,11 @@ class FileMonitor():
         params = [
             dict(tag=d, ext="*") for d in dir_list if d[-len(self.dir_key):] == self.dir_key
         ]
-        return params
+        self.files.params = params
+        self.files.run()
 
     def check_files(self):
-        self.files.run()
+        self.update_dir()
 
         msg = "# 【FileMonitor】 : {}  \n| task | mdf | cnt | avr |  \n| ---- | ---- | ---- | ---- |  \n".format(ymdhms_time())
         
