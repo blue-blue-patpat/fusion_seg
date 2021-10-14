@@ -15,7 +15,6 @@ class FileMonitor():
         self.at_mobiles = at_mobiles
 
         self.files = ResultLoader(root_path)
-        self.update_dir()
 
         self.bot = TimerBot(interval/5)
         self.bot.enable()
@@ -46,7 +45,7 @@ class FileMonitor():
             
             task = key.split('/')[-3]
 
-            value.dropna(axis=0, how='any', inplace=True)
+            value.fillna(0, inplace=True)
             value["id"] = value["id"].astype(int)
             value.sort_values("id", ascending=True, inplace=True)
             
