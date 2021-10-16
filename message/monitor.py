@@ -8,10 +8,12 @@ from message.dingtalk import TimerBot
 
 
 class FileMonitor():
-    def __init__(self, root_path, dir_key, ext: str = "*", interval: int = 600, at_mobiles: str = "") -> None:
+    def __init__(self, root_path, dir_key, ext: str = "*", interval: int = 600, ignore_time: int = 7200, at_mobiles: str = "") -> None:
         self.root_path = root_path
         self.dir_key = dir_key
+        self.ext = ext
         self.interval = interval
+        self.ignore_time = ignore_time
         self.at_mobiles = at_mobiles
 
         self.files = ResultLoader(root_path)
@@ -28,7 +30,7 @@ class FileMonitor():
     def update_dir(self):
         dir_list = file_paths_from_dir(self.root_path, '!', enable_print=True, collect_dir=True)
         params = [
-            dict(tag=d, ext="*") for d in dir_list if d[-len(self.dir_key):] == self.dir_key
+            dict(tag=d, ext=self.ext) for d in dir_list if d[-len(self.dir_key):] == self.dir_key
         ]
         self.files.params = params
         self.files.run()
@@ -55,6 +57,9 @@ class FileMonitor():
 
             count = value.iloc[-1]["id"]
             last_mtime = os.path.getmtime(value.iloc[-1]["filepath"])
+
+            if time.time() - last_mtime > self.ignore_time:
+                continue
 
             if len(value) <= 10:
                 speed = (last_mtime - os.path.getmtime(value.iloc[0]["filepath"])) / len(value)
