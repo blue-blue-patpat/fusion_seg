@@ -30,8 +30,8 @@ class MinimalInput:
             self.jnts_source = KINECT_SUB_MEAN_SOURCE
         self.pool = Pool(5)
 
-    def update(self, idx: int, pre_update: int=0):
-        update(self, idx)
+    def update(self, idx: int, pre_update: int=0, force_update: bool=False):
+        update(self, idx, force_update)
 
         for i in range(1, pre_update+1):
             self.pool.apply_async(update, (self, idx+i))
@@ -50,13 +50,20 @@ class MinimalInput:
             time.sleep(1)
             print("{} : [MinimalInput] Waiting for sub-process to collect data...".format(ymdhms_time()))
             wait_count += 1
-            if wait_count > 180:
+            # Retry every 30 seconds
+            if wait_count % 30 == 0:
+                print("{} : [MinimalInput] Retrying...".format(ymdhms_time()))
+                self.update(idx, force_update=True)
+            # Give up after 2 retries
+            if wait_count > 100:
                 raise RuntimeError("[MinimalInput] Waiting for too long and exit.")
         return self.input_dict[idx]
 
 
-def update(self: MinimalInput, idx: int):
-    if idx in self.input_dict.keys() or idx >= len(self.loader):
+def update(self: MinimalInput, idx: int, force_update: bool = False):
+    if idx in self.input_dict.keys() and not force_update:
+        return
+    if idx >= len(self.loader):
         return
     self.input_dict[idx] = dict(
         lock=True
