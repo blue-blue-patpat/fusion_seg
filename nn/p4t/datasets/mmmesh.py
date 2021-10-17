@@ -2,7 +2,6 @@ import os
 from typing import Tuple
 import numpy as np
 import random
-from numpy.core.fromnumeric import repeat
 from torch.utils.data import Dataset
 
 from dataloader.result_loader import ResultFileLoader
@@ -74,7 +73,7 @@ class MMMesh3D(Dataset):
         # filter radar_pcl with optitrack bounding box
         arbe_data = pcl_filter(mesh_vtx, np.hstack((arbe_pcl, arbe_feature)), 0.2)
 
-        if arbe_pcl.shape[0] < 50:
+        if arbe_data.shape[0] < 50:
             # remove bad frame
             return None, None
 
