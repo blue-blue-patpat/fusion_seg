@@ -10,14 +10,16 @@ import torchvision
 from sklearn.metrics import mean_squared_error
 import matplotlib.pyplot as plt
 import cv2
+from minimal.models import KinematicModel, KinematicPCAWrapper
+from minimal.config import SMPL_MODEL_1_0_MALE_PATH
+from minimal.armatures import SMPLArmature
 
 from nn.p4t import utils
 from nn.p4t.scheduler import WarmupMultiStepLR
 from nn.p4t.datasets.mmmesh import MMMesh3D
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
-from visualization.o3d_plot import NNPredLabelStreamPlot
-from optitrack.config import marker_lines
+from visualization.mesh_plot import MeshEvaluateStreamPlot
 
 
 def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, device, epoch, print_freq):
@@ -50,6 +52,8 @@ def evaluate(model, criterion, data_loader, device, visual=False, scale=1):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
     rmse_list = []
+
+    smpl_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_MALE_PATH, SMPLArmature, compute_mesh=False))
     with torch.no_grad():
         for clip, target, _ in metric_logger.log_every(data_loader, 100, header):
             clip = clip.to(device, non_blocking=True)
@@ -73,22 +77,21 @@ def evaluate(model, criterion, data_loader, device, visual=False, scale=1):
             if visual:
                 for b, batch in enumerate(clip):
                     arbe_frame = batch[-1][:,:3] * scale
-                    pred = output[b].reshape(-1, 3) * scale
-                    label = target[b].reshape(-1, 3) * scale
+                    pred = output[b]
+                    label = target[b]
                     yield dict(
-                        arbe_pcl = dict(
+                        radar_pcl = dict(
                             pcl = arbe_frame,
                             color = [0,1,0]
                         ),
-                        pred = dict(
-                            skeleton = pred,
-                            lines = marker_lines,
-                            colors = np.asarray([[1,0,0]] * len(marker_lines))
+                        pred_smpl = dict(
+                            params = pred,
+                            color = [1,0,0],
+                            model=smpl_model,
                         ),
-                        label = dict(
-                            skeleton = label,
-                            lines = marker_lines,
-                            colors = np.asarray([[0,0,1]] * len(marker_lines))
+                        label_smpl = dict(
+                            params = label,
+                            model=smpl_model,
                         )
                     )
             else:
@@ -126,7 +129,7 @@ def main(args):
             num_points=args.num_points,
             train=args.train
     )
-
+    print(dataset_all[1])
     train_size = int(0.9 * len(dataset_all))
     test_size = len(dataset_all) - train_size
     dataset_train, dataset_eval = torch.utils.data.random_split(dataset_all, [train_size, test_size])
@@ -181,7 +184,6 @@ def main(args):
             loss_list += loss
 
             rmse = np.mean(list(evaluate(model, criterion, data_loader_eval, device)))
-            print("RMSE:", rmse)
             rmse_list.append(rmse)
 
             fig.add_subplot(1, 1, 1).plot(loss_list)
@@ -214,16 +216,17 @@ def main(args):
         
     else:
         data_loader_test = torch.utils.data.DataLoader(dataset_all, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
-        plot = NNPredLabelStreamPlot()
         print("Start testing")
-        gen = evaluate(model, criterion, data_loader_test, device, visual=True, scale=dataset_all.normal_scale)
-        plot.show(gen, fps=15)
+        gen = evaluate(model, criterion, data_loader_test, device, visual=args.visual, scale=dataset_all.normal_scale)
+        if args.visual:
+            plot = MeshEvaluateStreamPlot()
+            plot.show(gen, fps=15)
 
 def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description='P4Transformer Model Training')
 
-    parser.add_argument('--data_path', default='/media/nesc525/perple', type=str, help='dataset')
+    parser.add_argument('--data_path', default='/media/nesc525/perple2', type=str, help='dataset')
     parser.add_argument('--seed', default=0, type=int, help='random seed')
     parser.add_argument('--model', default='P4Transformer', type=str, help='model')
     # input
@@ -245,7 +248,7 @@ def parse_args():
     parser.add_argument('--mlp_dim', default=2048, type=int, help='transformer mlp dim')
     # training
     parser.add_argument('-b', '--batch_size', default=14, type=int)
-    parser.add_argument('--epochs', default=50, type=int, metavar='N', help='number of total epochs to run')
+    parser.add_argument('--epochs', default=350, type=int, metavar='N', help='number of total epochs to run')
     parser.add_argument('-j', '--workers', default=10, type=int, metavar='N', help='number of data loading workers (default: 16)')
     parser.add_argument('--lr', default=0.01, type=float, help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')
@@ -260,6 +263,8 @@ def parse_args():
     parser.add_argument('--resume', default='', help='resume from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N', help='start epoch')
     parser.add_argument('--train', dest="train", action="store_true", help='train or test')
+    parser.add_argument('--visual', dest="visual", action="store_true", help='visual or not')
+
 
     args = parser.parse_args()
 

@@ -25,7 +25,7 @@ EXTRINSIC_MAS_ARBE = {
         [1,0,0],
         [0,0,1],
         [0,-1,0]]),
-    "t": np.asarray([0.05, 0, 0.1])
+    "t": np.asarray([0.03, 0, -0.08])
 }
 
 KINECT_SKELETON_LINES = np.asarray([

@@ -273,7 +273,7 @@ class ResultFileLoader():
     """
     def __init__(self, root_path: str, skip_head: int=0, skip_tail: int=0,
                  enabled_sources: list=None, disabled_sources: list=[],
-                 offsets: dict=None) -> None:
+                 offsets: dict=None, select_key: str="arbe") -> None:
         """
         ResultFileLoader init
 
@@ -289,6 +289,8 @@ class ResultFileLoader():
 
         self.skip_head = skip_head
         self.skip_tail = skip_tail
+
+        self.select_key = select_key
 
         # Init file sources
         if enabled_sources is None:
@@ -423,6 +425,60 @@ class ResultFileLoader():
 
         self.skip_head = self.skip_tail = 0
 
+    def select_radar_item_by_id(self, r_loader: ArbeResultLoader, idx: int) -> dict:
+        if "reindex" in self.sources:
+            arbe_res = r_loader.select_item(idx, "reindexed_id")
+        else:
+            arbe_res = r_loader[idx]
+
+        arbe_arr = None
+        if "arbe_pcl" in self.sources or "arbe" in self.sources:
+            arbe_arr = np.load(arbe_res["arbe"]["filepath"])
+            self.results.update(dict(
+                arbe=arbe_arr[:,:3]
+            ))
+        if "arbe_feature" in self.sources:
+            if arbe_arr is None:
+                arbe_arr = np.load(arbe_res["arbe"]["filepath"])
+            self.results.update(dict(
+                arbe_feature=arbe_arr[:,3:]
+            ))
+        self.info.update(dict(
+            arbe=arbe_res["arbe"]
+        ))
+        return arbe_res
+
+    def select_kinect_trans_item_by_id(self, k_loader: KinectResultLoader, idx: int) -> dict:
+        res = k_loader.select_item(idx, "id", False)
+
+        trans_mat = self.trans["kinect_{}".format(k_loader.device)]
+        if "kinect_skeleton" in self.sources:
+            self.results.update({
+                "{}_skeleton".format(k_loader.device): (np.load(
+                    res["kinect/{}/skeleton".format(k_loader.device)]["filepath"]
+                    )[:,:,:3].reshape(-1,3) @ k_loader.R.T + k_loader.t)
+                    / 1000 @ trans_mat["R"].T + trans_mat["t"]
+            })
+            self.info.update({
+                k_loader.device: res["kinect/{}/skeleton".format(k_loader.device)]
+            })
+        if "kinect_pcl" in self.sources:
+            pcl = np.load(res["kinect/{}/pcls".format(k_loader.device)]["filepath"]).reshape(-1, 3)
+            if "kinect_pcl_remove_zeros" in self.sources:
+                pcl = pcl[pcl.any(axis=1)]
+            self.results.update({
+                "{}_pcl".format(k_loader.device):  pcl / 1000 @ trans_mat["R"].T + trans_mat["t"],
+            })
+            self.info.update({
+                "{}_pcl".format(k_loader.device): res["kinect/{}/pcls".format(k_loader.device)]
+            })
+        if "kinect_color" in self.sources:
+            self.results.update({
+                "{}_color".format(k_loader.device): cv2.imread(res["kinect/{}/color".format(k_loader.device)]["filepath"]),
+            })
+
+        return res
+
     def select_kinect_trans_item_by_t(self, k_loader: KinectResultLoader, t: float) -> None:
         """
         Select Kinect transformed results by timestamp
@@ -493,60 +549,31 @@ class ResultFileLoader():
             optitrack = res["optitrack"]
         ))
 
-    def select_trans_mesh_item_by_rid(self, mesh_loader: MinimalLoader, rid: int) -> None:
+    def select_mesh_item(self, mesh_loader: MinimalLoader, idx: int, key: str = "rid") -> dict:
         """
         Select Mesh transformed results by radar id
         """
-        res = mesh_loader.select_item(rid, "rid", False)
-        if len(res["minimal/param"]) == 0:
+        mesh_res = mesh_loader.select_item(idx, key, False)
+        if len(mesh_res["minimal/param"]) == 0:
             self.results.update(dict(mesh_param=None, mesh_obj=None))
             self.info.update(dict(mesh=None))
-
-        trans_param = np.load(res["minimal/trans"]["filepath"])
-        
+       
         if "mesh_param" in self.sources:
             self.results.update(dict(
-                mesh_param=np.load(res["minimal/param"]["filepath"]),
-                mesh_R=trans_param["R"],
-                mesh_t=trans_param["t"],
-                mesh_scale=trans_param["scale"]
+                mesh_param=np.load(mesh_res["minimal/param"]["filepath"]),
             ))
         if "mesh_obj" in self.sources:
-            verts, faces, _ = load_obj(res["minimal/obj"]["filepath"])
-            verts = (verts @ trans_param["R"] + trans_param["t"]) * trans_param["scale"]
+            verts, faces, _ = load_obj(mesh_res["minimal/obj"]["filepath"])
             self.results.update(dict(
                 mesh_obj=(verts, faces[0]),
             ))
+        return mesh_res
 
-    def __getitem__(self, index: int) -> tuple:
+    def select_by_radar(self, index: int) -> tuple:
         """
         Returns the $index$^th radar frame with its synchronized frames of other devices
         """
-        i = index + self.skip_head
-        if index not in range(0, self.__len__()):
-            raise IndexError("[ResultFileLoader] Index out of range {}.".format(range(0, self.__len__())))
-        self.results = self.info = {}
-
-        if "reindex" in self.sources:
-            arbe_res = self.a_loader.select_item(i, "reindexed_id")
-        else:
-            arbe_res = self.a_loader[i]
-
-        arbe_arr = None
-        if "arbe_pcl" in self.sources or "arbe" in self.sources:
-            arbe_arr = np.load(arbe_res["arbe"]["filepath"])
-            self.results.update(dict(
-                arbe=arbe_arr[:,:3]
-            ))
-        if "arbe_feature" in self.sources:
-            if arbe_arr is None:
-                arbe_arr = np.load(arbe_res["arbe"]["filepath"])
-            self.results.update(dict(
-                arbe_feature=arbe_arr[:,3:]
-            ))
-        self.info = dict(
-            arbe=arbe_res["arbe"]
-        )
+        arbe_res =  self.select_radar_item_by_id(self.a_loader, index)
 
         t = float(arbe_res["arbe"]["st"])
         rid = int(arbe_res["arbe"]["id"])
@@ -558,8 +585,35 @@ class ResultFileLoader():
         if self.o_loader is not None:
             self.select_trans_optitrack_item_by_t(self.o_loader, t)
         if self.mesh_loader is not None:
-            self.select_trans_mesh_item_by_rid(self.mesh_loader, rid)
+            self.select_mesh_item(self.mesh_loader, rid, "rid")
         return self.results, self.info
+
+    def select_by_mesh(self, index: int) -> tuple:
+        mesh_res = self.select_mesh_item(self.mesh_loader, index, "id")
+
+        masid = int(mesh_res["minimal/param"]["masid"])
+
+        mas_res = self.select_kinect_trans_item_by_id(self.k_master_loader, masid)
+
+        mas_t = float(mas_res["kinect/master"]["st"])
+
+        # Skip kinect master
+        for device in self.kinect_devices[1:]:
+            if self.__dict__["k_{}_loader".format(device)] is not None and device in self.sources:
+                self.select_kinect_trans_item_by_t(self.__dict__["k_{}_loader".format(device)], mas_t)
+
+    def __getitem__(self, index: int) -> tuple:
+        self.results = {}
+        self.info = {}
+
+        i = index + self.skip_head
+        if index not in range(0, self.__len__()):
+            raise IndexError("[ResultFileLoader] Index out of range {}.".format(range(0, self.__len__())))
+
+        if self.select_key == "arbe":
+            return self.select_by_radar(i)
+        elif self.select_key == "mesh":
+            return self.select_by_mesh(i)
 
     def __len__(self):
         return len(self.a_loader) - self.skip_head - self.skip_tail

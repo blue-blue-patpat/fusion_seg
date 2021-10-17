@@ -28,7 +28,8 @@ class Processor():
 
     def criterion(self):
         # loss = nn.CrossEntropyLoss(reduction="none")
-        loss = nn.MSELoss(reduce=False)
+        # loss = nn.MSELoss(reduce=False, size_average=False)
+        loss = nn.MSELoss(reduction="none")
         return self.device.criterion_to_device(loss)
 
     def train(self, epoch):
@@ -64,7 +65,7 @@ class Processor():
         self.model.eval()
         for l_name in loader_name:
             loader = self.data_loader[l_name]
-            loss_mean = []
+            loss_list = []
             try:
                 for batch_idx, data in enumerate(loader):
                     image = self.device.data_to_device(data[0])
@@ -74,12 +75,15 @@ class Processor():
                     # Cal.calculate_all(self.model, image)
                     with torch.no_grad():
                         output = self.model(image)
-                    # loss = torch.mean(self.loss(output, label))
-                    loss_mean += np.sqrt(self.loss(output, label).cpu().detach().numpy()).tolist()
+                    loss = ((np.sqrt(torch.mean(self.loss(output, label),dim=1).cpu().detach().numpy())).T).tolist()
+                    loss_list += loss
                     # self.stat.update_accuracy(output.data.cpu(), label.cpu(), topk=self.topk)
+
             except:
                 print(batch_idx)
-            self.recoder.print_log('mean loss: ' + str(np.mean(loss_mean)))
+            loss_numpy=np.array(loss_list)
+            np.save('nn/plstm/experiments/loss_plstm.npy',loss_numpy)
+            self.recoder.print_log('mean loss: ' + str(np.mean(loss_list)))
 
     def Loading(self):
         self.device.set_device(self.arg.device)
@@ -197,9 +201,9 @@ class Processor():
                 self.print_inf_log(self.arg.optimizer_args['start_epoch'], "Valid")
             '''
             if self.arg.test_loader_args != {}:
-                self.stat.reset_statistic()
+                # self.stat.reset_statistic()
                 self.eval(loader_name=['test'])
-                self.print_inf_log(self.arg.optimizer_args['start_epoch'], "Test")
+                # self.print_inf_log(self.arg.optimizer_args['start_epoch'], "Test")
             self.recoder.print_log('Evaluation Done.\n')
 
     def print_inf_log(self, epoch, mode):

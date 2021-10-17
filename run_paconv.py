@@ -87,7 +87,7 @@ def train(args, io):
 
     device = torch.device("cuda" if args.cuda else "cpu")
     if args.arch == 'dgcnn':
-        from model.DGCNN_PAConv_copy_wF_copy import PAConv
+        from model.DGCNN_PAConv_copy_wF import PAConv
         model = PAConv(args).to(device)
     elif args.arch == 'pointnet':
         from model.PointNet_PAConv import PAConv
@@ -228,7 +228,7 @@ def test(args, io):
 
     model = nn.DataParallel(model)
     #需要修改模型位置
-    model.load_state_dict(torch.load("ignoredata/paconv/checkpoints/20211003_wF6/best_model.t7"))
+    model.load_state_dict(torch.load("/home/nesc525/chen/3DSVC/ignoredata/paconv/checkpoints/20211010-wF6-0.150891/best_model.t7"))
     #model.load_state_dict(torch.load("/home/nesc525/chen/3DSVC/nn/paconv/20210919-11:13/best_model.t7"))
     model = model.eval()
     count = 0.0
@@ -303,7 +303,7 @@ def test2(args, io):
 
     model = nn.DataParallel(model)
     #需要修改模型位置
-    model.load_state_dict(torch.load("/home/nesc525/chen/3DSVC/ignoredata/paconv/checkpoints/20211003-wF6-0.181834/best_model.t7"))
+    model.load_state_dict(torch.load("/home/nesc525/chen/3DSVC/ignoredata/paconv/checkpoints/20211010-wF6/best_model.t7"))
     #model.load_state_dict(torch.load("/home/nesc525/chen/3DSVC/nn/paconv/20210919-11:13/best_model.t7"))
     model = model.eval()
     count = 0.0
@@ -367,6 +367,6 @@ if __name__ == "__main__":
         if args.get('visual',True):
             plot = NNPredLabelStreamPlot()
             gen = test(args, io)
-            plot.show(gen, fps=15)
+            plot.show(gen, fps=5)
         else:
             test2(args, io)

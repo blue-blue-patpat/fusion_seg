@@ -34,7 +34,7 @@ class MMBody3D(Dataset):
 
         for idx, path in enumerate(videos_path):
             # init result loader
-            video_loader = ResultFileLoader(root_path=path, enabled_sources=["arbe", "optitrack"])
+            video_loader = ResultFileLoader(root_path=path, enabled_sources=["arbe", "arbe_feature", "optitrack"])
             # add video to list
             self.video_loaders.append(video_loader)
             # remove deduplicated arbe frames and head frames
@@ -56,24 +56,25 @@ class MMBody3D(Dataset):
         return data[r, :]
 
     def get_data(self, video_loader, id):
-        arbe_frame = np.load(video_loader.a_loader[id]["arbe"]["filepath"])[:,[0,1,2,3,7,8]]
-        label = video_loader[id][0]["optitrack"]
+        frame, info = video_loader[id]
+        arbe_pcl = frame["arbe"]
+        arbe_feature = frame["arbe_feature"][:, [0,4,5]]
+        arbe_data = np.hstack((arbe_pcl, arbe_feature))
+        label = frame["optitrack"]
         center = (label.max(axis=0) + label.min(axis=0))/2
         # filter arbe_pcl with optitrack bounding box
-        data = pcl_filter(label, arbe_frame, 0.2)
-        if data.shape[0] < 50:
+        arbe_data = pcl_filter(label, arbe_data, 0.2)
+        if arbe_data.shape[0] < 50:
             # remove bad frame
-            data = None
+            arbe_data = None
         else:
             # normalization
-            data[:,:3] = (data[:,:3] - center)/self.normal_scale
-            data[:,3] /= 5e-38
-            data[:,4] /= 5
-            data[:,5] /= 150
+            arbe_data[:,:3] = (arbe_data[:,:3] - center)/self.normal_scale
+            arbe_data[:,3:] /= np.array([5e-38, 5, 150])
             # padding
-            data = self.pad_data(data)
+            arbe_data = self.pad_data(arbe_data)
         label = np.asarray(((label - center) / self.normal_scale).reshape(-1), dtype=np.float32)
-        return data, label
+        return arbe_data, label
 
     def __len__(self):
         return len(self.index_map)
@@ -89,7 +90,7 @@ class MMBody3D(Dataset):
         while True:
             anchor_frame, label = self.get_data(video_loader, id)
             if anchor_frame is None:
-                i = random.randint(4, len(ids)-1)
+                i = random.randint(self.clip_range-1, len(ids)-1)
                 id = ids[i]
             else:
                 break

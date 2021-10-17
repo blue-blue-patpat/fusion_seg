@@ -24,7 +24,7 @@ def postprocess(root_path, *devices, output_path=""):
 
     def process(device):
         mkv_path = os.path.join(root_path, "kinect", device)
-        os.system("ignoredata/kinect_files/offline_processor {}/out.mkv {}/out.json".format(mkv_path, mkv_path))
+        os.system("/home/nesc525/chen/kinect/Azure-Kinect-Samples/build/bin/offline_processor {}/out.mkv {}/out.json".format(mkv_path, mkv_path))
         extract_skeleton(root_path, device)
 
     for device in devices:
@@ -46,14 +46,20 @@ def visualize():
 
 def run():
     import argparse
+    task_dict = dict(
+        null=exit,
+        postprocess=postprocess,
+    )
     parser = argparse.ArgumentParser(usage='"run_postptocess.py -h" to show help.')
     parser.add_argument('-p', '--path', dest='root_path', type=str, help='File Root Path, default "./__test__/default"')
     parser.add_argument('-d', '--device', dest='device', type=str,
                         default='master,sub1,sub2', help='Process Devices, default "master,sub1,sub2"')
+    parser.add_argument('-t', '--task', dest='task', type=str,
+                        choices=list(task_dict.keys()), default='postprocess', help='Run Target, default "null". {}'.format(task_dict))
+
     args = parser.parse_args()
 
-    postprocess(args.root_path, *args.device.split(','))
-
+    task_dict[args.task](args.root_path, *args.device.split(','))
 
 if __name__ == '__main__':
     run()
