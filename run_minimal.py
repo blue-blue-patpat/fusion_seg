@@ -1,5 +1,6 @@
 import os
 import gc
+import json
 import argparse
 from time import sleep
 import numpy as np
@@ -207,7 +208,17 @@ def stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2,
         _Wrapper = KinematicPCAWrapperTorch
         _Solver = SolverTorch
 
-    smpl = _Model(device=_device).init_from_file(config.SMPL_MODEL_1_0_MALE_PATH, armatures.SMPLArmature)
+    record_info_path = os.path.join(root_path, "infomation.json")
+
+    # female model by default
+    model_path = config.SMPL_MODEL_1_0_PATH
+    if os.path.exists(record_info_path):
+        with open(record_info_path, "r") as f:
+            record_info = json.load(f)
+            if record_info.get(" gender", None) == "male" or record_info.get("gender", None) == "male":
+                model_path = config.SMPL_MODEL_1_0_MALE_PATH
+
+    smpl = _Model(device=_device).init_from_file(model_path, armatures.SMPLArmature)
     wrapper = _Wrapper(smpl)
     solver = _Solver(wrapper, plot_type=plot_type)
 

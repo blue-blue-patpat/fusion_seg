@@ -1,4 +1,5 @@
 import os
+from time import sleep
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -150,17 +151,28 @@ class LossManager():
 def get_freer_gpu(key="util", required_memory=2000) -> int:
     import subprocess
 
-    memory_available = [int(x.split()[2]) for x in subprocess.check_output('nvidia-smi -q -d Memory |grep -A4 GPU|grep Free', shell=True).decode().split("\n") if x]
-    util_available = 100 - np.array([int(x.split()[2]) for x in subprocess.check_output('nvidia-smi -q -d UTILIZATION |grep -A4 GPU|grep Gpu', shell=True).decode().split("\n") if x])
+    memory_available = []
+    util_available = []
+
+    for i in range(5):
+        memory_available.append([int(x.split()[2]) for x in subprocess.check_output('nvidia-smi -q -d Memory |grep -A4 GPU|grep Free', shell=True).decode().split("\n") if x])
+        util_available.append(100 - np.array([int(x.split()[2]) for x in subprocess.check_output('nvidia-smi -q -d UTILIZATION |grep -A4 GPU|grep Gpu', shell=True).decode().split("\n") if x]))
+        sleep(1)
+
+    memory_available = np.mean(memory_available, axis=0)
+    util_available = np.mean(util_available, axis=0)
 
     print("Memory: ", memory_available)
     print("Util: ", util_available)
 
+    free_score = np.array(memory_available)/1000 + np.array(util_available)
+
     for idx in range(len(memory_available)):
         if memory_available[idx] < required_memory:
-            util_available[idx] = -1
-            memory_available[idx] = -1
+            free_score[idx] = -1
 
-    gpu_id = str(np.argmax(util_available if key == "util" else memory_available))
+    print(free_score)
+
+    gpu_id = str(np.argmax(free_score))
     
     return gpu_id
