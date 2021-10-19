@@ -1,6 +1,8 @@
 import numpy as np
 import math
 
+from visualization.utils import o3d_box, o3d_pcl, o3d_plot
+
 
 class JointsBridge():
     def __init__(self) -> None:
@@ -54,11 +56,15 @@ class JointsBridge():
         lower_bound = self.jnts.min(axis=0) - 0.3
         lower_bound[2] += 0.31
         pcl_in_bound = (self.pcl < upper_bound) & (self.pcl > lower_bound)
+        
+        # o3d_plot([o3d_box(upper_bound, lower_bound), o3d_pcl(self.pcl)])
 
         filter_list = []
         for row in pcl_in_bound:
             filter_list.append(False if False in row else True)
         self.pcl = np.array(list(compress(self.pcl, filter_list)))
+        if self.pcl.shape[0] == 0:
+            self.pcl = np.zeros([1,3])
     
     def kinect_joints_transform(self): 
         # translate

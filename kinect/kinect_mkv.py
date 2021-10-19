@@ -1,4 +1,5 @@
 from argparse import ArgumentParser
+from time import sleep
 
 from typing import Optional, Tuple
 
@@ -100,6 +101,10 @@ def save(playback: PyK4APlayback, save_path="./", **kwargs):
             break
     pool.close()
     pool.join()
+
+    while info[0] > info[1]:
+        print("{} : [Kinect MKV] Extracting {}/{} frame.".format(ymdhms_time(), info[1], info[0]), end="\r")
+        sleep(0.1)
     print()
 
 

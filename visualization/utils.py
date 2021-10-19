@@ -35,6 +35,48 @@ def o3d_pcl(pcl: np.ndarray = None, color: list = None, colors: list = None, las
     return _pcl
 
 
+def o3d_box(upper_bounds: np.ndarray = None, lower_bounds: np.ndarray = None, color: list = [1,0,0], last_update = None):
+    _box = last_update
+    if _box is None:
+        _box = o3d.geometry.LineSet()
+        _box.lines = o3d.utility.Vector2iVector(
+            [
+                [0, 1],
+                [1, 2],
+                [2, 3],
+                [3, 0],
+                [4, 5],
+                [5, 6],
+                [6, 7],
+                [7, 4],
+                [0, 4],
+                [1, 5],
+                [2, 6],
+                [3, 7]
+            ]
+        )
+    
+    if upper_bounds is not None and lower_bounds is not None:
+        x_u, y_u, z_u = upper_bounds
+        x_l, y_l, z_l = lower_bounds
+        _box.points = o3d.utility.Vector3dVector(
+            [
+                [x_u, y_u, z_u],
+                [x_l, y_u, z_u],
+                [x_l, y_l, z_u],
+                [x_u, y_l, z_u],
+                [x_u, y_u, z_l],
+                [x_l, y_u, z_l],
+                [x_l, y_l, z_l],
+                [x_u, y_l, z_l],
+            ]
+        )
+    if color is None:
+        colors = np.repeat([color], 8, axis=0)
+        _box.colors = o3d.utility.Vector3dVector(colors)
+    return _box
+
+
 def o3d_skeleton(skeleton: np.ndarray = None, lines: np.ndarray = None,
                  color: list = [1,0,0], colors: list = None,
                  last_update = None):
