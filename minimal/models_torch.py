@@ -2,6 +2,7 @@ import pickle
 import torch
 from torch.nn import Module
 from pytorch3d.structures import Meshes
+from minimal.armatures import SMPLArmature
 
 
 class KinematicModel(Module):
@@ -37,7 +38,7 @@ class KinematicModel(Module):
 
         return self
 
-    def init_from_file(self, model_path, armature, scale=1, compute_mesh=True):
+    def init_from_file(self, model_path, armature=SMPLArmature(), scale=1, compute_mesh=True):
 
         """
         Parameters

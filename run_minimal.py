@@ -266,7 +266,7 @@ def stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2,
 
             _jnts, _pcl = jnts_brg.map(data_type)
 
-            init_pose = np.zeros(solver.model.n_pose + solver.model.n_coord)
+            init_pose = np.zeros(solver.model.n_pose + solver.model.n_coord + solver.model.n_glb)
             # translation
             init_pose[:3] = -(_jnts.max(axis=0) + _jnts.min(axis=0))/2
             # rotation

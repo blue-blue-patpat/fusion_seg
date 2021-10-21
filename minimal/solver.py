@@ -33,7 +33,7 @@ class Solver:
         self.plot_type = plot_type
 
         # coord_origin + pose_params
-        self.pose_params = np.zeros(self.model.n_pose + 3)
+        self.pose_params = np.zeros(self.model.n_pose + self.model.n_glb + self.model.n_coord)
         self.shape_params = np.zeros(self.model.n_shape)
 
         self.vp, _ = load_model(VPOSER_DIR, model_code=VPoser,
@@ -134,9 +134,9 @@ class Solver:
         if isinstance(params, (np.lib.npyio.NpzFile, dict)):
             self.pose_params = params["pose"]
             self.shape_params = params["shape"]
-        elif params.shape[0] == self.model.n_pose + self.model.n_coord:
+        elif params.shape[0] == self.model.n_pose + self.model.n_coord + self.model.n_glb:
             self.pose_params = params
-        elif params.shape[0] == self.model.n_params - 3 + self.model.n_coord:
+        elif params.shape[0] == self.model.n_params + self.model.n_coord + self.model.n_glb:
             self.pose_params, self.shape_params = params[:self.model.n_pose + self.model.n_coord], params[-self.model.n_shape:]
         else:
             raise RuntimeError("Invalid params")

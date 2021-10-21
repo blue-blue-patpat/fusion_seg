@@ -245,9 +245,12 @@ def file_paths_from_dir(path, extension='*', enable_print=True, collect_dir=Fals
     """
     if enable_print:
         print('Loading {} from {}'.format(extension, path))
-    dir = os.listdir(path)
+    try:
+        dir_list = os.listdir(path)
+    except:
+        dir_list = []
     filepaths = []
-    for f in dir:
+    for f in dir_list:
         _path = os.path.join(path, f)
         if os.path.isdir(_path):
             if collect_dir:

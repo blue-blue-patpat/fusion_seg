@@ -34,7 +34,7 @@ class Solver:
         self.device = model.core.device
 
         # coord_origin + pose_params
-        self.pose_params = torch.zeros(self.model.n_pose + 3, device=self.device)
+        self.pose_params = torch.zeros(self.model.n_pose + self.model.n_glb + self.model.n_coord, device=self.device)
         self.shape_params = torch.zeros(self.model.n_shape, device=self.device)
 
         self.vp, _ = load_model(VPOSER_DIR, model_code=VPoser,
@@ -141,10 +141,10 @@ class Solver:
         if isinstance(params, np.ndarray):
             params = torch.from_numpy(params).to(self.device)
 
-        if params.shape[0] == self.model.n_pose + self.model.n_coord:
+        if params.shape[0] == self.model.n_pose + self.model.n_coord + self.model.n_glb:
             self.pose_params = params
-        elif params.shape[0] == self.model.n_params - 3 + self.model.n_coord:
-            self.pose_params, self.shape_params = params[:self.model.n_pose + self.model.n_coord], params[-self.model.n_shape:]
+        elif params.shape[0] == self.model.n_params + self.model.n_coord:
+            self.pose_params, self.shape_params = params[:self.model.n_pose + self.model.n_coord + self.model.n_glb], params[-self.model.n_shape:]
         else:
             raise RuntimeError("Invalid params")
 
@@ -198,37 +198,6 @@ class Solver:
 
     def save_model(self, file_path):
         self.model.core.save_obj(file_path)
-
-
-def get_derivative_wrapper(model, n, params, eps):
-    # model, n, params, eps = args
-
-    _model = KinematicModel().init_from_model(model)
-
-    params1 = params.clone()
-    params2 = params.clone()
-
-    model.compute_mesh = False
-
-    params1[n] += eps
-    res1 =  _model.set_params(*decode_wrapper(model, params1))[1]
-
-    params2[n] -= eps
-    res2 =  _model.set_params(*decode_wrapper(model, params2))[1]
-
-    d = (res1 - res2) / (2 * eps)
-
-    # print(d)
-
-    return d.view(-1)
-
-
-def decode_wrapper(model, params):
-    coord_origin = params[:3]
-    pose_glb = params[3:6]
-    pose_pca = params[6:-model.n_shape_params]
-    shape = params[-model.n_shape_params:]
-    return coord_origin, None, pose_pca, pose_glb, shape
 
 
 def jnts_distance(kpts_updated: torch.Tensor, kpts_target: torch.Tensor, activate_distance):
