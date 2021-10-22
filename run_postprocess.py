@@ -32,9 +32,10 @@ def postprocess(root_path, *devices, output_path=""):
         # pool.apply_async(process, (device,))
         # process(device)
     mkv_loader = KinectMKVtLoader(root_path, params)
-    # pool.map_async(extract_mkv, mkv_list)
-    for mkv in mkv_loader.mkvs.values():
-        extract_mkv(mkv)
+    mkv_list = [m.loc[0,"filepath"] for m in mkv_loader.file_dict.values()]
+    pool.map_async(extract_mkv, mkv_list)
+    # for mkv in mkv_loader.mkvs.values():
+    #     extract_mkv(mkv)
 
     pool.close()
     pool.join()
