@@ -154,6 +154,13 @@ def get_freer_gpu(key="util", required_memory=2000) -> int:
     memory_available = []
     util_available = []
 
+    for i in range(8):
+        if not os.path.exists(".gpu_lock"):
+            break
+        sleep(np.random.random_integers(3, 10))
+    
+    os.mknod(".gpu_lock")
+
     for i in range(5):
         memory_available.append([int(x.split()[2]) for x in subprocess.check_output('nvidia-smi -q -d Memory |grep -A4 GPU|grep Free', shell=True).decode().split("\n") if x])
         util_available.append(100 - np.array([int(x.split()[2]) for x in subprocess.check_output('nvidia-smi -q -d UTILIZATION |grep -A4 GPU|grep Gpu', shell=True).decode().split("\n") if x]))
@@ -174,5 +181,7 @@ def get_freer_gpu(key="util", required_memory=2000) -> int:
     print(free_score)
 
     gpu_id = str(np.argmax(free_score))
+
+    os.remove(".gpu_lock")
     
     return gpu_id
