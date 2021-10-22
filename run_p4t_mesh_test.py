@@ -20,31 +20,21 @@ from nn.p4t.datasets.mmmesh import MMMesh3D
 from nn.SMPL.smpl_layer import SMPLVerticesLoss
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
-from visualization.mesh_plot import MeshEvaluateStreamPlot, MeshEvaluateSinglePlot
+from visualization.mesh_plot import MeshEvaluateStreamPlot
 
 
-def train_one_epoch(model, criterions, optimizer, lr_scheduler, data_loader, device, epoch, print_freq, loss_weight):
+def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, device, epoch, print_freq):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value}'))
     metric_logger.add_meter('clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.3f}'))
 
     header = 'Epoch: [{}]'.format(epoch)
-    index = 0
-    rotxyz_losses = []
-    mse_losses = []
-    smpl_losses = []
     for clip, target, _ in metric_logger.log_every(data_loader, print_freq, header):
         start_time = time.time()
         clip, target = clip.to(device), target.to(device)
         output = model(clip)
-
-        rotxyz_losses.append(criterions[0](output[:,0:5], target[:,0:5]))
-        mse_losses.append(criterions[0](output[:,6:82], target[:,6:82]))
-        smpl_losses.append(criterions[1](output, target))
-
-        #loss = torch.sum(torch.stack(losses, dim=0))
-        loss = loss_weight[0]*rotxyz_losses[index]+loss_weight[1]*mse_losses[index]+loss_weight[2]*smpl_losses[index]
+        loss = criterion(output, target)
 
         optimizer.zero_grad()
         loss.backward()
@@ -56,15 +46,10 @@ def train_one_epoch(model, criterions, optimizer, lr_scheduler, data_loader, dev
         metric_logger.meters['clips/s'].update(batch_size / (time.time() - start_time))
         lr_scheduler.step()
         sys.stdout.flush()
-        index += 1
-    rotxyz_losses= torch.Tensor(rotxyz_losses)
-    mse_losses= torch.Tensor(mse_losses)
-    smpl_losses= torch.Tensor(smpl_losses)
-    losses = np.average(np.stack((rotxyz_losses,smpl_losses,smpl_losses),axis=0),axis = 1)
-    return list(metric_logger.meters['loss'].deque), losses
+    return list(metric_logger.meters['loss'].deque)
 
 
-def evaluate(model, criterion, data_loader, device, loss_weight, visual=False, scale=1):
+def evaluate(model, criterion, data_loader, device, visual=False, scale=1):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
@@ -145,10 +130,8 @@ def main(args):
             step_between_clips=1,
             num_points=args.num_points,
             normal_scale=args.normal_scale,
-            skip_head=args.skip_head,
             train=args.train
     )
-
     train_size = int(0.9 * len(dataset_all))
     test_size = len(dataset_all) - train_size
     dataset_train, dataset_eval = torch.utils.data.random_split(dataset_all, [train_size, test_size])
@@ -170,11 +153,10 @@ def main(args):
         model = nn.DataParallel(model)
     model.to(device)
 
-    mse_criterion = nn.MSELoss()
-    smpl_criterion = SMPLVerticesLoss(device=device, scale=args.normal_scale)
+    criterion = nn.MSELoss()
 
     lr = args.lr
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     # convert scheduler to be per iteration, not per epoch, for warmup that lasts
     # between different epochs
@@ -195,33 +177,28 @@ def main(args):
         print("Start training")
         start_time = time.time()
         fig = plt.figure()
+        fig1 = plt.figure()
         loss_list = []
         epoch_loss_list = []
-        rotxyz_loss_list = []
-        mse_loss_list = []
-        smpl_loss_list = []
         rmse_list = []
         bot =TimerBot()
         dingbot = True
-        loss_weight = list(map(float, args.loss_weight.split(",")))
         for epoch in range(args.start_epoch, args.epochs):
-            loss, losses = train_one_epoch(model, (mse_criterion, smpl_criterion), optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq, loss_weight)
+            loss = train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq)
             loss_list += loss
-            epoch_loss_list.append(np.mean(loss,axis=0))
-            rotxyz_loss_list.append(losses[0])
-            mse_loss_list.append(losses[1])
-            smpl_loss_list.append(losses[2])
-            rmse = np.mean(list(evaluate(model, mse_criterion,data_loader_eval, device, loss_weight)))
+
+            rmse = np.mean(list(evaluate(model, criterion, data_loader_eval, device)))
             rmse_list.append(rmse)
-            fig.add_subplot(2, 3, 1, title='loss').plot(loss_list)
-            fig.add_subplot(2, 3, 2, title='epoch_loss').plot(epoch_loss_list)
-            fig.add_subplot(2, 3, 3, title='rotxyz_loss').plot(rotxyz_loss_list)
-            fig.add_subplot(2, 3, 4, title='mse_loss').plot(mse_loss_list)
-            fig.add_subplot(2, 3, 5, title='smpl_loss').plot(smpl_loss_list)
+
+            fig.add_subplot(1, 1, 1).plot(loss_list)
+            fig1.add_subplot(1, 1, 1).plot(epoch_loss_list)
             fig.canvas.draw()
+            fig1.canvas.draw()
             img = cv2.cvtColor(np.asarray(fig.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
+            img1 = cv2.cvtColor(np.asarray(fig1.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
             if args.output_dir:
                 cv2.imwrite(os.path.join(args.output_dir, 'loss.png'), img)
+                cv2.imwrite(os.path.join(args.output_dir, 'epoch_loss.png'), img1)
 
             if dingbot:
                 bot.add_md("tran_mmbody", "【LOSS】 \n ![img]({}) \n 【RMSE】\n epoch={}, rmse={}".format(bot.img2b64(img), epoch, rmse))
@@ -248,9 +225,8 @@ def main(args):
     else:
         data_loader_test = torch.utils.data.DataLoader(dataset_all, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
         print("Start testing")
-        gen = evaluate(model, mse_criterion, data_loader_test, device, visual=True, scale=args.normal_scale)
-        # plot = MeshEvaluateStreamPlot()
-        plot = MeshEvaluateSinglePlot()
+        gen = evaluate(model, criterion, data_loader_test, device, visual=True, scale=dataset_all.normal_scale)
+        plot = MeshEvaluateStreamPlot()
         plot.show(gen, fps=15)
 
 def parse_args():
@@ -264,7 +240,6 @@ def parse_args():
     parser.add_argument('--clip_len', default=5, type=int, metavar='N', help='number of frames per clip')
     parser.add_argument('--num_points', default=1024, type=int, metavar='N', help='number of points per frame')
     parser.add_argument('--normal_scale', default=10, type=int, metavar='N', help='normal scale of labels')
-    parser.add_argument('--skip_head', default=0, type=int, metavar='N', help='number of skip frames')
     # P4D
     parser.add_argument('--radius', default=0.7, type=float, help='radius for the ball query')
     parser.add_argument('--nsamples', default=32, type=int, help='number of neighbors for the ball query')
@@ -289,7 +264,6 @@ def parse_args():
     parser.add_argument('--lr_milestones', nargs='+', default=[100,200], type=int, help='decrease lr on milestones')
     parser.add_argument('--lr_gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
     parser.add_argument('--lr_warmup_epochs', default=10, type=int, help='number of warmup epochs')
-    parser.add_argument('--loss_weight', default="0.5,0.5,0.5", type=str, help='weight of loss')
     # output
     parser.add_argument('--print_freq', default=10, type=int, help='print frequency')
     parser.add_argument('--output_dir', default='', type=str, help='path where to save')
@@ -297,6 +271,7 @@ def parse_args():
     parser.add_argument('--resume', default='', help='resume from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N', help='start epoch')
     parser.add_argument('--train', dest="train", action="store_true", help='train or test')
+
 
     args = parser.parse_args()
 

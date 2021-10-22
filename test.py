@@ -64,7 +64,7 @@ if __name__ == "__main__":
     
     # from visualization.o3d_plot import OptitrackArbeStreamPlot
     # from multiprocessing import Pool
-    # root_path = "/media/nesc525/perple1t/2021-10-05_10-39-29"
+    # root_path = "/home/nesc525/drivers/2/2021-10-20_14-06-35"
 
     # plot = OptitrackArbeStreamPlot(root_path, [0,-1,0,10])
     # plot.show()
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     import os
     # extract_skeleton(root_path, "master")
     # from dataloader.result_loader import OptitrackCSVLoader
-    root_path = "/media/nesc525/perple2"
+    root_path = "/home/nesc525/drivers/2"
     # csv_file = OptitrackCSVLoader(root_path)
     # if len(csv_file):
     #     parse_opti_csv(csv_file.file_dict["optitrack"].loc[0,"filepath"])
@@ -101,28 +101,89 @@ if __name__ == "__main__":
     # arr = np.load("/home/nesc525/chen/3DSVC/__test__/default/arbe/id=92_st=1632382661.6592233_dt=1632382661.6915216.npy")
     # print(max(arr[:,8]))
 
-    # from run_postprocess import postprocess
-    # for p in os.listdir(root_path):
-    #     if p[-1] == 'N':
-    #         postprocess(os.path.join(root_path, p))
+    from run_postprocess import postprocess
+    for p in os.listdir(root_path):
+        if p[-1] == 'T':
+            postprocess(os.path.join(root_path, p))
 
-    from nn.p4t.datasets.mmbody import MMBody3D
-    import pickle
-    import numpy as np
+    # from nn.p4t.datasets.mmbody import MMBody3D
+    # import pickle
+    # import numpy as np
+    # trans_dict = np.load("/home/nesc525/drivers/2/2021-10-20_14-06-35/calib/optitrack/optitrack_to_radar.npz")
+    # print(trans_dict["t"])
+    # R = trans_dict["R"]
+    # t = np.asarray([-0.10785812,  3.34839662, -1.00739306])
+    # np.savez("/home/nesc525/drivers/2/2021-10-20_14-06-35/calib/optitrack/optitrack_to_radar.npz", R=R, t=t)
 
-    dataset_all = MMBody3D(
-            root_path=root_path,
-            frames_per_clip=1,
-            step_between_clips=1,
-            num_points=1024,
-            train=True
-    )
-    train_data = []
-    label_data = []
-    for clip, label, _ in dataset_all:
-        train_data.append(np.squeeze(clip))
-        label_data.append(np.reshape(label, (37, 3)))
-    with open("ignoredata/p4t/train_data", 'wb') as f:
-        pickle.dump(train_data, f)
-    with open("ignoredata/p4t/label_data", 'wb') as f:
-        pickle.dump(label_data, f)
+    # dataset_all = MMBody3D(
+    #         root_path=root_path,
+    #         frames_per_clip=1,
+    #         step_between_clips=1,
+    #         num_points=1024,
+    #         train=False
+    # )
+    # train_data = []
+    # label_data = []
+    # for clip, label, _ in dataset_all:
+    #     train_data.append(clip)
+    #     label_data.append(label)
+    #     if True in np.isnan(label):
+    #         print()
+    # with open("ignoredata/p4t/data/test/X_data", 'wb') as f:
+    #     pickle.dump(train_data, f)
+    # with open("ignoredata/p4t/data/test/y_data", 'wb') as f:
+    #     pickle.dump(label_data, f)
+
+    # rmse_list = []
+    # with open("ignoredata/paconv/test_result/test_RMSE-woF.txt", 'r') as f:
+    #     while True:
+    #         t = f.readline()
+    #         if t:
+    #             rmse_list.append(float(t))
+    #         else:
+    #             break
+    # np.save("ignoredata/paconv/test_result/test_RMSE-woF", np.asarray(rmse_list))
+
+    # import numpy as np
+    # import matplotlib.pyplot as plt
+    # from scipy.interpolate import make_interp_spline
+
+    # def plot_rmse(arr, color, label):
+    #     hist, bin_edges = np.histogram(arr, bins=10, range=[0,0.2])
+    #     cdf = np.cumsum(hist)/arr.size
+    #     model = make_interp_spline(bin_edges[:-1], cdf, bc_type="natural")
+    #     xs = np.linspace(0, 0.2, 100)
+    #     ys = model(xs)
+    #     plt.plot(xs, ys, color=color, label=label)
+
+    # p4t_rmse_rs_01 = np.load("ignoredata/p4t/r_s=0.1/rmse.npy")[:,2]
+    # p4t_rmse_rs_05 = np.load("ignoredata/p4t/r_s=0.5/rmse.npy")[:,2]
+    # p4t_rmse_rs_07 = np.load("ignoredata/p4t/r_s=0.7/rmse.npy")[:,2]
+    # p4t_rmse_rs_09 = np.load("ignoredata/p4t/r_s=0.9/rmse.npy")[:,2]
+    # p4t_rmse_rs_13 = np.load("ignoredata/p4t/r_s=1.3/rmse.npy")[:,2]
+    # p4t_rmse_cl_01 = np.load("ignoredata/p4t/c_l=1/rmse.npy")[:,2]
+    # p4t_rmse_rt_00 = np.load("ignoredata/p4t/r_t=0/rmse.npy")[:,2]
+    # p4t_rmse_rt_02 = np.load("ignoredata/p4t/r_t=2/rmse.npy")[:,2]
+    # paconv_rmse_wF3 = np.load("ignoredata/paconv/test_result/test_RMSE-wF3.npy")
+    # paconv_rmse_wF6 = np.load("ignoredata/paconv/test_result/test_RMSE-wF6.npy")
+    # paconv_rmse_woF = np.load("ignoredata/paconv/test_result/test_RMSE-woF.npy")
+    # plstm_rmse = np.load("/home/nesc525/chen/3DSVC/ignoredata/plstm/loss_plstm.npy")
+
+    # plot_rmse(p4t_rmse_rs_01, 'red', 'r_s=0.1')
+    # plot_rmse(p4t_rmse_rs_05, 'orange', 'r_s=0.5')
+    # plot_rmse(p4t_rmse_rs_07, 'yellow', 'r_s=0.7')
+    # plot_rmse(p4t_rmse_rs_09, 'green', 'r_s=0.9')
+    # plot_rmse(p4t_rmse_rs_13, 'indigo', 'r_s=1.3')
+    # plot_rmse(p4t_rmse_cl_01, 'blue', 'c_l=1')
+    # plot_rmse(p4t_rmse_rt_00, 'violet', 'r_t=0')
+    # plot_rmse(p4t_rmse_rt_02, 'pink', 'r_t=2')
+    # # plot_rmse(paconv_rmse_wF3, 'cyan', 'f=3')
+    # # plot_rmse(paconv_rmse_wF6, 'black', 'f=6')
+    # # plot_rmse(paconv_rmse_woF, 'grey', 'f=0')
+    # # plot_rmse(plstm_rmse, 'gold', 'plstm')
+
+    # plt.xlabel("error (m)")
+    # plt.ylabel("percentage")
+    # plt.legend(loc="lower right")
+    # plt.show()
+    

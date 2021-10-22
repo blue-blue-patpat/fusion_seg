@@ -27,6 +27,9 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.cluster import DBSCAN
 
+
+dt_list = []
+
 class ArbeSubscriber(rospy.Subscriber):
     """
     Arbe Subscriber
@@ -81,9 +84,13 @@ class ArbeSubscriber(rospy.Subscriber):
 
 
 def arbe_process(msg, file_path, infodata, dt_base):
+    global dt_list
     # _msg_to_dataframe(msg).to_csv(os.path.join(save_path, '{}.csv'.format(ts)))
     data = np.array(_msg_to_dataframe(msg))
-    np.save(file_path + str(dt_base + float(data[0][-1]) / 1000), data)
+    dt = data[0][-1]
+    if not dt in dt_list:
+        np.save(file_path + str(dt_base + float(data[0][-1]) / 1000), data)
+        dt_list.append(dt)
     infodata[0] += 1
 
 

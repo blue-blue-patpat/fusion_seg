@@ -100,6 +100,28 @@ class MeshEvaluateStreamPlot(O3DStreamPlot):
     def init_show(self):
         super().init_show()
         self.ctr.set_up(np.array([[0],[0],[1]]))
-        self.ctr.set_front(np.array([[0.2],[-1],[0]]))
-        self.ctr.set_lookat(np.array([0,4,0]))
-        self.ctr.set_zoom(0.6)
+        self.ctr.set_front(np.array([[0],[-1],[0]]))
+        self.ctr.set_lookat(np.array([0,0,0]))
+        self.ctr.set_zoom(1)
+
+class MeshEvaluateSinglePlot(O3DStreamPlot):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(width=1800, *args, **kwargs)
+
+    def init_updater(self):
+        self.plot_funcs = dict(
+            radar_pcl=o3d_pcl,
+            pred_smpl=o3d_smpl_mesh,
+            label_smpl=o3d_smpl_mesh,
+        )
+
+    def init_show(self):
+        super().init_show()
+        self.ctr.set_up(np.array([[0],[0],[1]]))
+        self.ctr.set_front(np.array([[0],[-1],[0]]))
+        self.ctr.set_lookat(np.array([0,0,0]))
+        self.ctr.set_zoom(1)
+
+    def show(self, gen, fps=30):
+        for update_dict in gen:
+            o3d_plot(list(update_dict.values()))
