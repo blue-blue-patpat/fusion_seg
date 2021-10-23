@@ -88,13 +88,13 @@ def singel_minimal(jnts, pcl, save_path, scale=1, dbg_level=-1, plot_type="open3
 
     dbg_level = int(dbg_level)
 
-    mesh = KinematicModel(config.SMPL_MODEL_1_0_MALE_PATH, armatures.SMPLArmature)
+    mesh = KinematicModel().init_from_file(config.SMPL_MODEL_1_0_MALE_PATH, armatures.SMPLArmature)
 
     wrapper = KinematicPCAWrapper(mesh)
-    solver = Solver(wrapper, max_iter=40, plot_type=plot_type)
+    solver = Solver(wrapper, plot_type=plot_type)
 
     if dbg_level > -1:
-        mesh_init, kpts_init = wrapper.run(np.zeros(wrapper.n_params))
+        mesh_init, kpts_init = wrapper.run(np.zeros(wrapper.n_params + 3))
 
         o3d_plot([o3d_pcl(jnts, [0,0,1]), o3d_pcl(pcl, [1,0,0]), o3d_pcl(kpts_init, [0,1,0])], 'Minimal Input')
 
@@ -241,8 +241,8 @@ def stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2,
 
     losses_w = dict(
         kpts_losses=1,
-        edge_losses=25,
-        face_losses=25,
+        edge_losses=5000,
+        face_losses=5000,
     )
 
     if os.path.exists(os.path.join(save_path, "init_params.npz")):

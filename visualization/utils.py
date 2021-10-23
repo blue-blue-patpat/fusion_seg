@@ -203,6 +203,7 @@ class O3DItemUpdater():
 
 class O3DStreamPlot():
     pause = False
+    speed_rate = 1
     def __init__(self, width=1600, height=1200, with_coord=True) -> None:
         self.view = o3d.visualization.VisualizerWithKeyCallback()
         self.view.create_window(width=width, height=height)
@@ -231,7 +232,7 @@ class O3DStreamPlot():
 
     def init_key_cbk(self):
         key_map = dict(
-            w=87, a=65, s=83, d=68, h=72, l=76, space=32
+            w=87, a=65, s=83, d=68, h=72, l=76, space=32, one=49, two=50, four=52
         )
         key_cbk = dict(
             w=lambda v : v.get_view_control().rotate(0, 40),
@@ -241,6 +242,9 @@ class O3DStreamPlot():
             h=lambda v : v.get_view_control().scale(-2),
             l=lambda v : v.get_view_control().scale(2),
             space=lambda v : exec("O3DStreamPlot.pause = not O3DStreamPlot.pause"),
+            one=lambda v : exec("O3DStreamPlot.speed_rate = 1"),
+            two=lambda v : exec("O3DStreamPlot.speed_rate = 2"),
+            four=lambda v : exec("O3DStreamPlot.speed_rate = 4"),
         )
 
         for key, value in key_map.items():
@@ -258,13 +262,17 @@ class O3DStreamPlot():
         self.view.update_renderer()
 
     def show(self, gen: Generator = None, fps: float=30):
+        print("[O3DStreamPlot] rotate: W(left)/A(up)/S(down)/D(right); resize: L(-)/H(+); pause/resume: space; speed: 1(1x)/2(2x)/4(4x)")
+        
         if gen is None:
             gen = self.generator()
         tick = time.time()
-        duration = 1/fps
         while True:
+            duration = 1/(fps*self.speed_rate)
             while time.time() - tick < duration:
                 continue
+
+            print("[O3DStreamPlot] {} FPS".format(1/(time.time() - tick)))
 
             tick = time.time()
 

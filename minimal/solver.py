@@ -136,8 +136,8 @@ class Solver:
             self.shape_params = params["shape"]
         elif params.shape[0] == self.model.n_pose + self.model.n_coord + self.model.n_glb:
             self.pose_params = params
-        elif params.shape[0] == self.model.n_params + self.model.n_coord + self.model.n_glb:
-            self.pose_params, self.shape_params = params[:self.model.n_pose + self.model.n_coord], params[-self.model.n_shape:]
+        elif params.shape[0] == self.model.n_params + self.model.n_coord:
+            self.pose_params, self.shape_params = params[:self.model.n_pose + self.model.n_coord + self.model.n_glb], params[-self.model.n_shape:]
         else:
             raise RuntimeError("Invalid params")
 
