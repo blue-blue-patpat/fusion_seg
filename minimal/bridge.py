@@ -199,7 +199,7 @@ class JointsBridge():
         # upper_body_left_base /= np.linalg.norm(upper_body_left_base)
 
         # lower_body_up_base = self[]
-        center = 0.25 * (self.jnts[0] + self.jnts[1] + self.jnts[2] + self.jnts[3])
+        center = 0.25 * (self.jnts[0] + self.jnts[1] + self.jnts[2] + self.jnts[3]) - 0.1 * upper_body_up_base
 
 
         self.jnts = np.array([
@@ -209,10 +209,10 @@ class JointsBridge():
             center,
             # 1_left leg root   1/4 centre of 25: left knee out and the centre of 0：waist left front, 2: wrist left back, and reduce the 1/4 of people's waistline
             # 0.75 * (0.2*self.jnts[25] + 0.4 * (self.jnts[0] + self.jnts[2])) + 0.25 * self.jnts[25] - 0.125*(self.jnts[0]-self.jnts[1]+self.jnts[2]-self.jnts[3]),
-            0.25 * (self.jnts[0] + self.jnts[2]) + 0.5 * center - 0.15 * upper_body_up_base,
+            0.25 * (self.jnts[0] + self.jnts[2]) + 0.5 * center - 0.1 * upper_body_up_base,
             # 2_right leg root  1/4 centre of 31: right knee out and the centre of 1：waist right front, 3: wrist right back, and reduce the 1/4 of people's waistline
             # 0.75 * (0.2*self.jnts[31] + 0.4 * (self.jnts[1] + self.jnts[3])) + 0.25 * self.jnts[31] + 0.125*(self.jnts[0]-self.jnts[1]+self.jnts[2]-self.jnts[3]),
-            0.25 * (self.jnts[1] + self.jnts[3]) + 0.5 * center - 0.15 * upper_body_up_base,
+            0.25 * (self.jnts[1] + self.jnts[3]) + 0.5 * center - 0.1 * upper_body_up_base,
 
             # 3_lowerback       middle of 0：waist left front, 1: waist right front, 2: wrist left back and 3: wrist right back
             center + 0.1 * upper_body_up_base,
@@ -237,11 +237,11 @@ class JointsBridge():
             0.5 * self.jnts[12] + 0.5 * self.jnts[19],
             # 13_left clavicle  0.4*6: back left+0.3*5: chest+0.3*12: left shoulder top
             # 0.75*(0.25 * self.jnts[13] + 0.75 * self.jnts[5])+0.25*self.jnts[6],
-            0.25*self.jnts[6] + 0.25*self.jnts[11] + 0.5*self.jnts[5] + 0.1 * upper_body_up_base,
+            0.3*self.jnts[6] + 0.3*self.jnts[11] + 0.4*self.jnts[5] + 0.1 * upper_body_up_base,
 
             # 14_right clavicle 0.4*7: back right+0.3*5: chest+0.3*19: right shoulder top
             # 0.75*(0.25 * self.jnts[20] + 0.75 * self.jnts[5])+0.25*self.jnts[7],
-            0.25*self.jnts[7] + 0.25*self.jnts[18] + 0.5*self.jnts[5] + 0.1 * upper_body_up_base,
+            0.3*self.jnts[7] + 0.3*self.jnts[18] + 0.4*self.jnts[5] + 0.1 * upper_body_up_base,
 
             # 15_upperneck      1/5 centre of 8: head top and 4: back top
             0.8 * (0.5 * self.jnts[12] + 0.5 * self.jnts[19]) + 0.2 * self.jnts[8],
