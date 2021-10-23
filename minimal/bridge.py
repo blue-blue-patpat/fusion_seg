@@ -1,8 +1,6 @@
 import numpy as np
 import math
 
-from visualization.utils import o3d_box, o3d_pcl, o3d_plot
-
 
 class JointsBridge():
     def __init__(self) -> None:
