@@ -171,26 +171,30 @@ class SMPLModel(Module):
         return result
 
 
-class SMPLVerticesLoss(_Loss):
+class SMPLLoss(_Loss):
     def __init__(self, size_average=None, reduce=None, reduction: str = 'mean', device: torch.device = torch.device('cpu'), gender: str = 'female', scale: float = 1) -> None:
         super().__init__(size_average=size_average, reduce=reduce, reduction=reduction)
         # self.smpl = SMPLModel(device=device, model_path=SMPL_MODLE_RAW_1_0_FEMALE_PATH if gender == 'female' else SMPL_MODLE_RAW_1_0_MALE_PATH)
         # self._smpl_no_grad = SMPLModel(device=device, model_path=SMPL_MODLE_RAW_1_0_FEMALE_PATH if gender == 'female' else SMPL_MODLE_RAW_1_0_MALE_PATH)
-        self.smpl = KinematicPCAWrapper(KinematicModel(device=device).init_from_file(SMPL_MODEL_1_0_MALE_PATH if gender == 'male' else SMPL_MODEL_1_0_PATH).requires_grad_())
+        self.smpl = KinematicPCAWrapper(KinematicModel(device=device).init_from_file(SMPL_MODEL_1_0_MALE_PATH if gender == 'male' else SMPL_MODEL_1_0_PATH, compute_mesh=False).requires_grad_())
         self.scale = scale
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         verts_input = []
         verts_target = []
+        joint_input = []
+        joint_target = []
         for i in range(input.shape[0]):
             self.smpl.run(input[i].to(torch.float64)*self.scale)
             verts_input.append(self.smpl.core.verts)
+            joint_input.append(self.smpl.core.keypoints)
             self.smpl.run(target[i].to(torch.float64)*self.scale)
             verts_target.append(self.smpl.core.verts)
+            joint_target.append(self.smpl.core.keypoints)
         # self.smpl.zero_grad()
         # self._smpl_no_grad.zero_grad()
-        return F.l1_loss(torch.stack(verts_input, dim=0).to(torch.float32), torch.stack(verts_target, dim=0).to(torch.float32), reduction=self.reduction)
-
+        return F.l1_loss(torch.stack(verts_input, dim=0).to(torch.float32), torch.stack(verts_target, dim=0).to(torch.float32), reduction=self.reduction),\
+                F.l1_loss(torch.stack(joint_input, dim=0).to(torch.float32), torch.stack(joint_target, dim=0).to(torch.float32), reduction=self.reduction)
 
 def test_gpu(gpu_id=[0]):
     if len(gpu_id) > 0 and torch.cuda.is_available():

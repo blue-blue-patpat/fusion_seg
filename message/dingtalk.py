@@ -6,7 +6,7 @@ import base64
 from dingtalkchatbot.chatbot import DingtalkChatbot
 
 
-WEBHOOK_KEY = "https://oapi.dingtalk.com/robot/send?access_token=bdd84c8b655db220bce46094b231b1bfecb5527acc812ee2f5dd4bbf6509f219"
+WEBHOOK_KEY = "https://oapi.dingtalk.com/robot/send?access_token=cb8414595ba360be066cc514e8541af1edc3f04ae1306f03b6b7325f2a01ddbd"
 MSG_INFO = 1
 MSG_ERROR = 2
 

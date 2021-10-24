@@ -17,10 +17,11 @@ from minimal.armatures import SMPLArmature
 from nn.p4t import utils
 from nn.p4t.scheduler import WarmupMultiStepLR
 from nn.p4t.datasets.mmmesh import MMMesh3D
-from nn.SMPL.smpl_layer import SMPLVerticesLoss
+from nn.SMPL.smpl_layer import SMPLLoss
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
-from visualization.mesh_plot import MeshEvaluateStreamPlot, MeshEvaluateSinglePlot
+from visualization.mesh_plot import MeshEvaluateStreamPlot
+from visualization.utils import o3d_mesh, o3d_pcl, o3d_plot, o3d_smpl_mesh
 
 
 def train_one_epoch(model, criterions, optimizer, lr_scheduler, data_loader, device, epoch, print_freq, loss_weight):
@@ -30,10 +31,10 @@ def train_one_epoch(model, criterions, optimizer, lr_scheduler, data_loader, dev
     metric_logger.add_meter('clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.3f}'))
 
     header = 'Epoch: [{}]'.format(epoch)
-    index = 0
     rotxyz_losses = []
     mse_losses = []
-    smpl_losses = []
+    vertices_losses = []
+    joint_losses = []
     for clip, target, _ in metric_logger.log_every(data_loader, print_freq, header):
         start_time = time.time()
         clip, target = clip.to(device), target.to(device)
@@ -41,10 +42,12 @@ def train_one_epoch(model, criterions, optimizer, lr_scheduler, data_loader, dev
 
         rotxyz_losses.append(criterions[0](output[:,0:5], target[:,0:5]))
         mse_losses.append(criterions[0](output[:,6:82], target[:,6:82]))
-        smpl_losses.append(criterions[1](output, target))
+        vertices_losses.append(criterions[1](output, target)[0])
+        joint_losses.append(criterions[1](output, target)[1])
 
         #loss = torch.sum(torch.stack(losses, dim=0))
-        loss = loss_weight[0]*rotxyz_losses[index]+loss_weight[1]*mse_losses[index]+loss_weight[2]*smpl_losses[index]
+        loss = loss_weight[0]*rotxyz_losses[-1]+loss_weight[1]*mse_losses[-1]+\
+            loss_weight[2]*vertices_losses[-1]+loss_weight[3]*joint_losses[-1]
 
         optimizer.zero_grad()
         loss.backward()
@@ -56,11 +59,9 @@ def train_one_epoch(model, criterions, optimizer, lr_scheduler, data_loader, dev
         metric_logger.meters['clips/s'].update(batch_size / (time.time() - start_time))
         lr_scheduler.step()
         sys.stdout.flush()
-        index += 1
-    rotxyz_losses= torch.Tensor(rotxyz_losses)
-    mse_losses= torch.Tensor(mse_losses)
-    smpl_losses= torch.Tensor(smpl_losses)
-    losses = np.average(np.stack((rotxyz_losses,smpl_losses,smpl_losses),axis=0),axis = 1)
+
+    losses = np.average(np.stack((np.asarray(rotxyz_losses),np.asarray(mse_losses),\
+        np.asarray(vertices_losses),np.asarray(joint_losses)),axis=0),axis = 1)
     return list(metric_logger.meters['loss'].deque), losses
 
 
@@ -171,7 +172,7 @@ def main(args):
     model.to(device)
 
     mse_criterion = nn.MSELoss()
-    smpl_criterion = SMPLVerticesLoss(device=device, scale=args.normal_scale)
+    smpl_criterion = SMPLLoss(device=device, scale=args.normal_scale)
 
     lr = args.lr
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -199,7 +200,8 @@ def main(args):
         epoch_loss_list = []
         rotxyz_loss_list = []
         mse_loss_list = []
-        smpl_loss_list = []
+        vertices_losses = []
+        joint_loss_list = []
         rmse_list = []
         bot =TimerBot()
         dingbot = True
@@ -210,14 +212,18 @@ def main(args):
             epoch_loss_list.append(np.mean(loss,axis=0))
             rotxyz_loss_list.append(losses[0])
             mse_loss_list.append(losses[1])
-            smpl_loss_list.append(losses[2])
+            vertices_losses.append(losses[2])
+            joint_loss_list.append(losses[3])
             rmse = np.mean(list(evaluate(model, mse_criterion,data_loader_eval, device, loss_weight)))
             rmse_list.append(rmse)
             fig.add_subplot(2, 3, 1, title='loss').plot(loss_list)
+            #fig.add_subplot(2, 3, 1, title='loss', ylim=(0,50)).plot(loss_list)
             fig.add_subplot(2, 3, 2, title='epoch_loss').plot(epoch_loss_list)
             fig.add_subplot(2, 3, 3, title='rotxyz_loss').plot(rotxyz_loss_list)
             fig.add_subplot(2, 3, 4, title='mse_loss').plot(mse_loss_list)
-            fig.add_subplot(2, 3, 5, title='smpl_loss').plot(smpl_loss_list)
+            fig.add_subplot(2, 3, 5, title='vertice_loss').plot(vertices_losses)
+            fig.add_subplot(2, 3, 6, title='joint_loss').plot(joint_loss_list)
+            fig.tight_layout()
             fig.canvas.draw()
             img = cv2.cvtColor(np.asarray(fig.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
             if args.output_dir:
@@ -246,12 +252,14 @@ def main(args):
         print('Training time {}'.format(total_time_str))
         
     else:
+        loss_weight = list(map(float, args.loss_weight.split(",")))
         data_loader_test = torch.utils.data.DataLoader(dataset_all, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
         print("Start testing")
-        gen = evaluate(model, mse_criterion, data_loader_test, device, visual=True, scale=args.normal_scale)
-        # plot = MeshEvaluateStreamPlot()
-        plot = MeshEvaluateSinglePlot()
+        gen = evaluate(model, mse_criterion, data_loader_test, device, loss_weight, visual=True, scale=args.normal_scale)
+        plot = MeshEvaluateStreamPlot()
         plot.show(gen, fps=15)
+        # data = next(gen)
+        # o3d_plot([o3d_pcl(**data["radar_pcl"]), o3d_smpl_mesh(**data["pred_smpl"]), o3d_smpl_mesh(**data["label_smpl"])])
 
 def parse_args():
     import argparse
@@ -289,7 +297,7 @@ def parse_args():
     parser.add_argument('--lr_milestones', nargs='+', default=[100,200], type=int, help='decrease lr on milestones')
     parser.add_argument('--lr_gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
     parser.add_argument('--lr_warmup_epochs', default=10, type=int, help='number of warmup epochs')
-    parser.add_argument('--loss_weight', default="0.5,0.5,0.5", type=str, help='weight of loss')
+    parser.add_argument('--loss_weight', default="0.5,0.5,0.5,0.5", type=str, help='weight of loss')
     # output
     parser.add_argument('--print_freq', default=10, type=int, help='print frequency')
     parser.add_argument('--output_dir', default='', type=str, help='path where to save')
