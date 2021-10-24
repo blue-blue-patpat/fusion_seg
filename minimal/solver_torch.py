@@ -203,6 +203,7 @@ class Solver:
 def jnts_distance(kpts_updated: torch.Tensor, kpts_target: torch.Tensor, activate_distance):
     d = (kpts_updated - kpts_target)
     _filter = torch.norm(d, dim=1) < torch.tensor(activate_distance, device=d.device)
+    _filter[[1,2,3,4,5,16,17]] = torch.norm(d[[1,2,3,4,5,16,17]], dim=1) < torch.tensor(2 * activate_distance, device=d.device)
     residual = torch.where(_filter.view(_filter.shape[0], 1).expand(d.shape), 0., d).to(d.device)
     loss_jnts = torch.mean(torch.square(residual)).to(d.device)
     return loss_jnts, residual.view(-1)

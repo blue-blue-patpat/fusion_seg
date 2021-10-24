@@ -230,9 +230,9 @@ class JointsBridge():
             # 0.75 * (0.5 * (0.5 * (0.2*self.jnts[25] + 0.4 * (self.jnts[0] + self.jnts[2])-0.125*(self.jnts[0]-self.jnts[1]+self.jnts[2]-self.jnts[3])) + 0.5 * (0.2*self.jnts[31] + 0.4 * (self.jnts[1] + self.jnts[3])+0.125*(self.jnts[0]-self.jnts[1]+self.jnts[2]-self.jnts[3])) + 0.5 * (0.5 * self.jnts[13] + self.jnts[5] + 0.5 * self.jnts[20])))+0.125*(0.5 * self.jnts[13] + self.jnts[5] + 0.5 * self.jnts[20]) + 0.1 * upper_body_up_base,
             1 / 3 * (self.jnts[6] + self.jnts[7] + self.jnts[5]),
             # 10_left toes      29: LToeOut
-            self.jnts[29],
+            0.5 * (self.jnts[29] + self.jnts[30]),
             # 11_right toes     35: RToeOut
-            self.jnts[36],
+            0.5 * (self.jnts[35] + self.jnts[36]),
             # 12_lowerneck      4: back top add 1/2 of waist front reduce back
             0.5 * self.jnts[12] + 0.5 * self.jnts[19],
             # 13_left clavicle  0.4*6: back left+0.3*5: chest+0.3*12: left shoulder top
@@ -266,9 +266,9 @@ class JointsBridge():
             # ext_right finger tip  23_right hand+23_right hand-21_right wrist
             1.25*self.jnts[22] + self.jnts[24] - 0.75*self.jnts[23]-0.5*self.jnts[24],
             # ext_left toe tip  based on 10_left toes and add the length
-            self.jnts[29] + 1/4 * (self.jnts[29] - self.jnts[27]),
+            0.5 * (self.jnts[29] + self.jnts[30]) + 1 * (self.jnts[29] - self.jnts[27]),
             # ext_right toe tip based on 11_right toes and add the length
-            self.jnts[36] + 1/4 * (self.jnts[36] - self.jnts[33]),
+            0.5 * (self.jnts[35] + self.jnts[36]) + 1 * (self.jnts[35] - self.jnts[33]),
             # ext_head_top      8: head top
             self.jnts[8]
         ])

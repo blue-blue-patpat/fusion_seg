@@ -241,8 +241,8 @@ def stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2,
 
     losses_w = dict(
         kpts_losses=1,
-        edge_losses=5000,
-        face_losses=5000,
+        edge_losses=50,
+        face_losses=50,
     )
 
     if os.path.exists(os.path.join(save_path, "init_params.npz")):
@@ -266,12 +266,12 @@ def stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2,
 
             _jnts, _pcl = jnts_brg.map(data_type)
 
-            init_pose = np.zeros(solver.model.n_pose + solver.model.n_coord + solver.model.n_glb)
+            init_param = np.zeros(solver.model.n_pose + solver.model.n_coord + solver.model.n_glb + solver.model.n_shape)
             # translation
-            init_pose[:3] = -(_jnts.max(axis=0) + _jnts.min(axis=0))/2
+            init_param[:3] = -(_jnts.max(axis=0) + _jnts.min(axis=0))/2
             # rotation
-            init_pose[3] = 0.5
-            solver.update_params(init_pose)
+            init_param[3] = 0.5
+            solver.update_params(init_param)
 
             _, losses = solver.solve(_jnts, _pcl, "full", dbg_level=dbg_level, max_iter=100, losses_with_weights=losses_w)
             
