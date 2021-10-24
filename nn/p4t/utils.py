@@ -7,7 +7,7 @@ import torch.distributed as dist
 
 import errno
 import os
-
+os.environ['NUMEXPR_MAX_THREADS'] = '40'
 
 class SmoothedValue(object):
     """Track a series of values and provide access to smoothed values over a

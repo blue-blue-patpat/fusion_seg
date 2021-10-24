@@ -31,27 +31,28 @@ def train_one_epoch(model, criterions, optimizer, lr_scheduler, data_loader, dev
     metric_logger.add_meter('clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.3f}'))
 
     header = 'Epoch: [{}]'.format(epoch)
-    rotxyz_losses = []
-    mse_losses = []
-    vertices_losses = []
-    joint_losses = []
+    total_loss = []
+    rot_trans_loss = []
+    pose_shape_loss = []
+    vertices_loss = []
+    joints_loss = []
     for clip, target, _ in metric_logger.log_every(data_loader, print_freq, header):
         start_time = time.time()
         clip, target = clip.to(device), target.to(device)
         output = model(clip)
 
-        rotxyz_losses.append(criterions[0](output[:,0:5], target[:,0:5]))
-        mse_losses.append(criterions[0](output[:,6:82], target[:,6:82]))
-        vertices_losses.append(criterions[1](output, target)[0])
-        joint_losses.append(criterions[1](output, target)[1])
+        rot_trans_loss.append(criterions[0](output[:,0:5], target[:,0:5]))
+        pose_shape_loss.append(criterions[0](output[:,6:], target[:,6:]))
+        vertices_loss.append(criterions[1](output, target)[0])
+        joints_loss.append(criterions[1](output, target)[1])
 
-        #loss = torch.sum(torch.stack(losses, dim=0))
-        loss = loss_weight[0]*rotxyz_losses[-1]+loss_weight[1]*mse_losses[-1]+\
-            loss_weight[2]*vertices_losses[-1]+loss_weight[3]*joint_losses[-1]
+        loss = loss_weight[0]*rot_trans_loss[-1]+loss_weight[1]*pose_shape_loss[-1]+\
+            loss_weight[2]*vertices_loss[-1]+loss_weight[3]*joints_loss[-1]
+        
+        total_loss.append(loss)
 
         optimizer.zero_grad()
         loss.backward()
-        # losses[0].backward()
         optimizer.step()
 
         batch_size = clip.shape[0]
@@ -60,9 +61,8 @@ def train_one_epoch(model, criterions, optimizer, lr_scheduler, data_loader, dev
         lr_scheduler.step()
         sys.stdout.flush()
 
-    losses = np.average(np.stack((np.asarray(rotxyz_losses),np.asarray(mse_losses),\
-        np.asarray(vertices_losses),np.asarray(joint_losses)),axis=0),axis = 1)
-    return list(metric_logger.meters['loss'].deque), losses
+    losses = np.average(torch.tensor([total_loss, rot_trans_loss, pose_shape_loss, vertices_loss, joints_loss]), axis = 1)
+    return losses
 
 
 def evaluate(model, criterion, data_loader, device, loss_weight, visual=False, scale=1):
@@ -195,39 +195,33 @@ def main(args):
     if args.train:
         print("Start training")
         start_time = time.time()
-        fig = plt.figure()
-        loss_list = []
-        epoch_loss_list = []
-        rotxyz_loss_list = []
-        mse_loss_list = []
-        vertices_losses = []
-        joint_loss_list = []
+        total_loss = []
+        rot_trans_loss = []
+        pose_shape_loss = []
+        vertices_loss = []
+        joints_loss = []
         rmse_list = []
         bot =TimerBot()
         dingbot = True
         loss_weight = list(map(float, args.loss_weight.split(",")))
         for epoch in range(args.start_epoch, args.epochs):
-            loss, losses = train_one_epoch(model, (mse_criterion, smpl_criterion), optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq, loss_weight)
-            loss_list += loss
-            epoch_loss_list.append(np.mean(loss,axis=0))
-            rotxyz_loss_list.append(losses[0])
-            mse_loss_list.append(losses[1])
-            vertices_losses.append(losses[2])
-            joint_loss_list.append(losses[3])
+            losses = train_one_epoch(model, (mse_criterion, smpl_criterion), optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq, loss_weight)
+            total_loss.append(losses[0])
+            rot_trans_loss.append(losses[1])
+            pose_shape_loss.append(losses[2])
+            vertices_loss.append(losses[3])
+            joints_loss.append(losses[4])
             rmse = np.mean(list(evaluate(model, mse_criterion,data_loader_eval, device, loss_weight)))
             rmse_list.append(rmse)
-            fig.add_subplot(2, 3, 1, title='loss').plot(loss_list)
-            #fig.add_subplot(2, 3, 1, title='loss', ylim=(0,50)).plot(loss_list)
-            fig.add_subplot(2, 3, 2, title='epoch_loss').plot(epoch_loss_list)
-            fig.add_subplot(2, 3, 3, title='rotxyz_loss').plot(rotxyz_loss_list)
-            fig.add_subplot(2, 3, 4, title='mse_loss').plot(mse_loss_list)
-            fig.add_subplot(2, 3, 5, title='vertice_loss').plot(vertices_losses)
-            fig.add_subplot(2, 3, 6, title='joint_loss').plot(joint_loss_list)
+            fig = plt.figure()
+            fig.add_subplot(2, 3, 1, title='total_loss').plot(total_loss)
+            fig.add_subplot(2, 3, 2, title='rot_trans_loss').plot(rot_trans_loss)
+            fig.add_subplot(2, 3, 3, title='pose_shape_loss').plot(pose_shape_loss)
+            fig.add_subplot(2, 3, 4, title='vertices_loss').plot(vertices_loss)
+            fig.add_subplot(2, 3, 5, title='joints_loss').plot(joints_loss)
             fig.tight_layout()
             fig.canvas.draw()
             img = cv2.cvtColor(np.asarray(fig.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
-            if args.output_dir:
-                cv2.imwrite(os.path.join(args.output_dir, 'loss.png'), img)
 
             if dingbot:
                 bot.add_md("tran_mmbody", "【LOSS】 \n ![img]({}) \n 【RMSE】\n epoch={}, rmse={}".format(bot.img2b64(img), epoch, rmse))
@@ -246,6 +240,8 @@ def main(args):
                 utils.save_on_master(
                     checkpoint,
                     os.path.join(args.output_dir, 'checkpoint.pth'))
+                cv2.imwrite(os.path.join(args.output_dir, 'loss.png'), img)
+            plt.close()
 
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -271,7 +267,7 @@ def parse_args():
     # input
     parser.add_argument('--clip_len', default=5, type=int, metavar='N', help='number of frames per clip')
     parser.add_argument('--num_points', default=1024, type=int, metavar='N', help='number of points per frame')
-    parser.add_argument('--normal_scale', default=10, type=int, metavar='N', help='normal scale of labels')
+    parser.add_argument('--normal_scale', default=1, type=int, metavar='N', help='normal scale of labels')
     parser.add_argument('--skip_head', default=0, type=int, metavar='N', help='number of skip frames')
     # P4D
     parser.add_argument('--radius', default=0.7, type=float, help='radius for the ball query')
@@ -297,7 +293,7 @@ def parse_args():
     parser.add_argument('--lr_milestones', nargs='+', default=[100,200], type=int, help='decrease lr on milestones')
     parser.add_argument('--lr_gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
     parser.add_argument('--lr_warmup_epochs', default=10, type=int, help='number of warmup epochs')
-    parser.add_argument('--loss_weight', default="0.5,0.5,0.5,0.5", type=str, help='weight of loss')
+    parser.add_argument('--loss_weight', default="1,1,1,1", type=str, help='weight of loss')
     # output
     parser.add_argument('--print_freq', default=10, type=int, help='print frequency')
     parser.add_argument('--output_dir', default='', type=str, help='path where to save')
