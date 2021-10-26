@@ -32,7 +32,7 @@ def train_one_epoch(model, criterions, optimizer, lr_scheduler, data_loader, dev
 
     header = 'Epoch: [{}]'.format(epoch)
     total_loss = []
-    rot_trans_loss = []
+    trans_loss = []
     pose_shape_loss = []
     vertices_loss = []
     joints_loss = []
@@ -40,13 +40,13 @@ def train_one_epoch(model, criterions, optimizer, lr_scheduler, data_loader, dev
         start_time = time.time()
         clip, target = clip.to(device), target.to(device)
         output = model(clip)
-
-        rot_trans_loss.append(criterions[0](output[:,0:5], target[:,0:5]))
+        output = utils.rotation6d_2_euler(output)
+        trans_loss.append(criterions[0](output[:,0:6], target[:,0:6]))
         pose_shape_loss.append(criterions[0](output[:,6:], target[:,6:]))
         vertices_loss.append(criterions[1](output, target)[0])
         joints_loss.append(criterions[1](output, target)[1])
 
-        loss = loss_weight[0]*rot_trans_loss[-1]+loss_weight[1]*pose_shape_loss[-1]+\
+        loss = loss_weight[0]*trans_loss[-1]+loss_weight[1]*pose_shape_loss[-1]+\
             loss_weight[2]*vertices_loss[-1]+loss_weight[3]*joints_loss[-1]
         
         total_loss.append(loss)
@@ -61,7 +61,7 @@ def train_one_epoch(model, criterions, optimizer, lr_scheduler, data_loader, dev
         lr_scheduler.step()
         sys.stdout.flush()
 
-    losses = np.average(torch.tensor([total_loss, rot_trans_loss, pose_shape_loss, vertices_loss, joints_loss]), axis = 1)
+    losses = np.average(torch.tensor([total_loss, trans_loss, pose_shape_loss, vertices_loss, joints_loss]), axis = 1)
     return losses
 
 
@@ -77,6 +77,7 @@ def evaluate(model, criterion, data_loader, device, loss_weight, visual=False, s
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output = model(clip)
+            output = utils.rotation6d_2_euler(output)
             loss = criterion(output, target)
 
             # FIXME need to take into account that the datasets
@@ -165,7 +166,7 @@ def main(args):
                   temporal_kernel_size=args.temporal_kernel_size, temporal_stride=args.temporal_stride,
                   emb_relu=args.emb_relu,
                   dim=args.dim, depth=args.depth, heads=args.heads, dim_head=args.dim_head,
-                  mlp_dim=args.mlp_dim, num_classes=dataset_all.output_dim)
+                  mlp_dim=args.mlp_dim, output_dim=dataset_all.output_dim)
 
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)

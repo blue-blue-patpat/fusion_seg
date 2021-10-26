@@ -28,7 +28,7 @@ class MMBody3D(Dataset):
         self.id_list = []
 
         if self.train:
-            videos_path = [os.path.join(self.root_path, p) for p in os.listdir(self.root_path) if p[-1] == 'T' or p[-1] == 'N']
+            videos_path = [os.path.join(self.root_path, p) for p in os.listdir(self.root_path) if p[-1] == 'T']
         else:
             videos_path = [os.path.join(self.root_path, p) for p in os.listdir(self.root_path) if p[-1] == 'E']
 

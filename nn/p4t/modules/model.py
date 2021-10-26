@@ -17,7 +17,7 @@ class P4Transformer(nn.Module):
                  temporal_kernel_size, temporal_stride,                                 # P4DConv: temporal
                  emb_relu,                                                              # embedding: relu
                  dim, depth, heads, dim_head,                                           # transformer
-                 mlp_dim, num_classes):                                                 # output
+                 mlp_dim, output_dim):                                                 # output
         super().__init__()
 
         self.tube_embedding = P4DConv(in_planes=3, mlp_planes=[dim], mlp_batch_norm=[False], mlp_activation=[False],
@@ -34,7 +34,9 @@ class P4Transformer(nn.Module):
             nn.LayerNorm(dim),
             nn.Linear(dim, mlp_dim),
             nn.GELU(),
-            nn.Linear(mlp_dim, num_classes),
+            nn.Linear(mlp_dim, mlp_dim),
+            nn.ReLU(),
+            nn.Linear(mlp_dim, output_dim),
         )
 
     def forward(self, input):                                                                                                               # [B, L, N, 3]
