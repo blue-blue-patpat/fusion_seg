@@ -182,6 +182,7 @@ def stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2,
     from minimal.solver import Solver
     from minimal.models_torch import KinematicModel as KinematicModelTorch, KinematicPCAWrapper as KinematicPCAWrapperTorch
     from minimal.solver_torch import Solver as SolverTorch
+    # from visualization.utils import o3d_plot, o3d_pcl
     
     bot = kwargs.pop("msg_bot")
     assert isinstance(bot, TimerBot)
@@ -266,14 +267,16 @@ def stream_windowed_minimal(root_path: str, dbg_level: int=0, window_len: int=2,
 
             _jnts, _pcl = jnts_brg.map(data_type)
 
+            # o3d_plot([o3d_pcl(_jnts, [1,0,0]), o3d_pcl(result["optitrack"], [0,0,1]), o3d_pcl(_pcl, [0,1,0])])
+
             init_param = np.zeros(solver.model.n_pose + solver.model.n_coord + solver.model.n_glb + solver.model.n_shape)
             # translation
             init_param[:3] = -(_jnts.max(axis=0) + _jnts.min(axis=0))/2
             # rotation
-            init_param[3] = 0.5
+            init_param[3] = np.pi/2
             solver.update_params(init_param)
 
-            _, losses = solver.solve(_jnts, _pcl, "full", dbg_level=dbg_level, max_iter=100, losses_with_weights=losses_w)
+            _, losses = solver.solve(_jnts, _pcl, "full", dbg_level=dbg_level, max_iter=60, losses_with_weights=losses_w)
             
             shape_params.append(solver.shape_params)
             del losses

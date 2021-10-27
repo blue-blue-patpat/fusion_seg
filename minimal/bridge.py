@@ -201,7 +201,6 @@ class JointsBridge():
         # lower_body_up_base = self[]
         center = 0.25 * (self.jnts[0] + self.jnts[1] + self.jnts[2] + self.jnts[3]) - 0.1 * upper_body_up_base
 
-
         self.jnts = np.array([
             # SMPL              OptiTrack
             # 0_pelvis          middle of 3_lowerback and the middle of 1_left leg root and 2_right leg root
@@ -238,11 +237,9 @@ class JointsBridge():
             # 13_left clavicle  0.4*6: back left+0.3*5: chest+0.3*12: left shoulder top
             # 0.75*(0.25 * self.jnts[13] + 0.75 * self.jnts[5])+0.25*self.jnts[6],
             0.35*self.jnts[6] + 0.35*self.jnts[11] + 0.3*self.jnts[5] + 0.05 * upper_body_up_base,
-
             # 14_right clavicle 0.4*7: back right+0.3*5: chest+0.3*19: right shoulder top
             # 0.75*(0.25 * self.jnts[20] + 0.75 * self.jnts[5])+0.25*self.jnts[7],
             0.35*self.jnts[7] + 0.35*self.jnts[18] + 0.3*self.jnts[5] + 0.05 * upper_body_up_base,
-
             # 15_upperneck      1/5 centre of 8: head top and 4: back top
             0.8 * (0.5 * self.jnts[12] + 0.5 * self.jnts[19]) + 0.2 * self.jnts[8],
             # 16_left armroot   1/4 centre of 12: left shoulder top and 13: left elbow out
@@ -272,6 +269,13 @@ class JointsBridge():
             # ext_head_top      8: head top
             self.jnts[8]
         ])
+        clavicle_arm_distance = np.linalg.norm(0.5 * (self.jnts[16] + self.jnts[17]) - 0.5 * (self.jnts[13] + self.jnts[14])) / np.linalg.norm(upper_body_up_base)
+        if clavicle_arm_distance < 0.35:
+            self.jnts[[3,6,13,14]] -= (0.35-clavicle_arm_distance) * upper_body_up_base
+
+        center_arm_distance = np.linalg.norm(0.5 * (self.jnts[16] + self.jnts[17]) - center)/np.linalg.norm(upper_body_up_base)
+        if center_arm_distance < 1.3:
+            self.jnts[[0,1,2]] -= (1.3-center_arm_distance) * upper_body_up_base
 
     def normalization(self):
         # x_norm = np.linalg.norm(jnts, axis = 0, keepdims = True, ord=np.inf)
