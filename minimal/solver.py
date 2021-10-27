@@ -192,9 +192,9 @@ class Solver:
 def jnts_distance(kpts_updated, kpts_target, activate_distance):
     d = (kpts_updated - kpts_target)
     _filter = np.linalg.norm(d, axis=1) < activate_distance
-    _filter[[13,14]] = np.linalg.norm(d[[13,14]], dim=1) < 12 * activate_distance
-    _filter[[16,17]] = np.linalg.norm(d[[16,17]], dim=1) < 6 * activate_distance
-    _filter[[1,2,3]] = np.linalg.norm(d[[1,2,3]], dim=1) < 4 * activate_distance
+    _filter[[13,14]] = np.linalg.norm(d[[13,14]], axis=1) < 12 * activate_distance
+    _filter[[16,17]] = np.linalg.norm(d[[16,17]], axis=1) < 6 * activate_distance
+    _filter[[1,2,3]] = np.linalg.norm(d[[1,2,3]], axis=1) < 4 * activate_distance
     residual = np.where(np.repeat(_filter.reshape(_filter.shape[0], 1), 3, axis=1), 0, d).reshape(kpts_updated.size, 1)
     loss_jnts = np.mean(np.square(residual))
     return loss_jnts, residual
