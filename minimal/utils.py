@@ -2,6 +2,7 @@ import os
 from time import sleep
 import matplotlib.pyplot as plt
 import numpy as np
+import subprocess
 
 
 class WeightLoss(list):
@@ -148,9 +149,11 @@ class LossManager():
         return sum([loss[i] for loss in self.losses.values()])
 
 
-def get_freer_gpu(key="util", required_memory=2000) -> int:
-    import subprocess
+def get_gpu_count() -> int:
+    return int(subprocess.check_output('nvidia-smi -q |grep Attached', shell=True).decode().split(':')[1])
 
+
+def get_freer_gpu(key="util", required_memory=2000) -> int:
     memory_available = []
     util_available = []
 

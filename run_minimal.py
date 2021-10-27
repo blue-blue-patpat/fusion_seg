@@ -10,7 +10,7 @@ from minimal import armatures
 import minimal.config as config
 from minimal.bridge import JointsBridge
 from minimal.input_loader import KINECT_SUB1_SOURCE, OPTI_DATA, KINECT_DATA, MinimalInput
-from minimal.utils import get_freer_gpu
+from minimal.utils import get_freer_gpu, get_gpu_count
 from dataloader.result_loader import MinimalLoader, ResultFileLoader
 from dataloader.utils import ymdhms_time, clean_dir, create_dir
 from message.dingtalk import MSG_ERROR, MSG_INFO, TimerBot
@@ -394,17 +394,19 @@ def run():
 
     args_dict["msg_bot"] = TimerBot(args_dict.get("interval", 10))
     
-    if args_dict.get("device", "cpu") == "cpu":
-        print("CPU mode")
-    elif args_dict.get("device", "cpu").split(":")[-1].isdigit():
-        gpu_id = args_dict.get("device", "cpu").split(":")[-1]
-        print("Custom GPU {}".format(gpu_id))
-        os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
-    else:
+    device = args_dict.get("device", "gpu:-1")
+    if ':' not in device:
+        device += ":-1"
+
+    args_dict["device"], device_id = device.split(":")
+
+    if int(device_id) not in range(get_gpu_count()):
         gpu_id = get_freer_gpu()
         print("Auto select GPU {}".format(gpu_id))
         os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
-        args_dict["device"] = "cuda:{}".format(gpu_id)
+    else:
+        print("Custom GPU {}".format(device_id))
+        os.environ["CUDA_VISIBLE_DEVICES"] = device_id
 
     try:
         task_dict[args.task](**args_dict)
