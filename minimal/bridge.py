@@ -15,6 +15,8 @@ class JointsBridge():
         self.jnts = np.nan_to_num(jnts)
         if pcl.shape[0] > 50000:
             self.pcl = pcl[np.random.choice(np.arange(pcl.shape[0]), size=50000, replace=False)]
+        else:
+            self.pcl = pcl
 
     def map(self, source="optitrack"):
         # self.pcl = pcl_filter(self.jnts, self.pcl)
