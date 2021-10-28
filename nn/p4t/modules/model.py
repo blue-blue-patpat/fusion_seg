@@ -34,8 +34,6 @@ class P4Transformer(nn.Module):
             nn.LayerNorm(dim),
             nn.Linear(dim, mlp_dim),
             nn.GELU(),
-            nn.Linear(mlp_dim, mlp_dim),
-            nn.ReLU(),
             nn.Linear(mlp_dim, output_dim),
         )
 

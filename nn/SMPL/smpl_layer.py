@@ -172,11 +172,17 @@ class SMPLModel(Module):
 
 
 class SMPLLoss(_Loss):
-    def __init__(self, size_average=None, reduce=None, reduction: str = 'mean', device: torch.device = torch.device('cpu'), gender: str = 'female', scale: float = 1) -> None:
+    smpl_m_model = None
+    smpl_f_model = None
+    def __init__(self, size_average=None, reduce=None, reduction: str = 'mean', device: torch.device = torch.device('cpu'), scale: float = 1) -> None:
         super().__init__(size_average=size_average, reduce=reduce, reduction=reduction)
         # self.smpl = SMPLModel(device=device, model_path=SMPL_MODLE_RAW_1_0_FEMALE_PATH if gender == 'female' else SMPL_MODLE_RAW_1_0_MALE_PATH)
         # self._smpl_no_grad = SMPLModel(device=device, model_path=SMPL_MODLE_RAW_1_0_FEMALE_PATH if gender == 'female' else SMPL_MODLE_RAW_1_0_MALE_PATH)
-        self.smpl = KinematicPCAWrapper(KinematicModel(device=device).init_from_file(SMPL_MODEL_1_0_MALE_PATH if gender == 'male' else SMPL_MODEL_1_0_PATH, compute_mesh=False).requires_grad_())
+        if self.smpl_m_model is None:
+            self.smpl_m_model = KinematicPCAWrapper(KinematicModel(device=device).init_from_file(SMPL_MODEL_1_0_MALE_PATH, compute_mesh=False).requires_grad_())
+        if self.smpl_f_model is None:
+            self.smpl_f_model = KinematicPCAWrapper(KinematicModel(device=device).init_from_file(SMPL_MODEL_1_0_PATH, compute_mesh=False).requires_grad_())
+
         self.scale = scale
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
@@ -185,12 +191,15 @@ class SMPLLoss(_Loss):
         joint_input = []
         joint_target = []
         for i in range(input.shape[0]):
-            self.smpl.run(input[i].to(torch.float64)*self.scale)
-            verts_input.append(self.smpl.core.verts)
-            joint_input.append(self.smpl.core.keypoints)
-            self.smpl.run(target[i].to(torch.float64)*self.scale)
-            verts_target.append(self.smpl.core.verts)
-            joint_target.append(self.smpl.core.keypoints)
+            input_model = self.smpl_m_model if input[i][-1] > 0.5 else self.smpl_f_model
+            target_model = self.smpl_m_model if target[i][-1] > 0.5 else self.smpl_f_model
+
+            input_model.run(input[i][:-1].to(torch.float64)*self.scale)
+            verts_input.append(input_model.core.verts)
+            joint_input.append(input_model.core.keypoints)
+            target_model.run(target[i][:-1].to(torch.float64)*self.scale)
+            verts_target.append(target_model.core.verts)
+            joint_target.append(target_model.core.keypoints)
         # self.smpl.zero_grad()
         # self._smpl_no_grad.zero_grad()
         return F.l1_loss(torch.stack(verts_input, dim=0).to(torch.float32), torch.stack(verts_target, dim=0).to(torch.float32), reduction=self.reduction),\

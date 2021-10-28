@@ -1,8 +1,11 @@
 import datetime
+from json import dump
 import os
+import pickle
 import time
 import sys
 import numpy as np
+from numpy.lib import average
 import torch
 import torch.utils.data
 from torch import nn
@@ -10,9 +13,10 @@ import torchvision
 from sklearn.metrics import mean_squared_error
 import matplotlib.pyplot as plt
 import cv2
+from nn.p4t.modules.gmm import GaussianMixture
+# from sklearn.mixture import GaussianMixture
 from minimal.models import KinematicModel, KinematicPCAWrapper
-from minimal.config import SMPL_MODEL_1_0_MALE_PATH
-from minimal.armatures import SMPLArmature
+from minimal.config import SMPL_MODEL_1_0_MALE_PATH, SMPL_MODEL_1_0_PATH
 
 from nn.p4t import utils
 from nn.p4t.scheduler import WarmupMultiStepLR
@@ -36,18 +40,25 @@ def train_one_epoch(model, criterions, optimizer, lr_scheduler, data_loader, dev
     pose_shape_loss = []
     vertices_loss = []
     joints_loss = []
+    gender_loss = []
+    gmm_loss = []
+
     for clip, target, _ in metric_logger.log_every(data_loader, print_freq, header):
         start_time = time.time()
         clip, target = clip.to(device), target.to(device)
         output = model(clip)
-        output = utils.rotation6d_2_euler(output)
+        # output = utils.rotation6d_2_euler(output,23)
         trans_loss.append(criterions[0](output[:,0:6], target[:,0:6]))
-        pose_shape_loss.append(criterions[0](output[:,6:], target[:,6:]))
-        vertices_loss.append(criterions[1](output, target)[0])
-        joints_loss.append(criterions[1](output, target)[1])
-
-        loss = loss_weight[0]*trans_loss[-1]+loss_weight[1]*pose_shape_loss[-1]+\
-            loss_weight[2]*vertices_loss[-1]+loss_weight[3]*joints_loss[-1]
+        pose_shape_loss.append(criterions[0](output[:,6:-1], target[:,6:-1]))
+        v_loss, j_loss = criterions[1](output, target)
+        vertices_loss.append(v_loss)
+        joints_loss.append(j_loss)
+        gender_loss.append(criterions[0](output[:,-1], target[:,-1]))
+        # gmm_loss.append(torch.tensor(-(criterions[2].score(output[:,3:75].detach().cpu().numpy()))).cuda().float())
+        gmm_loss.append(-(criterions[2].cuda().score_samples(output[:,3:75]).float()))
+        
+        loss = loss_weight[0]*trans_loss[-1]+loss_weight[1]*pose_shape_loss[-1]+loss_weight[2]*vertices_loss[-1]+\
+                loss_weight[3]*joints_loss[-1]+loss_weight[4]*gender_loss[-1]+loss_weight[5]*gmm_loss[-1]
         
         total_loss.append(loss)
 
@@ -61,23 +72,25 @@ def train_one_epoch(model, criterions, optimizer, lr_scheduler, data_loader, dev
         lr_scheduler.step()
         sys.stdout.flush()
 
-    losses = np.average(torch.tensor([total_loss, trans_loss, pose_shape_loss, vertices_loss, joints_loss]), axis = 1)
+    losses = np.average(torch.tensor([total_loss,trans_loss,pose_shape_loss,vertices_loss,joints_loss,gender_loss,gmm_loss]), axis = 1)
     return losses
 
 
-def evaluate(model, criterion, data_loader, device, loss_weight, visual=False, scale=1):
+def evaluate(model, criterion, data_loader, device, visual=False, scale=1, output_path=''):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
     rmse_list = []
+    frame_rmse = []
 
-    smpl_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_MALE_PATH, SMPLArmature, compute_mesh=False))
+    smpl_m_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_MALE_PATH, compute_mesh=False))
+    smpl_f_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_PATH, compute_mesh=False))
     with torch.no_grad():
         for clip, target, _ in metric_logger.log_every(data_loader, 100, header):
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output = model(clip)
-            output = utils.rotation6d_2_euler(output)
+            # output = utils.rotation6d_2_euler(output, 23)
             loss = criterion(output, target)
 
             # FIXME need to take into account that the datasets
@@ -85,7 +98,7 @@ def evaluate(model, criterion, data_loader, device, loss_weight, visual=False, s
             clip = clip.cpu().numpy()
             output = output.cpu().numpy()
             target = target.cpu().numpy()
-            rmse = np.sqrt(mean_squared_error(target, output)) * scale
+            rmse = np.sqrt(mean_squared_error(target, output))
             print("batch rmse:", rmse)
 
             batch_size = clip.shape[0]
@@ -96,26 +109,41 @@ def evaluate(model, criterion, data_loader, device, loss_weight, visual=False, s
             if visual:
                 for b, batch in enumerate(clip):
                     arbe_frame = batch[-1][:,:3]
-                    pred = output[b] * scale
-                    label = target[b] * scale
+                    pred = output[b]
+                    label = target[b]
+                    # restore to origin size, except gender
+                    # pred[:-1] *= scale
+                    # label[:-1] *= scale
+                    frame_rmse.append(mean_squared_error(pred, label, squared=False))
                     yield dict(
                         radar_pcl = dict(
                             pcl = arbe_frame,
                             color = [0,1,0]
                         ),
                         pred_smpl = dict(
-                            params = pred,
+                            params = pred[:-1],
                             color = [1,0,0],
-                            model=smpl_model,
+                            model=smpl_m_model if pred[-1] > 0.5 else smpl_f_model,
                         ),
                         label_smpl = dict(
-                            params = label,
-                            model=smpl_model,
+                            params = label[:-1],
+                            model=smpl_m_model if label[-1] > 0.5 else smpl_f_model,
                         )
                     )
             else:
                 yield rmse
             rmse_list.append(rmse)
+
+        if visual and output_path:
+            frame_rmse.sort()
+            hist, bin_edges = np.histogram(np.asarray(frame_rmse), bins=100)
+            cdf = np.cumsum(hist)/len(frame_rmse)
+            plt.plot(bin_edges[:-1], cdf)
+            plt.savefig(output_path+"/rmse.png")
+            plt.xlabel("smpl param rmse")
+            plt.ylabel("percentage")
+            plt.close("all")
+            np.save(output_path+"/rmse", np.asarray(frame_rmse))
         print("RMSE:", np.mean(rmse_list))
 
     # gather the stats from all processes
@@ -141,7 +169,7 @@ def main(args):
     # Data loading code
     print("Loading data")
 
-    dataset_all = MMMesh3D(
+    dataset = MMMesh3D(
             root_path=args.data_path,
             frames_per_clip=args.clip_len,
             step_between_clips=1,
@@ -150,10 +178,19 @@ def main(args):
             skip_head=args.skip_head,
             train=args.train
     )
+    dataset_test = MMMesh3D(
+            root_path=args.data_path,
+            frames_per_clip=args.clip_len,
+            step_between_clips=1,
+            num_points=args.num_points,
+            normal_scale=args.normal_scale,
+            skip_head=args.skip_head,
+            train=False
+    )
 
-    train_size = int(0.9 * len(dataset_all))
-    test_size = len(dataset_all) - train_size
-    dataset_train, dataset_eval = torch.utils.data.random_split(dataset_all, [train_size, test_size])
+    train_size = int(0.9 * len(dataset))
+    eval_size = len(dataset) - train_size
+    dataset_train, dataset_eval = torch.utils.data.random_split(dataset, [train_size, eval_size])
 
     print("Creating data loaders")
 
@@ -166,7 +203,7 @@ def main(args):
                   temporal_kernel_size=args.temporal_kernel_size, temporal_stride=args.temporal_stride,
                   emb_relu=args.emb_relu,
                   dim=args.dim, depth=args.depth, heads=args.heads, dim_head=args.dim_head,
-                  mlp_dim=args.mlp_dim, output_dim=dataset_all.output_dim)
+                  mlp_dim=args.mlp_dim, output_dim=dataset.output_dim)
 
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
@@ -196,30 +233,52 @@ def main(args):
     if args.train:
         print("Start training")
         start_time = time.time()
+
+        # gmm_criterion = GaussianMixture(n_components=16, covariance_type='full', random_state=0, max_iter=200)
+        if args.gmm_path:
+            gmm_criterion = GaussianMixture(n_components=16, n_features=72, covariance_type='full')
+            gmm_pose = []
+            for data in dataset:
+                gmm_pose.append(data[1][3:75])
+            for data in dataset_test:
+                gmm_pose.append(data[1][3:75])
+            gmm_criterion.fit(torch.tensor(gmm_pose))
+            with open(os.path.join(args.gmm_path, "gmm.pkl"), 'wb') as f:
+                pickle.dump(gmm_criterion, f)
+        else:
+            with open("ignoredata/p4tmesh/gmm/gmm.pkl", 'rb') as f:
+                gmm_criterion = pickle.load(f)
+
         total_loss = []
         rot_trans_loss = []
         pose_shape_loss = []
         vertices_loss = []
         joints_loss = []
+        gender_loss = []
+        gmm_loss = []
         rmse_list = []
         bot =TimerBot()
         dingbot = True
         loss_weight = list(map(float, args.loss_weight.split(",")))
         for epoch in range(args.start_epoch, args.epochs):
-            losses = train_one_epoch(model, (mse_criterion, smpl_criterion), optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq, loss_weight)
+            losses = train_one_epoch(model, (mse_criterion, smpl_criterion, gmm_criterion), optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq, loss_weight)
             total_loss.append(losses[0])
             rot_trans_loss.append(losses[1])
             pose_shape_loss.append(losses[2])
             vertices_loss.append(losses[3])
             joints_loss.append(losses[4])
-            rmse = np.mean(list(evaluate(model, mse_criterion,data_loader_eval, device, loss_weight)))
+            gender_loss.append(losses[5])
+            gmm_loss.append(losses[6])
+            rmse = np.mean(list(evaluate(model, mse_criterion,data_loader_eval, device)))
             rmse_list.append(rmse)
             fig = plt.figure()
-            fig.add_subplot(2, 3, 1, title='total_loss').plot(total_loss)
-            fig.add_subplot(2, 3, 2, title='rot_trans_loss').plot(rot_trans_loss)
-            fig.add_subplot(2, 3, 3, title='pose_shape_loss').plot(pose_shape_loss)
-            fig.add_subplot(2, 3, 4, title='vertices_loss').plot(vertices_loss)
-            fig.add_subplot(2, 3, 5, title='joints_loss').plot(joints_loss)
+            fig.add_subplot(3, 3, 1, title='total_loss').plot(total_loss)
+            fig.add_subplot(3, 3, 2, title='rot_trans_loss').plot(rot_trans_loss)
+            fig.add_subplot(3, 3, 3, title='pose_shape_loss').plot(pose_shape_loss)
+            fig.add_subplot(3, 3, 4, title='vertices_loss').plot(vertices_loss)
+            fig.add_subplot(3, 3, 5, title='joints_loss').plot(joints_loss)
+            fig.add_subplot(3, 3, 6, title='gender_loss').plot(gender_loss)
+            fig.add_subplot(3, 3, 7, title='gmm_loss').plot(gmm_loss)
             fig.tight_layout()
             fig.canvas.draw()
             img = cv2.cvtColor(np.asarray(fig.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
@@ -242,6 +301,8 @@ def main(args):
                     checkpoint,
                     os.path.join(args.output_dir, 'checkpoint.pth'))
                 cv2.imwrite(os.path.join(args.output_dir, 'loss.png'), img)
+                np.save(os.path.join(args.output_dir, 'loss.npy'), dict(total_loss=total_loss,rot_trans_loss=rot_trans_loss,
+                            pose_shape_loss=pose_shape_loss,vertices_loss=vertices_loss,joints_loss=joints_loss,gmm_loss=gmm_loss))
             plt.close()
 
         total_time = time.time() - start_time
@@ -250,9 +311,9 @@ def main(args):
         
     else:
         loss_weight = list(map(float, args.loss_weight.split(",")))
-        data_loader_test = torch.utils.data.DataLoader(dataset_all, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
+        data_loader_test = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
         print("Start testing")
-        gen = evaluate(model, mse_criterion, data_loader_test, device, loss_weight, visual=True, scale=args.normal_scale)
+        gen = evaluate(model, mse_criterion, data_loader_test, device, visual=True, scale=args.normal_scale, output_path=args.output_dir)
         plot = MeshEvaluateStreamPlot()
         plot.show(gen, fps=15)
         # data = next(gen)
@@ -270,6 +331,7 @@ def parse_args():
     parser.add_argument('--num_points', default=1024, type=int, metavar='N', help='number of points per frame')
     parser.add_argument('--normal_scale', default=1, type=int, metavar='N', help='normal scale of labels')
     parser.add_argument('--skip_head', default=0, type=int, metavar='N', help='number of skip frames')
+    parser.add_argument('--gmm_path', default='', help='gmm path')
     # P4D
     parser.add_argument('--radius', default=0.7, type=float, help='radius for the ball query')
     parser.add_argument('--nsamples', default=32, type=int, help='number of neighbors for the ball query')
