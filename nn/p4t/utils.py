@@ -2,6 +2,7 @@ from __future__ import print_function
 from collections import defaultdict, deque
 import datetime
 import time
+from numpy import pi
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -254,40 +255,3 @@ def init_distributed_mode(args):
     torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                          world_size=args.world_size, rank=args.rank)
     setup_for_distributed(args.rank == 0)
-
-def rot_mat_2_euler(R):
-    batch = R.size()[0]
-    sy = torch.sqrt(R[:,0,0]*R[:,0,0]+R[:,1,0]*R[:,1,0])
-    singular= sy<1e-6
-    singular=singular.float()
-        
-    x=torch.atan2(R[:,2,1], R[:,2,2])
-    y=torch.atan2(-R[:,2,0], sy)
-    z=torch.atan2(R[:,1,0],R[:,0,0])
-    
-    xs=torch.atan2(-R[:,1,2], R[:,1,1])
-    ys=torch.atan2(-R[:,2,0], sy)
-    zs=R[:,1,0]*0
-        
-    out_euler=torch.autograd.Variable(torch.zeros(batch,3).cuda())
-    out_euler[:,0]=x*(1-singular)+xs*singular
-    out_euler[:,1]=y*(1-singular)+ys*singular
-    out_euler[:,2]=z*(1-singular)+zs*singular
-    return out_euler
-
-def rotation6d_2_euler(nn_output):
-    batch_size = nn_output.size()[0]
-    num_joints = 24
-    pose = nn_output[:,3:num_joints*6+3].reshape(batch_size*num_joints, 6).contiguous()
-    tmp_x = nn.functional.normalize(pose[:,:3], dim = -1)
-    tmp_z = nn.functional.normalize(torch.cross(tmp_x, pose[:,3:], dim = -1), dim = -1)
-    tmp_y = torch.cross(tmp_z, tmp_x, dim = -1)
-
-    tmp_x = tmp_x.view(batch_size*num_joints, 3, 1)
-    tmp_y = tmp_y.view(batch_size*num_joints, 3, 1)
-    tmp_z = tmp_z.view(batch_size*num_joints, 3, 1)
-    R = torch.cat((tmp_x, tmp_y, tmp_z), -1)
-    euler = rot_mat_2_euler(R)
-    euler = euler.view(batch_size, -1)
-
-    return torch.cat((nn_output[:,:3], euler, nn_output[:,147:]), dim=-1)
