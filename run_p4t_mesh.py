@@ -31,7 +31,7 @@ from visualization.utils import o3d_mesh, o3d_pcl, o3d_plot, o3d_smpl_mesh
 from nn.p4t.modules.loss import Losses
 
 
-def train_one_epoch(model, losses, criterions, optimizer, lr_scheduler, data_loader, device, epoch, print_freq, loss_weight, output_dim):
+def train_one_epoch(model, losses, criterions, optimizer, lr_scheduler, data_loader, device, epoch, print_freq, loss_weight, output_dim, use_gender):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value}'))
@@ -51,11 +51,11 @@ def train_one_epoch(model, losses, criterions, optimizer, lr_scheduler, data_loa
         losses.update_loss("shape_loss", loss_weight[2]*criterions[0](output[:,-11:-1], target[:,-11:-1]))
         
         # pose loss
-        if output_dim == 158:
+        if output_dim >= 157:
             output_mat = tools.rotation6d_2_rot_mat(output[:,3:-11])
             target_mat = tools.rodrigues_2_rot_mat(target[:,3:-11])
             losses.update_loss("pose_loss", loss_weight[1]*criterions[3](output_mat,target_mat))
-            v_loss, j_loss = criterions[1](tools.rotation6d_2_rodrigues(output), target)
+            v_loss, j_loss = criterions[1](torch.cat((output[:,:3], output_mat, output[:,-11:]), -1), torch.cat((target[:,:3], target_mat, target[:,-11:]), -1), use_gender)
         else:
             losses.update_loss("pose_loss", loss_weight[1]*criterions[0](output[:,3:-11],target[:,3:-11]))
             v_loss, j_loss = criterions[1](output, target)
@@ -65,10 +65,11 @@ def train_one_epoch(model, losses, criterions, optimizer, lr_scheduler, data_loa
         # joints loss
         losses.update_loss("joints_loss", loss_weight[4]*j_loss)
         # gender loss
-        losses.update_loss("gender_loss", loss_weight[5]*criterions[0](output[:,-1], target[:,-1]))
+        if use_gender:
+            losses.update_loss("gender_loss", loss_weight[5]*criterions[4](output[:,-1].unsqueeze(-1), target[:,-1].to(torch.long)))
         # losses.update_loss("gmm_loss", -(criterions[2].score(output[:,3:75].detach().cpu().numpy()).cuda().float()))
         # losses.update_loss("gmm_loss", -(criterions[2].cuda().score_samples(output[:,3:75]).float()))
-        
+
         loss = losses.calculate_total_loss()
         
         optimizer.zero_grad()
@@ -94,7 +95,7 @@ def evaluate(model, criterion, data_loader, device, output_dim, visual=False, sc
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output = model(clip)
-            if output_dim == 158:
+            if output_dim >= 158:
                 output = tools.rotation6d_2_rodrigues(output)
             loss = criterion(output, target)
 
@@ -218,6 +219,7 @@ def main(args):
     mse_criterion = nn.MSELoss()
     smpl_criterion = SMPLLoss(device=device, scale=args.normal_scale)
     mat_criterion = GeodesicLoss()
+    entropy_criterion = nn.CrossEntropyLoss()
 
     lr = args.lr
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -265,10 +267,10 @@ def main(args):
 
         start_token = True
         for epoch in range(args.start_epoch, args.epochs):
-            train_one_epoch(model, losses, (mse_criterion, smpl_criterion, gmm_criterion, mat_criterion), optimizer, 
-                            lr_scheduler, data_loader_train, device, epoch, args.print_freq, loss_weight, args.output_dim)
+            train_one_epoch(model, losses, (mse_criterion, smpl_criterion, gmm_criterion, mat_criterion, entropy_criterion), optimizer, 
+                            lr_scheduler, data_loader_train, device, epoch, args.print_freq, loss_weight, args.output_dim, args.use_gender)
             img = losses.calculate_epoch_loss(start_token)
-            rmse = np.mean(list(evaluate(model, mse_criterion,data_loader_eval, device)))
+            rmse = np.mean(list(evaluate(model, mse_criterion, data_loader_eval, device, args.output_dim)))
             rmse_list.append(rmse)
 
             if dingbot:
@@ -296,7 +298,7 @@ def main(args):
         loss_weight = list(map(float, args.loss_weight.split(",")))
         data_loader_test = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
         print("Start testing")
-        gen = evaluate(model, mse_criterion, data_loader_test, device, visual=True, scale=args.normal_scale, output_dim=args.output_dir)
+        gen = evaluate(model, mse_criterion, data_loader_test, device, output_dim=args.output_dim, visual=True, scale=args.normal_scale)
         plot = MeshEvaluateStreamPlot()
         plot.show(gen, fps=15)
         # data = next(gen)
@@ -341,6 +343,7 @@ def parse_args():
     parser.add_argument('--lr_gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
     parser.add_argument('--lr_warmup_epochs', default=10, type=int, help='number of warmup epochs')
     parser.add_argument('--loss_weight', default="1,1,1,1,1,1", type=str, help='weight of loss')
+    parser.add_argument('--use_gender', default=1, type=int, help='use gender')
     # output
     parser.add_argument('--print_freq', default=10, type=int, help='print frequency')
     parser.add_argument('--output_dir', default='', type=str, help='path where to save')
@@ -355,4 +358,9 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    main(args)
+    try:
+        main(args)
+    except Exception as e:
+        bot = TimerBot(1)
+        bot.add_task(str(e), 2)
+        time.sleep(5)
