@@ -3,9 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cv2
 
-class Losses():
+class LossManager():
     def __init__(self) -> None:
-        super(Losses).__init__()
+        super(LossManager).__init__()
         self.loss_dict = {}
         self.batch_loss = []
         self.epoch_loss = []
