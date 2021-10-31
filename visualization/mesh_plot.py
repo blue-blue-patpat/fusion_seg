@@ -26,6 +26,52 @@ class MinimalStreamPlot(O3DStreamPlot):
         self.ctr.set_zoom(0.6)
 
 
+class MinimalInputStreamPlot(O3DStreamPlot):
+    def __init__(self, root_path, skip_head, skip_tail, *args, **kwargs) -> None:
+        super().__init__(width=1800, *args, **kwargs)
+        sources = ["optitrack", "sub1", "kinect_pcl", "kinect_pcl_remove_zeros", "kinect_skeleton"]
+        self.file_loader = ResultFileLoader(root_path, skip_head, skip_tail,  enabled_sources=sources)
+        self.timer = Timer()
+
+    def init_updater(self):
+        self.plot_funcs = dict(
+            opti_skeleton=o3d_skeleton,
+            kinect_skeleton=o3d_skeleton,
+            pcl=o3d_pcl,
+        )
+
+    def init_show(self):
+        super().init_show()
+        self.ctr.set_up(np.array([[0],[0],[1]]))
+        self.ctr.set_front(np.array([[0.2],[-1],[0]]))
+        self.ctr.set_lookat(np.array([0,4,0]))
+        self.ctr.set_zoom(0.6)
+
+    def generator(self):
+        from minimal.utils import SMPL_SKELETON_LINES
+        from minimal.bridge import JointsBridge
+
+        bridge = JointsBridge()
+
+        for i in range(len(self.file_loader)):
+            frame, info = self.file_loader[i]
+
+            pcl = frame["sub1_pcl"]
+
+            bridge.init_input(frame["optitrack"], pcl)
+            opti_jnts, _pcl = bridge.map()
+
+            bridge.init_input(frame["sub1_skeleton"], _pcl)
+            kinect_jnts, _pcl = bridge.map("kinect", use_filter=False)
+            print(1/self.timer.tic())
+            
+            yield dict(
+                opti_skeleton=dict(skeleton=opti_jnts, lines=SMPL_SKELETON_LINES, color=[1,0,0]),
+                kinect_skeleton=dict(skeleton=kinect_jnts, lines=SMPL_SKELETON_LINES, color=[0,0,1]),
+                pcl=dict(pcl=_pcl, color=[0,0.6,0]),
+            )
+
+
 class MinimalResultStreamPlot(O3DStreamPlot):
     def __init__(self, root_path, *args, **kwargs) -> None:
         skip_head = int(kwargs.pop("skip_head", 0))
@@ -103,25 +149,3 @@ class MeshEvaluateStreamPlot(O3DStreamPlot):
         self.ctr.set_front(np.array([[0],[-1],[0]]))
         self.ctr.set_lookat(np.array([0,0,0]))
         self.ctr.set_zoom(1)
-
-class MeshEvaluateSinglePlot(O3DStreamPlot):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(width=1800, *args, **kwargs)
-
-    def init_updater(self):
-        self.plot_funcs = dict(
-            radar_pcl=o3d_pcl,
-            pred_smpl=o3d_smpl_mesh,
-            label_smpl=o3d_smpl_mesh,
-        )
-
-    def init_show(self):
-        super().init_show()
-        self.ctr.set_up(np.array([[0],[0],[1]]))
-        self.ctr.set_front(np.array([[0],[-1],[0]]))
-        self.ctr.set_lookat(np.array([0,0,0]))
-        self.ctr.set_zoom(1)
-
-    def show(self, gen, fps=30):
-        for update_dict in gen:
-            o3d_plot(list(update_dict.values()))

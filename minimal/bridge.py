@@ -18,9 +18,10 @@ class JointsBridge():
         else:
             self.pcl = pcl
 
-    def map(self, source="optitrack"):
+    def map(self, source="optitrack", use_filter=True):
         # self.pcl = pcl_filter(self.jnts, self.pcl)
-        self.filter_pcl()
+        if use_filter:
+            self.filter_pcl()
         if source == "optitrack":
             self.optitrack_jnts_to_smpl()
         elif source == "kinect":
@@ -40,31 +41,43 @@ class JointsBridge():
         self.x_norm = np.repeat(self.scale, 3)
 
     def filter_pcl(self) -> np.ndarray:
-        # upper_bound = self.jnts.max(axis=0) + 0.3
-        # lower_bound = self.jnts.min(axis=0) - 0.3
-        # # remove ground pcl
-        # lower_bound[1] += 0.35
-        # _filter = np.apply_along_axis(
-        #     lambda row:\
-        #         np.all((lower_bound<row) & (row<upper_bound))\
-        #         and np.linalg.norm(self.jnts - row, axis=1, keepdims=True).min() < 0.25,\
-        # axis=1, arr=self.pcl)
-        # self.pcl = self.pcl[_filter]
-        from itertools import compress
+        import numba as nb
+        @nb.jit
+        def filter2_np_nb(arr: np.ndarray, lower_bound: np.ndarray, upper_bound: np.ndarray):
+            n = 0
+            flag = True
+            for i in nb.prange(0, arr.shape[0]):
+            # for i in range(arr.shape[0]):
+                flag = True
+                for j in range(lower_bound.size):
+                    if not (arr[i][j] > lower_bound[j] and arr[i][j] < upper_bound[j]):
+                        flag = False
+                        break
+                if flag:
+                    n += 1
+            result = np.empty((n, arr.shape[1]), dtype=arr.dtype)
+            _n = 0
+            for i in nb.prange(0, arr.shape[0]):
+                flag = True
+                for j in range(lower_bound.size):
+                    if not (arr[i][j] > lower_bound[j] and arr[i][j] < upper_bound[j]):
+                        flag = False
+                        break
+                if flag:
+                    result[_n] = arr[i]
+                    _n += 1
+                if _n == n:
+                    break
+            return result
 
         upper_bound = self.jnts.max(axis=0) + 0.3
         lower_bound = self.jnts.min(axis=0) - 0.3
         lower_bound[2] += 0.31
-        pcl_in_bound = (self.pcl < upper_bound) & (self.pcl > lower_bound)
         
-        # o3d_plot([o3d_box(upper_bound, lower_bound), o3d_pcl(self.pcl)])
-
-        filter_list = []
-        for row in pcl_in_bound:
-            filter_list.append(False if False in row else True)
-        self.pcl = np.array(list(compress(self.pcl, filter_list)))
+        self.pcl = filter2_np_nb(self.pcl, lower_bound, upper_bound)
         if self.pcl.shape[0] == 0:
             self.pcl = np.zeros([1,3])
+        return self.pcl
     
     def kinect_joints_transform(self): 
         # translate
@@ -146,9 +159,9 @@ class JointsBridge():
             # 6_upperback       0.75*2_SPINE_CHEST+0.25*1_SPINE_NAVAL
             0.65 * self.jnts[2] + 0.35 * self.jnts[1],
             # 7_left ankle      20_ANKLE_LEFT
-            self.jnts[20],
+            self.jnts[20] - 0.1 * (self.jnts[19] - self.jnts[20]),
             # 8_right ankle     24_ANKLE_RIGHT
-            self.jnts[24],
+            self.jnts[24] - 0.1 * (self.jnts[23] - self.jnts[24]),
             # 9_thorax          2_SPINE_CHEST
             self.jnts[2],
             # 10_left toes      21_FOOT_LEFT
@@ -203,6 +216,8 @@ class JointsBridge():
         # lower_body_up_base = self[]
         center = 0.25 * (self.jnts[0] + self.jnts[1] + self.jnts[2] + self.jnts[3]) - 0.1 * upper_body_up_base
 
+        spin_up = 0.25 * (self.jnts[6]+self.jnts[7]+self.jnts[11]+self.jnts[18]) - center
+
         self.jnts = np.array([
             # SMPL              OptiTrack
             # 0_pelvis          middle of 3_lowerback and the middle of 1_left leg root and 2_right leg root
@@ -216,20 +231,23 @@ class JointsBridge():
             0.25 * (self.jnts[1] + self.jnts[3]) + 0.5 * center - 0.15 * upper_body_up_base,
 
             # 3_lowerback       middle of 0：waist left front, 1: waist right front, 2: wrist left back and 3: wrist right back
-            center + 0.1 * upper_body_up_base,
+            center + 1/3 * spin_up,
             # 4_left knee       25: left knee out, and reduce the 1/4 of people's waistline
             self.jnts[25] - 0.125 * (self.jnts[0]-self.jnts[1]+self.jnts[2]-self.jnts[3]),
             # 5_right knee      31: right knee out, and reduce the 1/4 of people's waistline
             self.jnts[31] + 0.125 * (self.jnts[0]-self.jnts[1]+self.jnts[2]-self.jnts[3]),
             # 6_upperback       middle of 0_pelvis and clavicle(middle of left clavicle and right clavicle)
-            0.5 * (0.5 * (0.2*self.jnts[25] + 0.4 * (self.jnts[0] + self.jnts[2])-0.125*(self.jnts[0]-self.jnts[1]+self.jnts[2]-self.jnts[3])) + 0.5 * (0.2*self.jnts[31] + 0.4 * (self.jnts[1] + self.jnts[3])+0.125*(self.jnts[0]-self.jnts[1]+self.jnts[2]-self.jnts[3])) + 0.5 * (0.5 * self.jnts[13] + self.jnts[5] + 0.5 * self.jnts[20])) + 0.1 * upper_body_up_base,
+            # 0.5 * (0.5 * (0.2*self.jnts[25] + 0.4 * (self.jnts[0] + self.jnts[2])-0.125*(self.jnts[0]-self.jnts[1]+self.jnts[2]-self.jnts[3])) + 0.5 * (0.2*self.jnts[31] + 0.4 * (self.jnts[1] + self.jnts[3])+0.125*(self.jnts[0]-self.jnts[1]+self.jnts[2]-self.jnts[3])) + 0.5 * (0.5 * self.jnts[13] + self.jnts[5] + 0.5 * self.jnts[20])) + 0.1 * upper_body_up_base,
+            # 0.5 * (center + 0.25*(self.jnts[6]+self.jnts[7]+self.jnts[11]+self.jnts[18])),
+            center + 2/3 * spin_up,
             # 7_left ankle      27: left ankle out, and reduce the 1/4 of people's waistline
             self.jnts[27] - 0.125 * (self.jnts[0]-self.jnts[1]+self.jnts[2]-self.jnts[3]),
             # 8_right ankle     33: right ankle out, and reduce the 1/4 of people's waistline
             self.jnts[33] + 0.125 * (self.jnts[0]-self.jnts[1]+self.jnts[2]-self.jnts[3]),
             # 9_thorax          the 1/4 centre of 6_upperback and clavicle(middle of left clavicle and right clavicle)
             # 0.75 * (0.5 * (0.5 * (0.2*self.jnts[25] + 0.4 * (self.jnts[0] + self.jnts[2])-0.125*(self.jnts[0]-self.jnts[1]+self.jnts[2]-self.jnts[3])) + 0.5 * (0.2*self.jnts[31] + 0.4 * (self.jnts[1] + self.jnts[3])+0.125*(self.jnts[0]-self.jnts[1]+self.jnts[2]-self.jnts[3])) + 0.5 * (0.5 * self.jnts[13] + self.jnts[5] + 0.5 * self.jnts[20])))+0.125*(0.5 * self.jnts[13] + self.jnts[5] + 0.5 * self.jnts[20]) + 0.1 * upper_body_up_base,
-            1 / 3 * (self.jnts[6] + self.jnts[7] + self.jnts[5]),
+            # 1 / 3 * (self.jnts[6] + self.jnts[7] + self.jnts[5]),
+            center + 3/4 * spin_up,
             # 10_left toes      29: LToeOut
             0.5 * (self.jnts[29] + self.jnts[30]),
             # 11_right toes     35: RToeOut

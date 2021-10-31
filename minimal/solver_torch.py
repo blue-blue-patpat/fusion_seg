@@ -205,7 +205,7 @@ def jnts_distance(kpts_updated: torch.Tensor, kpts_target: torch.Tensor, activat
     _filter = torch.norm(d, dim=1) < torch.tensor(activate_distance, device=d.device)
     _filter[[13,14]] = torch.norm(d[[13,14]], dim=1) < torch.tensor(12* activate_distance, device=d.device)
     _filter[[16,17]] = torch.norm(d[[16,17]], dim=1) < torch.tensor(6* activate_distance, device=d.device)
-    _filter[[1,2,3]] = torch.norm(d[[1,2,3]], dim=1) < torch.tensor(4* activate_distance, device=d.device)
+    _filter[[1,2,3,26,27]] = torch.norm(d[[1,2,3,26,27]], dim=1) < torch.tensor(4* activate_distance, device=d.device)
     residual = torch.where(_filter.view(_filter.shape[0], 1).expand(d.shape), 0., d).to(d.device)
     loss_jnts = torch.mean(torch.square(residual)).to(d.device)
     return loss_jnts, residual.view(-1)

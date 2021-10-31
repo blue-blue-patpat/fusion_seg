@@ -1,5 +1,6 @@
 import time
 from typing import Callable, Dict, Generator, Iterable, Union, overload
+import numba as nb
 import numpy as np
 import open3d as o3d
 from pytorch3d.structures import Meshes
@@ -89,7 +90,7 @@ def o3d_skeleton(skeleton: np.ndarray = None, lines: np.ndarray = None,
     if lines is not None:
         _lines.lines = o3d.utility.Vector2iVector(lines)
         if colors is None:
-            colors = np.repeat([color], skeleton.shape[0], axis=0)
+            colors = np.repeat([color], lines.shape[0], axis=0)
         _lines.colors = o3d.utility.Vector3dVector(colors)
     return _lines
 
@@ -173,20 +174,60 @@ def o3d_smpl_mesh(params: Union[np.ndarray, np.lib.npyio.NpzFile, dict] = None, 
     return o3d_mesh(mesh, color, last_update=_mesh)
 
 
-def pcl_filter(pcl_a, pcl_b, bound=0.5):
+def pcl_filter(pcl_box, pcl_target, bound=0.5):
     """
     Filter out the pcls of pcl_b that is not in the bounding_box of pcl_a
     """
     from itertools import compress
 
-    upper_bound = pcl_a[:,:3].max(axis=0) + bound
-    lower_bound = pcl_a[:,:3].min(axis=0) - bound
-    pcl_in_bound = (pcl_b[:,:3] < upper_bound) & (pcl_b[:,:3] > lower_bound)
+    upper_bound = pcl_box[:,:3].max(axis=0) + bound
+    lower_bound = pcl_box[:,:3].min(axis=0) - bound
+    pcl_in_bound = (pcl_target[:,:3] < upper_bound) & (pcl_target[:,:3] > lower_bound)
 
     filter_list = []
     for row in pcl_in_bound:
         filter_list.append(False if False in row else True)
-    return np.array(list(compress(pcl_b, filter_list)))
+    return np.array(list(compress(pcl_target, filter_list)))
+
+
+@nb.jit
+def filter2_np_nb(arr: np.ndarray, lower_bound: np.ndarray, upper_bound: np.ndarray):
+    n = 0
+    flag = True
+    for i in nb.prange(0, arr.shape[0]):
+    # for i in range(arr.shape[0]):
+        flag = True
+        for j in range(lower_bound.size):
+            if not (arr[i][j] > lower_bound[j] and arr[i][j] < upper_bound[j]):
+                flag = False
+                break
+        if flag:
+            n += 1
+    result = np.empty((n, arr.shape[1]), dtype=arr.dtype)
+    _n = 0
+    for i in nb.prange(0, arr.shape[0]):
+        flag = True
+        for j in range(lower_bound.size):
+            if not (arr[i][j] > lower_bound[j] and arr[i][j] < upper_bound[j]):
+                flag = False
+                break
+        if flag:
+            result[_n] = arr[i]
+            _n += 1
+        if _n == n:
+            break
+    return result
+
+
+def pcl_filter_nb(pcl_box, pcl_target, bound=0.5):
+    """
+    Filter out the pcls of pcl_b that is not in the bounding_box of pcl_a
+    """
+
+    upper_bound = pcl_box[:,:3].max(axis=0) + bound
+    lower_bound = pcl_box[:,:3].min(axis=0) - bound
+
+    return filter2_np_nb(pcl_target, lower_bound, upper_bound)
 
 
 class O3DItemUpdater():
@@ -272,7 +313,7 @@ class O3DStreamPlot():
             while time.time() - tick < duration:
                 continue
 
-            print("[O3DStreamPlot] {} FPS".format(1/(time.time() - tick)))
+            # print("[O3DStreamPlot] {} FPS".format(1/(time.time() - tick)))
 
             tick = time.time()
 

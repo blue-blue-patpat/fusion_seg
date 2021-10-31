@@ -119,8 +119,8 @@ def extract_mkv(filename, enable_view=False) -> None:
     with open(os.path.join(save_path, "info.txt"), 'r') as f:
         params = dict([param.split('=') for param in f.readline().split('_')])
 
-    # with open(os.path.join(save_path, "calibration_raw.json"), 'w') as f:
-    #     f.write(playback.calibration_raw)
+    with open(os.path.join(save_path, "calibration_raw.json"), 'w') as f:
+        f.write(playback.calibration_raw)
 
     create_dir(os.path.join(save_path, "color"))
     create_dir(os.path.join(save_path, "depth"))

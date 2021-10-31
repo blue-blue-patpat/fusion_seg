@@ -162,7 +162,7 @@ class KinectResultLoader(ResultLoader):
 
     def load_calibration(self):
         import json
-        calib_path = os.path.join(self.path, "kinect/{}/calibration_raw.json")
+        calib_path = os.path.join(self.path, "kinect/{}/calibration_raw.json".format(self.device))
         if not os.path.exists(calib_path):
             print("[KinectResultLoader] WARNING: Camera Clibration file not found.")
             self.R = np.eye(3)
@@ -285,6 +285,7 @@ class ResultFileLoader():
         :param offsets: if $root_path$/offsets.txt doesn't exist, init offsets with $offsets$
         :returns: None
         """
+
         self.root_path = root_path
 
         self.skip_head = skip_head
@@ -308,6 +309,7 @@ class ResultFileLoader():
         self.init_kinect_source()
         self.init_optitrack_source()
         self.init_mesh_source()
+        self.init_info()
 
         # Init calib
         self.init_calib_source()
@@ -323,11 +325,10 @@ class ResultFileLoader():
             # Init empty offsets
             self.offsets = Offsets(dict(zip(self.sources, [0]*len(self.sources))), base=self.sources[0])
 
-        # triggered by source mesh
-        self.init_skip()
-
         # triggered by source reindex
         self.init_reindex()
+
+        self.after_init_hook()
 
         self.fps = 30
 
@@ -338,36 +339,44 @@ class ResultFileLoader():
         Init Arbe radar results
         """
         if "arbe" not in self.sources:
+            self.a_loader = None
             print("[ResultFileLoader] Source 'arbe' is not enabled, may cause unexpected errors.")
+        else:
+            self.a_loader = ArbeResultLoader(self.root_path)
 
-        self.a_loader = ArbeResultLoader(self.root_path)
-
-        # Verify if params are illegal
-        if len(self.a_loader) < (self.skip_head + self.skip_tail):
-            raise IndexError("[ResultFileLoader] Skip count exceeds radar frame limit.")
+            # Verify if params are illegal
+            if len(self.a_loader) < (self.skip_head + self.skip_tail):
+                raise IndexError("[ResultFileLoader] Skip count exceeds radar frame limit.")
 
     def init_kinect_source(self):
         """
         Init Azure Kinect results
         """
-        params_template = []
+        self.kinect_params_template = []
         self.kinect_devices = ["master", "sub1", "sub2"]
+        self.enabled_kinect_devices = [device for device in self.kinect_devices if device in self.sources]
 
         if "kinect_pcl" in self.sources:
-            params_template.append(dict(tag="kinect/{}/pcls", ext=".npy"))
+            self.kinect_params_template.append(dict(tag="kinect/{}/pcls", ext=".npy"))
 
         if "kinect_skeleton" in self.sources:
-            params_template.append(dict(tag="kinect/{}/skeleton", ext=".npy"))
+            self.kinect_params_template.append(dict(tag="kinect/{}/skeleton", ext=".npy"))
 
         if "kinect_color" in self.sources:
-            params_template.append(dict(tag="kinect/{}/color", ext=".png"))
+            self.kinect_params_template.append(dict(tag="kinect/{}/color", ext=".png"))
+
+        if "kinect_depth" in self.sources:
+            self.kinect_params_template.append(dict(tag="kinect/{}/depth", ext=".png"))
 
         for device in self.kinect_devices:
-            self.__dict__["k_{}_loader".format(device)] = KinectResultLoader(self.root_path, device=device, params=[
-                dict(tag=item["tag"].format(device), ext=item["ext"]) for item in params_template
-            ]) if device in self.sources else None
+            self.__dict__["k_{}_loader".format(device)] = None
 
-            if "kinect_skeleton" in self.sources and device in self.sources:
+        for device in self.enabled_kinect_devices:
+            self.__dict__["k_{}_loader".format(device)] = KinectResultLoader(self.root_path, device=device, params=[
+                dict(tag=item["tag"].format(device), ext=item["ext"]) for item in self.kinect_params_template
+            ])
+
+            if "kinect_skeleton" in self.sources:
                 self.__dict__["k_{}_loader".format(device)].load_calibration()
 
     def init_optitrack_source(self):
@@ -381,6 +390,17 @@ class ResultFileLoader():
         Init Mesh
         """
         self.mesh_loader = MinimalLoader(self.root_path) if "mesh" in self.sources else None
+
+    def init_info(self):
+        import json
+        self.info_dict = {}
+        if os.path.exists(os.path.join(self.root_path, "infomation.json")):
+            with open(os.path.join(self.root_path, "infomation.json"), "r") as f:
+                record_info = json.load(f)
+            for k,v in record_info.items():
+                self.info_dict[k.strip()] = v
+        else:
+            print("[ResultFileLoader] Information not found.")
 
     def init_calib_source(self):
         """
@@ -425,6 +445,31 @@ class ResultFileLoader():
 
         self.skip_head = self.skip_tail = 0
 
+    def after_init_hook(self):
+        if self.select_key == "arbe":
+            if self.a_loader is None:
+                self.a_loader = ArbeResultLoader(self.root_path)
+            self.init_skip()
+
+        if self.select_key == "mesh":
+            if "masid" in list(self.mesh_loader.file_dict.values())[0].columns:
+                self.mesh_kinect_key_device = "master"
+            elif "sub1id" in list(self.mesh_loader.file_dict.values())[0].columns:
+                self.mesh_kinect_key_device = "sub1"
+            elif "sub2id" in list(self.mesh_loader.file_dict.values())[0].columns:
+                self.mesh_kinect_key_device = "sub2"
+            if self.__dict__["k_{}_loader".format(self.mesh_kinect_key_device)] is None:
+                self.__dict__["k_{}_loader".format(self.mesh_kinect_key_device)] =\
+                KinectResultLoader(self.root_path, device=self.mesh_kinect_key_device, params=[
+                    dict(tag=item["tag"].format(self.mesh_kinect_key_device), ext=item["ext"])
+                        for item in self.kinect_params_template
+                ])
+        
+        if len(self.enabled_kinect_devices) > 0:
+            for device in self.kinect_devices:
+                if self.__dict__["k_{}_loader".format(device)] is None and device in self.offsets.keys():
+                    self.__dict__["k_{}_loader".format(device)] = KinectResultLoader(self.root_path, device=device)
+
     def select_radar_item_by_id(self, r_loader: ArbeResultLoader, idx: int) -> dict:
         if "reindex" in self.sources:
             arbe_res = r_loader.select_item(idx, "reindexed_id")
@@ -447,37 +492,6 @@ class ResultFileLoader():
             arbe=arbe_res["arbe"]
         ))
         return arbe_res
-
-    def select_kinect_trans_item_by_id(self, k_loader: KinectResultLoader, idx: int) -> dict:
-        res = k_loader.select_item(idx, "id", False)
-
-        trans_mat = self.trans["kinect_{}".format(k_loader.device)]
-        if "kinect_skeleton" in self.sources:
-            self.results.update({
-                "{}_skeleton".format(k_loader.device): (np.load(
-                    res["kinect/{}/skeleton".format(k_loader.device)]["filepath"]
-                    )[:,:,:3].reshape(-1,3) @ k_loader.R.T + k_loader.t)
-                    / 1000 @ trans_mat["R"].T + trans_mat["t"]
-            })
-            self.info.update({
-                k_loader.device: res["kinect/{}/skeleton".format(k_loader.device)]
-            })
-        if "kinect_pcl" in self.sources:
-            pcl = np.load(res["kinect/{}/pcls".format(k_loader.device)]["filepath"]).reshape(-1, 3)
-            if "kinect_pcl_remove_zeros" in self.sources:
-                pcl = pcl[pcl.any(axis=1)]
-            self.results.update({
-                "{}_pcl".format(k_loader.device):  pcl / 1000 @ trans_mat["R"].T + trans_mat["t"],
-            })
-            self.info.update({
-                "{}_pcl".format(k_loader.device): res["kinect/{}/pcls".format(k_loader.device)]
-            })
-        if "kinect_color" in self.sources:
-            self.results.update({
-                "{}_color".format(k_loader.device): cv2.imread(res["kinect/{}/color".format(k_loader.device)]["filepath"]),
-            })
-
-        return res
 
     def select_kinect_trans_item_by_t(self, k_loader: KinectResultLoader, t: float) -> None:
         """
@@ -521,10 +535,14 @@ class ResultFileLoader():
             })
         if "kinect_pcl" in self.sources:
             pcl = np.load(res["kinect/{}/pcls".format(k_loader.device)]["filepath"]).reshape(-1, 3)
+            pcl_empty_filter = pcl.any(axis=1)
             if "kinect_pcl_remove_zeros" in self.sources:
-                pcl = pcl[pcl.any(axis=1)]
+                pcl = pcl[pcl_empty_filter] / 1000 @ trans_mat["R"].T + trans_mat["t"]
+            else:
+                pcl = pcl / 1000 @ trans_mat["R"].T + trans_mat["t"]
+                pcl[np.logical_not(pcl_empty_filter)] = 0
             self.results.update({
-                "{}_pcl".format(k_loader.device):  pcl / 1000 @ trans_mat["R"].T + trans_mat["t"],
+                "{}_pcl".format(k_loader.device):  pcl,
             })
             self.info.update({
                 "{}_pcl".format(k_loader.device): res["kinect/{}/pcls".format(k_loader.device)]
@@ -559,9 +577,14 @@ class ResultFileLoader():
             self.info.update(dict(mesh=None))
        
         if "mesh_param" in self.sources:
-            self.results.update(dict(
-                mesh_param=np.load(mesh_res["minimal/param"]["filepath"]),
-            ))
+            try:
+                self.results.update(dict(
+                    mesh_param=np.load(mesh_res["minimal/param"]["filepath"]),
+                ))
+            except Exception as e:
+                self.results.update(dict(
+                    mesh_param=None,
+                ))
         if "mesh_obj" in self.sources:
             verts, faces, _ = load_obj(mesh_res["minimal/obj"]["filepath"])
             self.results.update(dict(
@@ -586,21 +609,20 @@ class ResultFileLoader():
             self.select_trans_optitrack_item_by_t(self.o_loader, t)
         if self.mesh_loader is not None:
             self.select_mesh_item(self.mesh_loader, rid, "rid")
-        return self.results, self.info
+        self.results["information"] = self.info_dict
 
     def select_by_mesh(self, index: int) -> tuple:
         mesh_res = self.select_mesh_item(self.mesh_loader, index, "id")
 
         masid = int(mesh_res["minimal/param"]["masid"])
 
-        mas_res = self.select_kinect_trans_item_by_id(self.k_master_loader, masid)
+        # Use key device
+        key_res = self.__dict__["k_{}_loader".format(self.mesh_kinect_key_device)].select_item(masid, "id", False)
+        key_t = float(list(key_res.values())[0]["st"])
 
-        mas_t = float(mas_res["kinect/master"]["st"])
-
-        # Skip kinect master
-        for device in self.kinect_devices[1:]:
-            if self.__dict__["k_{}_loader".format(device)] is not None and device in self.sources:
-                self.select_kinect_trans_item_by_t(self.__dict__["k_{}_loader".format(device)], mas_t)
+        for device in self.enabled_kinect_devices:
+            self.select_kinect_trans_item_by_t(self.__dict__["k_{}_loader".format(device)], key_t)
+        self.results["information"] = self.info_dict
 
     def __getitem__(self, index: int) -> tuple:
         self.results = {}
@@ -611,12 +633,19 @@ class ResultFileLoader():
             raise IndexError("[ResultFileLoader] Index out of range {}.".format(range(0, self.__len__())))
 
         if self.select_key == "arbe":
-            return self.select_by_radar(i)
+            self.select_by_radar(i)
         elif self.select_key == "mesh":
-            return self.select_by_mesh(i)
+            self.select_by_mesh(i)
+
+        return self.results, self.info
 
     def __len__(self):
-        return len(self.a_loader) - self.skip_head - self.skip_tail
+        if self.select_key == "arbe":
+            return len(self.a_loader) - self.skip_head - self.skip_tail
+        elif self.select_key == "mesh":
+            return len(self.mesh_loader)
+        else:
+            raise NotImplementedError("[ResultFileLoader] Unknow select_key type")
 
     def __repr__(self):
         res = super().__repr__()
