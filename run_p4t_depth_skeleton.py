@@ -1,11 +1,8 @@
 import datetime
-from json import dump
 import os
-import pickle
 import time
 import sys
 import numpy as np
-from numpy.lib import average
 import torch
 import torch.utils.data
 from torch import nn
@@ -13,95 +10,60 @@ import torchvision
 from sklearn.metrics import mean_squared_error
 import matplotlib.pyplot as plt
 import cv2
-from nn.p4t.modules.gmm import GaussianMixture
-# from sklearn.mixture import GaussianMixture
-from minimal.models import KinematicModel, KinematicPCAWrapper
-from minimal.config import SMPL_MODEL_1_0_MALE_PATH, SMPL_MODEL_1_0_PATH
 
-from nn.p4t import tools
 from nn.p4t import utils
-from nn.p4t.modules.geodesic_loss import GeodesicLoss
 from nn.p4t.scheduler import WarmupMultiStepLR
-from nn.p4t.datasets.depth_mesh import DepthMesh3D
-from nn.SMPL.smpl_layer import SMPLLoss
+from nn.p4t.datasets.depth_skeleton import MMJoint3D
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
-from visualization.mesh_plot import MeshEvaluateStreamPlot
-from visualization.utils import o3d_mesh, o3d_pcl, o3d_plot, o3d_smpl_mesh
-from nn.p4t.modules.loss import LossManager
+from visualization.o3d_plot import NNPredLabelStreamPlot
+from optitrack.config import marker_lines
 
 
-def train_one_epoch(model, losses, criterions, optimizer, lr_scheduler, data_loader, device, epoch, print_freq, loss_weight, output_dim, use_gender):
+def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, device, epoch, print_freq):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value}'))
     metric_logger.add_meter('clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.3f}'))
 
     header = 'Epoch: [{}]'.format(epoch)
-
     for clip, target, _ in metric_logger.log_every(data_loader, print_freq, header):
         start_time = time.time()
         clip, target = clip.to(device), target.to(device)
         output = model(clip)
-        batch_size = clip.shape[0]
-        # translation loss
-        losses.update_loss("trans_loss", loss_weight[0]*criterions["mse"](output[:,0:3], target[:,0:3]))
-        # pose loss
-        if output_dim >= 157:
-            output_mat = tools.rotation6d_2_rot_mat(output[:,3:-11])
-            target_mat = tools.rodrigues_2_rot_mat(target[:,3:-11])
-            losses.update_loss("pose_loss", loss_weight[1]*criterions["rot_mat"](output_mat, target_mat))
-            v_loss, j_loss = criterions["smpl"](torch.cat((output[:,:3], output_mat, output[:,-11:]), -1), torch.cat((target[:,:3], target_mat, target[:,-11:]), -1), use_gender)
-        else:
-            losses.update_loss("pose_loss", loss_weight[1]*criterions["mse"](output[:,3:-11],target[:,3:-11]))
-            v_loss, j_loss = criterions["smpl"](output, target, use_gender)
-        # shape loss
-        losses.update_loss("shape_loss", loss_weight[2]*criterions["mse"](output[:,-11:-1], target[:,-11:-1]))
-        # vertices loss
-        losses.update_loss("vertices_loss", loss_weight[3]*v_loss)
-        # joints loss
-        losses.update_loss("joints_loss", loss_weight[4]*j_loss)
-        # gender loss
-        if use_gender:
-            losses.update_loss("gender_loss", loss_weight[5]*criterions["entropy"](output[:,-1], target[:,-1]))
+        loss = criterion(output, target)
 
-        loss = losses.calculate_total_loss()
-        
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
+        batch_size = clip.shape[0]
         metric_logger.update(loss=loss.item(), lr=optimizer.param_groups[0]["lr"])
         metric_logger.meters['clips/s'].update(batch_size / (time.time() - start_time))
         lr_scheduler.step()
         sys.stdout.flush()
+    return list(metric_logger.meters['loss'].deque)
 
-def evaluate(model, criterion, data_loader, device, output_dim, visual=False, scale=1, output_path='', use_gender=1):
+
+def evaluate(model, criterion, data_loader, device, visual=False, scale=1, output_path=''):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
     rmse_list = []
     frame_rmse = []
-
-    if use_gender:
-        smpl_m_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_MALE_PATH, compute_mesh=False))
-        smpl_f_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_PATH, compute_mesh=False))
-    else:
-        smpl_m_model = smpl_f_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_PATH, compute_mesh=False))
     with torch.no_grad():
-        for clip, target, _ in metric_logger.log_every(data_loader, 100, header):
+        for clip, target, index_map in metric_logger.log_every(data_loader, 100, header):
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output = model(clip)
-            if output_dim >= 158:
-                output = tools.rotation6d_2_rodrigues(output)
             loss = criterion(output, target)
 
+            # FIXME need to take into account that the datasets
             # could have been padded in distributed setup
             clip = clip.cpu().numpy()
             output = output.cpu().numpy()
             target = target.cpu().numpy()
-            rmse = np.sqrt(mean_squared_error(output, target))
+            rmse = mean_squared_error(target, output, squared=False) * scale
             print("batch rmse:", rmse)
 
             batch_size = clip.shape[0]
@@ -111,40 +73,37 @@ def evaluate(model, criterion, data_loader, device, output_dim, visual=False, sc
 
             if visual:
                 for b, batch in enumerate(clip):
-                    arbe_frame = batch[-1][:,:3]
-                    pred = output[b]
-                    label = target[b]
-                    # restore to origin size, except gender
-                    # pred[:-1] *= scale
-                    # label[:-1] *= scale
-                    frame_rmse.append(mean_squared_error(pred, label, squared=False))
+                    arbe_frame = batch[-1][:,:3] * scale
+                    pred = output[b].reshape(-1, 3) * scale
+                    label = target[b].reshape(-1, 3) * scale
+                    frame_rmse.append((index_map[0].numpy()[b], index_map[1].numpy()[b], mean_squared_error(pred, label, squared=False)))
                     yield dict(
-                        radar_pcl = dict(
+                        arbe_pcl = dict(
                             pcl = arbe_frame,
                             color = [0,1,0]
                         ),
-                        pred_smpl = dict(
-                            params = pred[:-1],
-                            color = [1,0,0],
-                            model=smpl_m_model if pred[-1] > 0.5 else smpl_f_model,
+                        pred = dict(
+                            skeleton = pred,
+                            lines = marker_lines,
+                            colors = np.asarray([[1,0,0]] * len(marker_lines))
                         ),
-                        label_smpl = dict(
-                            params = label[:-1],
-                            model=smpl_m_model if label[-1] > 0.5 else smpl_f_model,
+                        label = dict(
+                            skeleton = label,
+                            lines = marker_lines,
+                            colors = np.asarray([[0,0,1]] * len(marker_lines))
                         )
                     )
             else:
                 yield rmse
             rmse_list.append(rmse)
-
         if visual and output_path:
-            frame_rmse.sort()
-            hist, bin_edges = np.histogram(np.asarray(frame_rmse), bins=100)
-            cdf = np.cumsum(hist)/len(frame_rmse)
+            frame_rmse.sort(key=lambda v: v[2])
+            hist, bin_edges = np.histogram(np.asarray(frame_rmse)[:,2], bins=10, range=[0,0.2])
+            cdf = np.cumsum(hist)
             plt.plot(bin_edges[:-1], cdf)
             plt.savefig(output_path+"/rmse.png")
-            plt.xlabel("smpl param rmse")
-            plt.ylabel("percentage")
+            with open(output_path+"/rmse.txt", 'w') as f:
+                f.write(str(np.mean(rmse_list)))
             plt.close("all")
             np.save(output_path+"/rmse", np.asarray(frame_rmse))
         print("RMSE:", np.mean(rmse_list))
@@ -167,39 +126,26 @@ def main(args):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    device = torch.device('cuda')
+    device = torch.device('cuda:0')
 
     # Data loading code
     print("Loading data")
 
-    dataset = DepthMesh3D(
+    dataset_all = MMJoint3D(
             root_path=args.data_path,
             frames_per_clip=args.clip_len,
             step_between_clips=1,
             num_points=args.num_points,
-            normal_scale=args.normal_scale,
-            skip_head=args.skip_head,
-            output_dim=args.output_dim,
             train=args.train
     )
-    # dataset_test = DepthMesh3D(
-    #         root_path=args.data_path,
-    #         frames_per_clip=args.clip_len,
-    #         step_between_clips=1,
-    #         num_points=args.num_points,
-    #         normal_scale=args.normal_scale,
-    #         skip_head=args.skip_head,
-    #         output_dim=args.output_dim,
-    #         train=False
-    # )
 
-    train_size = int(0.9 * len(dataset))
-    eval_size = len(dataset) - train_size
-    dataset_train, dataset_eval = torch.utils.data.random_split(dataset, [train_size, eval_size])
+    train_size = int(0.9 * len(dataset_all))
+    eval_size = len(dataset_all) - train_size
+    dataset_train, dataset_eval = torch.utils.data.random_split(dataset_all, [train_size, eval_size])
 
     print("Creating data loaders")
 
-    data_loader_train = torch.utils.data.DataLoader(dataset_train, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=True)
+    data_loader_train = torch.utils.data.DataLoader(dataset_train, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
     data_loader_eval = torch.utils.data.DataLoader(dataset_eval, batch_size=args.batch_size, num_workers=args.workers, pin_memory=True)
 
     print("Creating model")
@@ -208,19 +154,16 @@ def main(args):
                   temporal_kernel_size=args.temporal_kernel_size, temporal_stride=args.temporal_stride,
                   emb_relu=args.emb_relu,
                   dim=args.dim, depth=args.depth, heads=args.heads, dim_head=args.dim_head,
-                  mlp_dim=args.mlp_dim, output_dim=dataset.output_dim)
+                  mlp_dim=args.mlp_dim, output_dim=dataset_all.output_dim)
 
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
     model.to(device)
 
-    mse_criterion = nn.MSELoss()
-    smpl_criterion = SMPLLoss(device=device, scale=args.normal_scale)
-    rm_criterion = GeodesicLoss()
-    entropy_criterion = nn.BCELoss()
+    criterion = nn.MSELoss()
 
     lr = args.lr
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     # convert scheduler to be per iteration, not per epoch, for warmup that lasts
     # between different epochs
@@ -240,40 +183,26 @@ def main(args):
     if args.train:
         print("Start training")
         start_time = time.time()
-
-        # gmm_criterion = GaussianMixture(n_components=16, covariance_type='full', random_state=0, max_iter=200)
-        # if args.new_gmm:
-        #     gmm_criterion = GaussianMixture(n_components=16, n_features=72, covariance_type='full')
-        #     gmm_pose = []
-        #     for data in dataset:
-        #         gmm_pose.append(data[1][3:75])
-        #     for data in dataset_test:
-        #         gmm_pose.append(data[1][3:75])
-        #     gmm_criterion.fit(torch.tensor(gmm_pose))
-        #     with open(os.path.join(args.data_path, "gmm.pkl"), 'wb') as f:
-        #         pickle.dump(gmm_criterion, f)
-        # else:
-        #     with open(os.path.join("ignoredata/p4tmesh/gmm/gmm.pkl"), 'rb') as f:
-        #         gmm_criterion = pickle.load(f)
-
+        fig = plt.figure()
+        loss_list = []
         rmse_list = []
         bot =TimerBot()
         dingbot = True
-        loss_weight = list(map(float, args.loss_weight.split(",")))
-
-        losses = LossManager()
-
-        criterions = dict(mse=mse_criterion, smpl=smpl_criterion, rot_mat=rm_criterion, entropy=entropy_criterion)
-
-        start_token = True
         for epoch in range(args.start_epoch, args.epochs):
-            train_one_epoch(model, losses, criterions, optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq, loss_weight, args.output_dim, args.use_gender)
-            img = losses.calculate_epoch_loss(start_token)
-            rmse = np.mean(list(evaluate(model, mse_criterion, data_loader_eval, device, args.output_dim, use_gender=args.use_gender)))
+            loss = train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq)
+            loss_list += loss
+
+            rmse = np.mean(list(evaluate(model, criterion, data_loader_eval, device)))
             rmse_list.append(rmse)
 
+            fig.add_subplot(1, 1, 1).plot(loss_list)
+            fig.canvas.draw()
+            img = cv2.cvtColor(np.asarray(fig.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
+            if args.output_dir:
+                cv2.imwrite(os.path.join(args.output_dir, 'loss.png'), img)
+
             if dingbot:
-                bot.add_md("tran_mmbody", "【LOSS】 \n ![img]({}) \n 【RMSE】\n epoch={}, rmse={}".format(bot.img2b64(img), epoch, rmse))
+                bot.add_md("train_mmbody", "【LOSS】 \n ![img]({}) \n 【RMSE】\n epoch={}, rmse={}".format(bot.img2b64(img), epoch, rmse))
                 bot.enable()
             
             if args.output_dir:
@@ -283,41 +212,34 @@ def main(args):
                     'lr_scheduler': lr_scheduler.state_dict(),
                     'epoch': epoch,
                     'args': args}
+                # utils.save_on_master(
+                #     checkpoint,
+                #     os.path.join(args.output_dir, 'model_{}.pth'.format(epoch)))
                 utils.save_on_master(
                     checkpoint,
                     os.path.join(args.output_dir, 'checkpoint.pth'))
-                cv2.imwrite(os.path.join(args.output_dir, 'loss.png'), img)
-            start_token = False
 
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         print('Training time {}'.format(total_time_str))
         
     else:
-        loss_weight = list(map(float, args.loss_weight.split(",")))
-        data_loader_test = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
+        data_loader_test = torch.utils.data.DataLoader(dataset_all, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
+        plot = NNPredLabelStreamPlot()
         print("Start testing")
-        gen = evaluate(model, mse_criterion, data_loader_test, device, output_dim=args.output_dim, visual=True, scale=args.normal_scale)
-        plot = MeshEvaluateStreamPlot()
+        gen = evaluate(model, criterion, data_loader_test, device, visual=True, scale=dataset_all.normal_scale, output_path=args.output_dir)
         plot.show(gen, fps=15)
-        if False:
-            data = next(gen)
-            o3d_plot([o3d_pcl(**data["radar_pcl"]), o3d_smpl_mesh(**data["pred_smpl"]), o3d_smpl_mesh(**data["label_smpl"])])
 
 def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description='P4Transformer Model Training')
 
-    parser.add_argument('--data_path', default='/media/nesc525/perple2', type=str, help='dataset')
-    parser.add_argument('--seed', default=35, type=int, help='random seed')
+    parser.add_argument('--data_path', default='/media/nesc525/perple', type=str, help='dataset')
+    parser.add_argument('--seed', default=0, type=int, help='random seed')
     parser.add_argument('--model', default='P4Transformer', type=str, help='model')
     # input
     parser.add_argument('--clip_len', default=5, type=int, metavar='N', help='number of frames per clip')
     parser.add_argument('--num_points', default=1024, type=int, metavar='N', help='number of points per frame')
-    parser.add_argument('--normal_scale', default=1, type=int, metavar='N', help='normal scale of labels')
-    parser.add_argument('--skip_head', default=0, type=int, metavar='N', help='number of skip frames')
-    parser.add_argument('--new_gmm', action="store_true", help='new gmm')
-    parser.add_argument('--output_dim', default=158, type=int, metavar='N', help='output dim')
     # P4D
     parser.add_argument('--radius', default=0.7, type=float, help='radius for the ball query')
     parser.add_argument('--nsamples', default=32, type=int, help='number of neighbors for the ball query')
@@ -333,17 +255,15 @@ def parse_args():
     parser.add_argument('--dim_head', default=128, type=int, help='transformer dim for each head')
     parser.add_argument('--mlp_dim', default=2048, type=int, help='transformer mlp dim')
     # training
-    parser.add_argument('-b', '--batch_size', default=128, type=int)
-    parser.add_argument('--epochs', default=350, type=int, metavar='N', help='number of total epochs to run')
+    parser.add_argument('-b', '--batch_size', default=14, type=int)
+    parser.add_argument('--epochs', default=50, type=int, metavar='N', help='number of total epochs to run')
     parser.add_argument('-j', '--workers', default=10, type=int, metavar='N', help='number of data loading workers (default: 16)')
     parser.add_argument('--lr', default=0.01, type=float, help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')
     parser.add_argument('--wd', '--weight_decay', default=1e-4, type=float, metavar='W', help='weight decay (default: 1e-4)', dest='weight_decay')
-    parser.add_argument('--lr_milestones', nargs='+', default=[100,200], type=int, help='decrease lr on milestones')
+    parser.add_argument('--lr_milestones', nargs='+', default=[20, 30], type=int, help='decrease lr on milestones')
     parser.add_argument('--lr_gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
     parser.add_argument('--lr_warmup_epochs', default=10, type=int, help='number of warmup epochs')
-    parser.add_argument('--loss_weight', default="1,1,1,1,1,1", type=str, help='weight of loss')
-    parser.add_argument('--use_gender', default=1, type=int, help='use gender')
     # output
     parser.add_argument('--print_freq', default=10, type=int, help='print frequency')
     parser.add_argument('--output_dir', default='', type=str, help='path where to save')
