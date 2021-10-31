@@ -55,7 +55,7 @@ def train_one_epoch(model, losses, criterions, optimizer, lr_scheduler, data_loa
         else:
             losses.update_loss("pose_loss", loss_weight[1]*criterions["mse"](output[:,3:-11],target[:,3:-11]))
             v_loss, j_loss = criterions["smpl"](output, target, use_gender)
-        # shape loss
+        # shape losss
         losses.update_loss("shape_loss", loss_weight[2]*criterions["mse"](output[:,-11:-1], target[:,-11:-1]))
         # vertices loss
         losses.update_loss("vertices_loss", loss_weight[3]*v_loss)
