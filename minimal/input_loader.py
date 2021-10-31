@@ -77,7 +77,7 @@ def update(self: MinimalInput, idx: int, force_update: bool = False):
         raw_jnts = np.mean([result[KINECT_SOURCES[KINECT_SUB1_SOURCE]], result[KINECT_SOURCES[KINECT_SUB2_SOURCE]]], axis=0)
     else:
         raw_jnts = result[KINECT_SOURCES[self.jnts_source]]
-    brg.init_input(raw_jnts, np.vstack([result["master_pcl"], result["sub1_pcl"], result["sub2_pcl"]]))
+    brg.init_input(raw_jnts, np.vstack([result["sub1_pcl"], result["sub2_pcl"]]))
     _jnts, _pcl = brg.map(self.data_type)
     # R, t, scale = brg.revert_transform()
     self.input_dict[idx] = dict(
