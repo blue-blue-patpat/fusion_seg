@@ -531,7 +531,7 @@ class ResultFileLoader():
                     / 1000 @ trans_mat["R"].T + trans_mat["t"]
             })
             self.info.update({
-                k_loader.device: res["kinect/{}/skeleton".format(k_loader.device)]
+                "{}_skeleton".format(k_loader.device): res["kinect/{}/skeleton".format(k_loader.device)]
             })
         if "kinect_pcl" in self.sources:
             pcl = np.load(res["kinect/{}/pcls".format(k_loader.device)]["filepath"]).reshape(-1, 3)
