@@ -630,7 +630,7 @@ class ResultFileLoader():
 
         i = index + self.skip_head
         if index not in range(0, self.__len__()):
-            raise IndexError("[ResultFileLoader] Index out of range {}.".format(range(0, self.__len__())))
+            raise IndexError("[ResultFileLoader] {} Index {} out of range {}.".format(self.root_path, index, self.__len__()))
 
         if self.select_key == "arbe":
             self.select_by_radar(i)
