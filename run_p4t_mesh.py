@@ -63,7 +63,7 @@ def train_one_epoch(model, losses, criterions, optimizer, lr_scheduler, data_loa
         losses.update_loss("joints_loss", loss_weight[4]*j_loss)
         # gender loss
         if use_gender:
-            losses.update_loss("gender_loss", loss_weight[5]*criterions["entropy"](output[:,-1].unsqueeze(-1), target[:,-1].to(torch.long)))
+            losses.update_loss("gender_loss", loss_weight[5]*criterions["entropy"](output[:,-1], target[:,-1]))
 
         loss = losses.calculate_total_loss()
         
@@ -182,16 +182,6 @@ def main(args):
             output_dim=args.output_dim,
             train=args.train
     )
-    # dataset_test = MMMesh3D(
-    #         root_path=args.data_path,
-    #         frames_per_clip=args.clip_len,
-    #         step_between_clips=1,
-    #         num_points=args.num_points,
-    #         normal_scale=args.normal_scale,
-    #         skip_head=args.skip_head,
-    #         output_dim=args.output_dim,
-    #         train=False
-    # )
 
     train_size = int(0.9 * len(dataset))
     eval_size = len(dataset) - train_size
@@ -217,7 +207,7 @@ def main(args):
     mse_criterion = nn.MSELoss()
     smpl_criterion = SMPLLoss(device=device, scale=args.normal_scale)
     rm_criterion = GeodesicLoss()
-    entropy_criterion = nn.CrossEntropyLoss()
+    entropy_criterion = nn.BCEWithLogitsLoss()
 
     lr = args.lr
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -241,24 +231,7 @@ def main(args):
         print("Start training")
         start_time = time.time()
 
-        # gmm_criterion = GaussianMixture(n_components=16, covariance_type='full', random_state=0, max_iter=200)
-        # if args.new_gmm:
-        #     gmm_criterion = GaussianMixture(n_components=16, n_features=72, covariance_type='full')
-        #     gmm_pose = []
-        #     for data in dataset:
-        #         gmm_pose.append(data[1][3:75])
-        #     for data in dataset_test:
-        #         gmm_pose.append(data[1][3:75])
-        #     gmm_criterion.fit(torch.tensor(gmm_pose))
-        #     with open(os.path.join(args.data_path, "gmm.pkl"), 'wb') as f:
-        #         pickle.dump(gmm_criterion, f)
-        # else:
-        #     with open(os.path.join("ignoredata/p4tmesh/gmm/gmm.pkl"), 'rb') as f:
-        #         gmm_criterion = pickle.load(f)
-
-        rmse_list = []
         bot =TimerBot()
-        dingbot = True
         loss_weight = list(map(float, args.loss_weight.split(",")))
 
         losses = LossManager()
@@ -268,14 +241,9 @@ def main(args):
         start_token = True
         for epoch in range(args.start_epoch, args.epochs):
             train_one_epoch(model, losses, criterions, optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq, loss_weight, args.output_dim, args.use_gender)
-            img = losses.calculate_epoch_loss(start_token)
-            rmse = np.mean(list(evaluate(model, mse_criterion, data_loader_eval, device, args.output_dim, use_gender=args.use_gender)))
-            rmse_list.append(rmse)
+            losses.calculate_epoch_loss(start_token, args.output_dir, bot)
+            np.mean(list(evaluate(model, mse_criterion, data_loader_eval, device, args.output_dim, use_gender=args.use_gender)))
 
-            if dingbot:
-                bot.add_md("tran_mmbody", "【LOSS】 \n ![img]({}) \n 【RMSE】\n epoch={}, rmse={}".format(bot.img2b64(img), epoch, rmse))
-                bot.enable()
-            
             if args.output_dir:
                 checkpoint = {
                     'model': model_without_ddp.state_dict(),
@@ -286,7 +254,10 @@ def main(args):
                 utils.save_on_master(
                     checkpoint,
                     os.path.join(args.output_dir, 'checkpoint.pth'))
-                cv2.imwrite(os.path.join(args.output_dir, 'loss.png'), img)
+                utils.save_on_master(
+                    checkpoint,
+                    os.path.join(args.output_dir, '{}.pth'.format(epoch)))
+                
             start_token = False
 
         total_time = time.time() - start_time
@@ -358,9 +329,4 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    try:
-        main(args)
-    except Exception as e:
-        bot = TimerBot(1)
-        bot.add_task(str(e), 2)
-        time.sleep(5)
+    main(args)
