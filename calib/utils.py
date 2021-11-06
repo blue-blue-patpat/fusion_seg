@@ -57,8 +57,14 @@ def to_radar_transform_mat(root_path: str):
     |--optitrack    --{R, t}
     """
     transform_dict = {}
-    transform_dict.update(kinect_transform_mat(root_path))
-    transform_dict.update(optitrack_transform_mat(root_path))
+    try:
+        transform_dict.update(kinect_transform_mat(root_path))
+    except:
+        print("Kinect Rt not found.")
+    try:
+        transform_dict.update(optitrack_transform_mat(root_path))
+    except:
+        print("OptiTrack Rt not found.")
     return transform_dict
 
 

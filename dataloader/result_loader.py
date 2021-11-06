@@ -627,13 +627,13 @@ class ResultFileLoader():
     def select_by_mesh(self, index: int) -> tuple:
         mesh_res = self.select_mesh_item(self.mesh_loader, index, "id")
 
-        if "masid" in mesh_res["minimal/param"]:
+        if "masid" in mesh_res["minimal/param"] and not np.isnan(float(mesh_res["minimal/param"]["masid"])):
             kinect_key_device_id = int(mesh_res["minimal/param"]["masid"])
             self.mesh_kinect_key_device = "master"
-        elif "sub1id" in mesh_res["minimal/param"]:
+        elif "sub1id" in mesh_res["minimal/param"] and not np.isnan(float(mesh_res["minimal/param"]["sub1id"])):
             kinect_key_device_id = int(mesh_res["minimal/param"]["sub1id"])
             self.mesh_kinect_key_device = "sub1"
-        elif "sub2id" in mesh_res["minimal/param"]:
+        elif "sub2id" in mesh_res["minimal/param"] and not np.isnan(float(mesh_res["minimal/param"]["sub2id"])):
             kinect_key_device_id = int(mesh_res["minimal/param"]["sub2id"])
             self.mesh_kinect_key_device = "sub2"
         # Init device loader if necessary
