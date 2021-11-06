@@ -1,7 +1,6 @@
 import datetime
 from json import dump
 import os
-import pickle
 import time
 import sys
 import numpy as np
@@ -13,16 +12,14 @@ import torchvision
 from sklearn.metrics import mean_squared_error
 import matplotlib.pyplot as plt
 import cv2
-from nn.p4t.modules.gmm import GaussianMixture
-# from sklearn.mixture import GaussianMixture
 from minimal.models import KinematicModel, KinematicPCAWrapper
-from minimal.config import SMPL_MODEL_1_0_MALE_PATH, SMPL_MODEL_1_0_PATH
+from minimal.config import SMPL_MODEL_1_0_MALE_PATH, SMPL_MODEL_1_0_PATH, SMPL_MODEL_1_0_NEUTRAL_PATH
 
 from nn.p4t import tools
 from nn.p4t import utils
 from nn.p4t.modules.geodesic_loss import GeodesicLoss
 from nn.p4t.scheduler import WarmupMultiStepLR
-from nn.p4t.datasets.mmmesh import MMMesh3D
+from nn.p4t.datasets.mmmesh import MMMesh3D, MMMeshPKL
 from nn.SMPL.smpl_layer import SMPLLoss
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
@@ -30,8 +27,9 @@ from visualization.mesh_plot import MeshEvaluateStreamPlot
 from visualization.utils import o3d_mesh, o3d_pcl, o3d_plot, o3d_smpl_mesh
 from nn.p4t.modules.loss import LossManager
 
+# torch.cuda.set_device(2)
 
-def train_one_epoch(model, losses, criterions, optimizer, lr_scheduler, data_loader, device, epoch, print_freq, loss_weight, output_dim, use_gender):
+def train_one_epoch(model, losses, criterions, loss_weight, optimizer, lr_scheduler, data_loader, device, epoch, print_freq, output_dim, use_gender):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value}'))
@@ -57,13 +55,13 @@ def train_one_epoch(model, losses, criterions, optimizer, lr_scheduler, data_loa
             v_loss, j_loss = criterions["smpl"](output, target, use_gender)
         # shape loss
         losses.update_loss("shape_loss", loss_weight[2]*criterions["mse"](output[:,-11:-1], target[:,-11:-1]))
-        # vertices loss
-        losses.update_loss("vertices_loss", loss_weight[3]*v_loss)
         # joints loss
-        losses.update_loss("joints_loss", loss_weight[4]*j_loss)
+        losses.update_loss("joints_loss", loss_weight[3]*j_loss)
+        # vertices loss
+        losses.update_loss("vertices_loss", loss_weight[4]*v_loss)
         # gender loss
         if use_gender:
-            losses.update_loss("gender_loss", loss_weight[5]*criterions["entropy"](output[:,-1].unsqueeze(-1), target[:,-1].to(torch.long)))
+            losses.update_loss("gender_loss", loss_weight[5]*criterions["entropy"](output[:,-1], target[:,-1]))
 
         loss = losses.calculate_total_loss()
         
@@ -76,7 +74,7 @@ def train_one_epoch(model, losses, criterions, optimizer, lr_scheduler, data_loa
         lr_scheduler.step()
         sys.stdout.flush()
 
-def evaluate(model, criterion, data_loader, device, output_dim, visual=False, scale=1, output_path='', use_gender=1):
+def evaluate(model, losses, criterions, loss_weight, data_loader, device, output_dim, use_gender, visual=False, output_path=''):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
@@ -87,15 +85,37 @@ def evaluate(model, criterion, data_loader, device, output_dim, visual=False, sc
         smpl_m_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_MALE_PATH, compute_mesh=False))
         smpl_f_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_PATH, compute_mesh=False))
     else:
-        smpl_m_model = smpl_f_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_PATH, compute_mesh=False))
+        smpl_m_model = smpl_f_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_NEUTRAL_PATH, compute_mesh=False))
     with torch.no_grad():
         for clip, target, _ in metric_logger.log_every(data_loader, 100, header):
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output = model(clip)
+            # translation loss
+            losses.update_loss("trans_loss", loss_weight[0]*criterions["mse"](output[:,0:3], target[:,0:3]))
+            # pose loss
+            if output_dim >= 157:
+                output_mat = tools.rotation6d_2_rot_mat(output[:,3:-11])
+                target_mat = tools.rodrigues_2_rot_mat(target[:,3:-11])
+                losses.update_loss("pose_loss", loss_weight[1]*criterions["rot_mat"](output_mat, target_mat))
+                v_loss, j_loss = criterions["smpl"](torch.cat((output[:,:3], output_mat, output[:,-11:]), -1), torch.cat((target[:,:3], target_mat, target[:,-11:]), -1), use_gender, train=False)
+            else:
+                losses.update_loss("pose_loss", loss_weight[1]*criterions["mse"](output[:,3:-11],target[:,3:-11]))
+                v_loss, j_loss = criterions["smpl"](output, target, use_gender, train=False)
+            # shape loss
+            losses.update_loss("shape_loss", loss_weight[2]*criterions["mse"](output[:,-11:-1], target[:,-11:-1]))
+            # joints loss
+            losses.update_loss("joints_loss", loss_weight[3]*torch.sqrt(j_loss))
+            # vertices loss
+            losses.update_loss("vertices_loss", loss_weight[4]*torch.sqrt(v_loss))
+            # gender loss
+            if use_gender:
+                losses.update_loss("gender_loss", loss_weight[5]*criterions["entropy"](output[:,-1], target[:,-1]))
+
+            loss = losses.calculate_total_loss()
+
             if output_dim >= 158:
                 output = tools.rotation6d_2_rodrigues(output)
-            loss = criterion(output, target)
 
             # could have been padded in distributed setup
             clip = clip.cpu().numpy()
@@ -107,13 +127,13 @@ def evaluate(model, criterion, data_loader, device, output_dim, visual=False, sc
             batch_size = clip.shape[0]
             metric_logger.update(loss=loss.item())
             metric_logger.meters['rmse'].update(rmse, n=batch_size)
-            torch.cuda.empty_cache()
 
             if visual:
                 for b, batch in enumerate(clip):
                     arbe_frame = batch[-1][:,:3]
                     pred = output[b]
                     label = target[b]
+                    print(pred[-1], label[-1])
                     # restore to origin size, except gender
                     # pred[:-1] *= scale
                     # label[:-1] *= scale
@@ -133,8 +153,6 @@ def evaluate(model, criterion, data_loader, device, output_dim, visual=False, sc
                             model=smpl_m_model if label[-1] > 0.5 else smpl_f_model,
                         )
                     )
-            else:
-                yield rmse
             rmse_list.append(rmse)
 
         if visual and output_path:
@@ -166,13 +184,13 @@ def main(args):
     torch.cuda.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-
+    
     device = torch.device('cuda')
 
     # Data loading code
     print("Loading data")
 
-    dataset = MMMesh3D(
+    dataset = MMMeshPKL(
             root_path=args.data_path,
             frames_per_clip=args.clip_len,
             step_between_clips=1,
@@ -182,16 +200,6 @@ def main(args):
             output_dim=args.output_dim,
             train=args.train
     )
-    # dataset_test = MMMesh3D(
-    #         root_path=args.data_path,
-    #         frames_per_clip=args.clip_len,
-    #         step_between_clips=1,
-    #         num_points=args.num_points,
-    #         normal_scale=args.normal_scale,
-    #         skip_head=args.skip_head,
-    #         output_dim=args.output_dim,
-    #         train=False
-    # )
 
     train_size = int(0.9 * len(dataset))
     eval_size = len(dataset) - train_size
@@ -210,14 +218,17 @@ def main(args):
                   dim=args.dim, depth=args.depth, heads=args.heads, dim_head=args.dim_head,
                   mlp_dim=args.mlp_dim, output_dim=dataset.output_dim)
 
-    if torch.cuda.device_count() > 1:
-        model = nn.DataParallel(model)
+    # if torch.cuda.device_count() > 1:
+    #     model = nn.DataParallel(model)
     model.to(device)
+    
+    losses = LossManager()
 
     mse_criterion = nn.MSELoss()
     smpl_criterion = SMPLLoss(device=device, scale=args.normal_scale)
     rm_criterion = GeodesicLoss()
-    entropy_criterion = nn.CrossEntropyLoss()
+    entropy_criterion = nn.BCEWithLogitsLoss()
+    criterions = dict(mse=mse_criterion, smpl=smpl_criterion, rot_mat=rm_criterion, entropy=entropy_criterion)
 
     lr = args.lr
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -241,41 +252,15 @@ def main(args):
         print("Start training")
         start_time = time.time()
 
-        # gmm_criterion = GaussianMixture(n_components=16, covariance_type='full', random_state=0, max_iter=200)
-        # if args.new_gmm:
-        #     gmm_criterion = GaussianMixture(n_components=16, n_features=72, covariance_type='full')
-        #     gmm_pose = []
-        #     for data in dataset:
-        #         gmm_pose.append(data[1][3:75])
-        #     for data in dataset_test:
-        #         gmm_pose.append(data[1][3:75])
-        #     gmm_criterion.fit(torch.tensor(gmm_pose))
-        #     with open(os.path.join(args.data_path, "gmm.pkl"), 'wb') as f:
-        #         pickle.dump(gmm_criterion, f)
-        # else:
-        #     with open(os.path.join("ignoredata/p4tmesh/gmm/gmm.pkl"), 'rb') as f:
-        #         gmm_criterion = pickle.load(f)
-
-        rmse_list = []
         bot =TimerBot()
-        dingbot = True
         loss_weight = list(map(float, args.loss_weight.split(",")))
 
-        losses = LossManager()
-
-        criterions = dict(mse=mse_criterion, smpl=smpl_criterion, rot_mat=rm_criterion, entropy=entropy_criterion)
-
-        start_token = True
         for epoch in range(args.start_epoch, args.epochs):
-            train_one_epoch(model, losses, criterions, optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq, loss_weight, args.output_dim, args.use_gender)
-            img = losses.calculate_epoch_loss(start_token)
-            rmse = np.mean(list(evaluate(model, mse_criterion, data_loader_eval, device, args.output_dim, use_gender=args.use_gender)))
-            rmse_list.append(rmse)
+            train_one_epoch(model, losses, criterions, loss_weight, optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq, args.output_dim, args.use_gender)
+            losses.calculate_epoch_loss(os.path.join(args.output_dir,"loss/train"), epoch, bot)
+            list(evaluate(model, losses, criterions, loss_weight, data_loader_eval, device, args.output_dim, use_gender=args.use_gender))
+            losses.calculate_epoch_loss(os.path.join(args.output_dir,"loss/eval"), epoch, bot)
 
-            if dingbot:
-                bot.add_md("tran_mmbody", "【LOSS】 \n ![img]({}) \n 【RMSE】\n epoch={}, rmse={}".format(bot.img2b64(img), epoch, rmse))
-                bot.enable()
-            
             if args.output_dir:
                 checkpoint = {
                     'model': model_without_ddp.state_dict(),
@@ -286,8 +271,11 @@ def main(args):
                 utils.save_on_master(
                     checkpoint,
                     os.path.join(args.output_dir, 'checkpoint.pth'))
-                cv2.imwrite(os.path.join(args.output_dir, 'loss.png'), img)
-            start_token = False
+                if (epoch + 5) % 5 == 0:
+                    utils.save_on_master(
+                        checkpoint,
+                        os.path.join(args.output_dir, 'epoch{}.pth'.format(epoch)))
+                    os.system("cp -r {}/loss {}/backup".format(args.output_dir, args.output_dir))
 
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -297,10 +285,12 @@ def main(args):
         loss_weight = list(map(float, args.loss_weight.split(",")))
         data_loader_test = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
         print("Start testing")
-        gen = evaluate(model, mse_criterion, data_loader_test, device, output_dim=args.output_dim, visual=True, scale=args.normal_scale)
+        gen = evaluate(model, losses, criterions, loss_weight, data_loader_test, device, output_dim=args.output_dim, visual=True, use_gender=args.use_gender)
         plot = MeshEvaluateStreamPlot()
         plot.show(gen, fps=15)
-        if False:
+        losses.calculate_epoch_loss(os.path.join(args.output_dir,"loss/test"), 0)
+        single = False
+        if single:
             data = next(gen)
             o3d_plot([o3d_pcl(**data["radar_pcl"]), o3d_smpl_mesh(**data["pred_smpl"]), o3d_smpl_mesh(**data["label_smpl"])])
 
@@ -358,9 +348,4 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    try:
-        main(args)
-    except Exception as e:
-        bot = TimerBot(1)
-        bot.add_task(str(e), 2)
-        time.sleep(5)
+    main(args)
