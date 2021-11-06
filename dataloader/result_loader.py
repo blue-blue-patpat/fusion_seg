@@ -250,6 +250,19 @@ class MinimalLoader(ResultLoader):
         self.run()
 
 
+class PKLLoader(ResultLoader):
+    def __init__(self, result_path, params=None, device="sub1") -> None:
+        super().__init__(result_path)
+        if params is None:
+            self.params = [
+                dict(tag="rgbd_data/{}".format(device), ext=".pkl"),
+            ]
+        else:
+            self.params = params
+        self.run()
+        self.pkls = list(self.file_dict.values())[0].loc[:, "filepath"]
+
+
 class ResultFileLoader():
     """
     Load files from sources
@@ -531,7 +544,7 @@ class ResultFileLoader():
                     / 1000 @ trans_mat["R"].T + trans_mat["t"]
             })
             self.info.update({
-                k_loader.device: res["kinect/{}/skeleton".format(k_loader.device)]
+                "{}_skeleton".format(k_loader.device): res["kinect/{}/skeleton".format(k_loader.device)]
             })
         if "kinect_pcl" in self.sources:
             pcl = np.load(res["kinect/{}/pcls".format(k_loader.device)]["filepath"]).reshape(-1, 3)
@@ -614,10 +627,21 @@ class ResultFileLoader():
     def select_by_mesh(self, index: int) -> tuple:
         mesh_res = self.select_mesh_item(self.mesh_loader, index, "id")
 
-        masid = int(mesh_res["minimal/param"]["masid"])
+        if "masid" in mesh_res["minimal/param"]:
+            kinect_key_device_id = int(mesh_res["minimal/param"]["masid"])
+            self.mesh_kinect_key_device = "master"
+        elif "sub1id" in mesh_res["minimal/param"]:
+            kinect_key_device_id = int(mesh_res["minimal/param"]["sub1id"])
+            self.mesh_kinect_key_device = "sub1"
+        elif "sub2id" in mesh_res["minimal/param"]:
+            kinect_key_device_id = int(mesh_res["minimal/param"]["sub2id"])
+            self.mesh_kinect_key_device = "sub2"
+        # Init device loader if necessary
+        if self.__dict__["k_{}_loader".format(self.mesh_kinect_key_device)] is None:
+            self.after_init_hook()
 
         # Use key device
-        key_res = self.__dict__["k_{}_loader".format(self.mesh_kinect_key_device)].select_item(masid, "id", False)
+        key_res = self.__dict__["k_{}_loader".format(self.mesh_kinect_key_device)].select_item(kinect_key_device_id, "id", False)
         key_t = float(list(key_res.values())[0]["st"])
 
         for device in self.enabled_kinect_devices:
@@ -630,7 +654,7 @@ class ResultFileLoader():
 
         i = index + self.skip_head
         if index not in range(0, self.__len__()):
-            raise IndexError("[ResultFileLoader] Index out of range {}.".format(range(0, self.__len__())))
+            raise IndexError("[ResultFileLoader] {} Index {} out of range {}.".format(self.root_path, index, self.__len__()))
 
         if self.select_key == "arbe":
             self.select_by_radar(i)
