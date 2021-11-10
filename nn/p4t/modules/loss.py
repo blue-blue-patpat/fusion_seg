@@ -1,4 +1,3 @@
-import os
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -61,12 +60,6 @@ class LossManager():
         super(LossManager).__init__()
         self.loss_dict = {}
         self.batch_loss = []
-<<<<<<< HEAD
-=======
-        self.epoch_loss = []
-        self.batch_size = 0
-        self.len_train_batch = 0
->>>>>>> a5cd3d0f9a5d98072aa5d624318605e6cc6b8a6f
 
     def update_loss(self, name, loss):
         if name not in self.loss_dict:
@@ -82,7 +75,6 @@ class LossManager():
         self.batch_loss.append(total_loss)
         return total_loss
 
-<<<<<<< HEAD
     def calculate_epoch_loss(self, output_path, epoch, ding_bot=None):
         fig = plt.figure()
         loss_json = os.path.join(output_path, "loss.json")
@@ -101,30 +93,10 @@ class LossManager():
             losses.update({"total_loss":list(total_loss)})
             json.dump(losses, f)
         fig.add_subplot(3, 3, i+2, title="total_loss").plot(total_loss)
-=======
-    def calculate_epoch_loss(self, start_token, output_path, ding_bot=None):
-        fig = plt.figure()
-        
-        if start_token:
-            self.len_train_batch = self.batch_size // len(self.loss_dict)
-
-        for i, name in enumerate(self.loss_dict):
-            epoch_loss = torch.mean(torch.tensor(self.loss_dict[name]["batch_loss"][-self.len_train_batch:]))
-            test_loss = torch.mean(torch.tensor(self.loss_dict[name]["test_loss"][-self.len_train_batch:]))
-            self.loss_dict[name]["epoch_loss"].append(epoch_loss)
-            fig.add_subplot(3, 3, i+1, title=name).plot(self.loss_dict[name]["epoch_loss"])
-        self.epoch_loss.append(torch.mean(torch.tensor(self.batch_loss[-self.len_train_batch:])))
-        fig.add_subplot(3, 3, i+2, title="total_loss").plot(self.epoch_loss)
->>>>>>> a5cd3d0f9a5d98072aa5d624318605e6cc6b8a6f
         fig.tight_layout()
         fig.canvas.draw()
         img = cv2.cvtColor(np.asarray(fig.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
-        cv2.imwrite(os.path.join(output_path, 'loss.png'), img)
-        if ding_bot:
-            ding_bot.add_md("tran_mmbody", "【LOSS】 \n ![img]({}) \n 【RMSE】\n epoch={}, rmse={}".format(bot.img2b64(img), epoch, rmse))
-            ding_bot.enable()
         plt.close()
-<<<<<<< HEAD
         cv2.imwrite(os.path.join(output_path, 'loss.png'), img)
         if ding_bot:
             ding_bot.add_md("tran_mmbody", "【IMG】 \n ![img]({}) \n 【LOSS】\n epoch={}, loss={}".format(ding_bot.img2b64(img), epoch, total_loss[-1]))
@@ -132,6 +104,27 @@ class LossManager():
         
         self.loss_dict = {}
         self.batch_loss = []
-=======
-        return img, self.epoch_loss
->>>>>>> a5cd3d0f9a5d98072aa5d624318605e6cc6b8a6f
+
+    def calculate_test_loss(self, output_path):
+            fig = plt.figure()
+            if not os.path.isdir(output_path):
+                os.makedirs(output_path)
+            loss_json = os.path.join(output_path, "loss.json")
+            losses = {}
+            with open(loss_json, "w") as f:
+                for i, (name, loss) in enumerate(self.loss_dict.items()):
+                    _loss = np.sort(torch.tensor(loss))
+                    losses.update({name:np.mean(_loss).tolist()})
+                    hist, bin_edges = np.histogram(_loss, bins=100)
+                    cdf = np.cumsum(hist)/len(_loss)
+                    fig.add_subplot(2, 3, i+1, title=name).plot(bin_edges[:-1], cdf)
+                total_loss = np.average(torch.tensor(self.batch_loss))
+                losses.update({"total_loss":total_loss.tolist()})
+                json.dump(losses, f)
+            fig.tight_layout()
+            fig.canvas.draw()
+            img = cv2.cvtColor(np.asarray(fig.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
+            plt.close()
+            cv2.imwrite(os.path.join(output_path, 'loss.png'), img)
+            np.save(os.path.join(output_path, "joints_loss"), np.sort(torch.tensor(self.loss_dict["joints_loss"])))
+            np.save(os.path.join(output_path, "vertices_loss"), np.sort(torch.tensor(self.loss_dict["vertices_loss"])))

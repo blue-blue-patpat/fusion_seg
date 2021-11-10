@@ -6,7 +6,7 @@ from torch.nn import Module
 from torch.nn.modules.loss import _Loss
 import os
 
-from minimal.config import SMPL_MODLE_RAW_1_0_MALE_PATH, SMPL_MODLE_RAW_1_0_FEMALE_PATH, SMPL_MODEL_1_0_PATH, SMPL_MODEL_1_0_MALE_PATH
+from minimal.config import SMPL_MODLE_RAW_1_0_MALE_PATH, SMPL_MODLE_RAW_1_0_FEMALE_PATH, SMPL_MODEL_1_0_PATH, SMPL_MODEL_1_0_MALE_PATH, SMPL_MODLE_RAW_1_0_NEUTRAL_PATH
 from minimal.models_torch import KinematicModel, KinematicPCAWrapper
 
 
@@ -23,10 +23,16 @@ class SMPLModel(Module):
         self.posedirs = torch.from_numpy(params['posedirs']).type(torch.float64)
         self.v_template = torch.from_numpy(params['v_template']).type(torch.float64)
         self.shapedirs = torch.from_numpy(np.array(params['shapedirs'])).type(torch.float64)
+        self.keypoints_ext = [2446, 5907, 3216, 6618, 411]
+        self.J_regressor_ext = torch.zeros([29, self.J_regressor.shape[1]])
+        self.J_regressor_ext[:24] = self.J_regressor
+        for i, v in enumerate(self.keypoints_ext):
+            self.J_regressor_ext[i + 24, v] = 1
+        self.J_regressor_ext = self.J_regressor_ext.to(dtype=torch.float64)
         self.kintree_table = params['kintree_table']
         self.faces = params['f']
         self.device = device if device is not None else torch.device('cpu')
-        for name in ['J_regressor', 'weights', 'posedirs', 'v_template', 'shapedirs']:
+        for name in ['J_regressor', 'weights', 'posedirs', 'v_template', 'shapedirs', 'J_regressor_ext']:
             _tensor = getattr(self, name)
             setattr(self, name, _tensor.to(device))
 
@@ -122,7 +128,8 @@ class SMPLModel(Module):
         }
         v_shaped = torch.tensordot(self.shapedirs, betas, dims=([2], [0])) + self.v_template
         J = torch.matmul(self.J_regressor, v_shaped)
-        R_cube_big = self.rodrigues(pose.view(-1, 1, 3))
+        # R_cube_big = self.rodrigues(pose.view(-1, 1, 3))
+        R_cube_big = pose.view(-1, 3, 3)
 
         if simplify:
             v_posed = v_shaped
@@ -167,43 +174,57 @@ class SMPLModel(Module):
         )
         v = torch.matmul(T, torch.reshape(rest_shape_h, (-1, 4, 1)))
         v = torch.reshape(v, (-1, 4))[:, :3]
-        result = v + torch.reshape(trans, (1, 3))
-        return result
+        vertices = v + torch.reshape(trans, (1, 3))
+        joints = torch.matmul(self.J_regressor_ext, vertices)
+        return vertices, joints
 
 
 class SMPLLoss(_Loss):
-    smpl_m_model = None
-    smpl_f_model = None
+    smpl_model = [None, None, None]
     def __init__(self, size_average=None, reduce=None, reduction: str = 'mean', device: torch.device = torch.device('cpu'), scale: float = 1) -> None:
         super().__init__(size_average=size_average, reduce=reduce, reduction=reduction)
-        # self.smpl = SMPLModel(device=device, model_path=SMPL_MODLE_RAW_1_0_FEMALE_PATH if gender == 'female' else SMPL_MODLE_RAW_1_0_MALE_PATH)
-        # self._smpl_no_grad = SMPLModel(device=device, model_path=SMPL_MODLE_RAW_1_0_FEMALE_PATH if gender == 'female' else SMPL_MODLE_RAW_1_0_MALE_PATH)
-        if self.smpl_m_model is None:
-            self.smpl_m_model = KinematicPCAWrapper(KinematicModel(device=device).init_from_file(SMPL_MODEL_1_0_MALE_PATH, compute_mesh=False).requires_grad_())
-        if self.smpl_f_model is None:
-            self.smpl_f_model = KinematicPCAWrapper(KinematicModel(device=device).init_from_file(SMPL_MODEL_1_0_PATH, compute_mesh=False).requires_grad_())
+        if self.smpl_model[0] is None:
+            self.smpl_model[0] = SMPLModel(device=device, model_path=SMPL_MODLE_RAW_1_0_FEMALE_PATH)
+        if self.smpl_model[1] is None:
+            self.smpl_model[1] = SMPLModel(device=device, model_path=SMPL_MODLE_RAW_1_0_MALE_PATH)
+        if self.smpl_model[2] is None:
+            self.smpl_model[2] = SMPLModel(device=device, model_path=SMPL_MODLE_RAW_1_0_NEUTRAL_PATH)
 
         self.scale = scale
 
-    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    def forward(self, input: torch.Tensor, target: torch.Tensor, use_gender: int = 1, train: bool = True) -> torch.Tensor:
         verts_input = []
         verts_target = []
         joint_input = []
         joint_target = []
-        for i in range(input.shape[0]):
-            input_model = self.smpl_m_model if input[i][-1] > 0.5 else self.smpl_f_model
-            target_model = self.smpl_m_model if target[i][-1] > 0.5 else self.smpl_f_model
+        per_joint_mse = []
 
-            input_model.run(input[i][:-1].to(torch.float64)*self.scale)
-            verts_input.append(input_model.core.verts)
-            joint_input.append(input_model.core.keypoints)
-            target_model.run(target[i][:-1].to(torch.float64)*self.scale)
-            verts_target.append(target_model.core.verts)
-            joint_target.append(target_model.core.keypoints)
-        # self.smpl.zero_grad()
-        # self._smpl_no_grad.zero_grad()
-        return F.l1_loss(torch.stack(verts_input, dim=0).to(torch.float32), torch.stack(verts_target, dim=0).to(torch.float32), reduction=self.reduction),\
-                F.l1_loss(torch.stack(joint_input, dim=0).to(torch.float32), torch.stack(joint_target, dim=0).to(torch.float32), reduction=self.reduction)
+        _input = input.to(torch.float64)*self.scale
+        _target = target.to(torch.float64)*self.scale
+
+        for i in range(input.shape[0]):
+            if not use_gender:
+                input_model = target_model = self.smpl_model[2]
+            else:
+                # input_model = target_model = self.smpl_model[0 if target[i][-1] < 0.5 else 1]
+                input_model = self.smpl_model[0 if input[i][-1] < 0.5 else 1]
+                target_model = self.smpl_model[0 if target[i][-1] < 0.5 else 1]
+
+            v_i, j_i = input_model(_input[i][-11:-1], _input[i][3:-11].view(-1,3,3), -_input[i][:3])
+            verts_input.append(v_i)
+            joint_input.append(j_i)
+            v_t, j_t = target_model(_target[i][-11:-1], _target[i][3:-11].view(-1,3,3), -_target[i][:3])
+            verts_target.append(v_t)
+            joint_target.append(j_t)
+            per_joint_mse.append(torch.norm((j_i - j_t), dim=1))
+
+        if train:
+            return F.l1_loss(torch.stack(verts_input, dim=0).to(torch.float32), torch.stack(verts_target, dim=0).to(torch.float32), reduction=self.reduction),\
+                    F.l1_loss(torch.stack(joint_input, dim=0).to(torch.float32), torch.stack(joint_target, dim=0).to(torch.float32), reduction=self.reduction)
+        else:
+            return torch.sqrt(F.mse_loss(torch.stack(verts_input, dim=0).to(torch.float32), torch.stack(verts_target, dim=0).to(torch.float32), reduction=self.reduction)),\
+                    torch.sqrt(F.mse_loss(torch.stack(joint_input, dim=0).to(torch.float32), torch.stack(joint_target, dim=0).to(torch.float32), reduction=self.reduction)),\
+                    torch.mean(torch.stack(per_joint_mse, dim=0).to(torch.float32), dim=0)
 
 def test_gpu(gpu_id=[0]):
     if len(gpu_id) > 0 and torch.cuda.is_available():

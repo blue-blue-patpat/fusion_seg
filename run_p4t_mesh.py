@@ -27,7 +27,6 @@ from visualization.mesh_plot import MeshEvaluateStreamPlot
 from visualization.utils import o3d_mesh, o3d_pcl, o3d_plot, o3d_smpl_mesh
 from nn.p4t.modules.loss import LossManager
 
-# torch.cuda.set_device(2)
 
 def train_one_epoch(model, losses, criterions, loss_weight, optimizer, lr_scheduler, data_loader, device, epoch, print_freq, output_dim, use_gender):
     model.train()
@@ -78,8 +77,8 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
-    rmse_list = []
-    frame_rmse = []
+    gender_acc = []
+    per_joint_loss = []
 
     if use_gender:
         smpl_m_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_MALE_PATH, compute_mesh=False))
@@ -98,16 +97,17 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
                 output_mat = tools.rotation6d_2_rot_mat(output[:,3:-11])
                 target_mat = tools.rodrigues_2_rot_mat(target[:,3:-11])
                 losses.update_loss("pose_loss", loss_weight[1]*criterions["rot_mat"](output_mat, target_mat))
-                v_loss, j_loss = criterions["smpl"](torch.cat((output[:,:3], output_mat, output[:,-11:]), -1), torch.cat((target[:,:3], target_mat, target[:,-11:]), -1), use_gender, train=False)
+                v_loss, j_loss, per_j_loss = criterions["smpl"](torch.cat((output[:,:3], output_mat, output[:,-11:]), -1), torch.cat((target[:,:3], target_mat, target[:,-11:]), -1), use_gender, train=False)
             else:
                 losses.update_loss("pose_loss", loss_weight[1]*criterions["mse"](output[:,3:-11],target[:,3:-11]))
-                v_loss, j_loss = criterions["smpl"](output, target, use_gender, train=False)
+                v_loss, j_loss, per_j_loss = criterions["smpl"](output, target, use_gender, train=False)
+            per_joint_loss.append(per_j_loss)
             # shape loss
             losses.update_loss("shape_loss", loss_weight[2]*criterions["mse"](output[:,-11:-1], target[:,-11:-1]))
             # joints loss
-            losses.update_loss("joints_loss", loss_weight[3]*torch.sqrt(j_loss))
+            losses.update_loss("joints_loss", loss_weight[3]*j_loss)
             # vertices loss
-            losses.update_loss("vertices_loss", loss_weight[4]*torch.sqrt(v_loss))
+            losses.update_loss("vertices_loss", loss_weight[4]*v_loss)
             # gender loss
             if use_gender:
                 losses.update_loss("gender_loss", loss_weight[5]*criterions["entropy"](output[:,-1], target[:,-1]))
@@ -121,23 +121,24 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
             clip = clip.cpu().numpy()
             output = output.cpu().numpy()
             target = target.cpu().numpy()
-            rmse = np.sqrt(mean_squared_error(output, target))
-            print("batch rmse:", rmse)
 
             batch_size = clip.shape[0]
             metric_logger.update(loss=loss.item())
-            metric_logger.meters['rmse'].update(rmse, n=batch_size)
+            metric_logger.meters['loss'].update(loss, n=batch_size)
+
+            gender_pred = np.where(output[:,-1]>0.5, 1, 0)
+            acc = np.mean(np.equal(gender_pred, target[:,-1]))
+            gender_acc.append(acc)
 
             if visual:
+                print("batch gender acc: {}%".format(acc * 100))
+                print("batch joints loss:", losses.loss_dict["joints_loss"][-1].cpu().numpy())
+                print("batch vertices loss:", losses.loss_dict["vertices_loss"][-1].cpu().numpy())
                 for b, batch in enumerate(clip):
                     arbe_frame = batch[-1][:,:3]
                     pred = output[b]
                     label = target[b]
-                    print(pred[-1], label[-1])
                     # restore to origin size, except gender
-                    # pred[:-1] *= scale
-                    # label[:-1] *= scale
-                    frame_rmse.append(mean_squared_error(pred, label, squared=False))
                     yield dict(
                         radar_pcl = dict(
                             pcl = arbe_frame,
@@ -153,19 +154,14 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
                             model=smpl_m_model if label[-1] > 0.5 else smpl_f_model,
                         )
                     )
-            rmse_list.append(rmse)
-
-        if visual and output_path:
-            frame_rmse.sort()
-            hist, bin_edges = np.histogram(np.asarray(frame_rmse), bins=100)
-            cdf = np.cumsum(hist)/len(frame_rmse)
-            plt.plot(bin_edges[:-1], cdf)
-            plt.savefig(output_path+"/rmse.png")
-            plt.xlabel("smpl param rmse")
-            plt.ylabel("percentage")
-            plt.close("all")
-            np.save(output_path+"/rmse", np.asarray(frame_rmse))
-        print("RMSE:", np.mean(rmse_list))
+        print("gender acc:", np.mean(gender_acc))
+        print("joints loss:", np.average(torch.tensor(losses.loss_dict["joints_loss"])))
+        print("vertices loss:", np.average(torch.tensor(losses.loss_dict["vertices_loss"])))
+        if not os.path.isdir(os.path.join(output_path, "loss/test")):
+            os.makedirs(os.path.join(output_path, "loss/test"))
+        np.save(os.path.join(output_path, "loss/test/per_joint_loss"), np.mean(torch.stack(per_joint_loss).cpu().numpy(), axis=0))
+        with open(os.path.join(output_path, "loss/test/gender_acc.txt"), 'w') as f:
+            f.write("gender_acc:" + str(np.mean(gender_acc)))
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
@@ -185,11 +181,13 @@ def main(args):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     
+    torch.cuda.set_device(args.device)
     device = torch.device('cuda')
 
     # Data loading code
     print("Loading data")
 
+    Dataset = MMMeshPKL if args.train else MMMesh3D
     dataset = MMMeshPKL(
             root_path=args.data_path,
             frames_per_clip=args.clip_len,
@@ -212,7 +210,7 @@ def main(args):
 
     print("Creating model")
     Model = getattr(Models, args.model)
-    model = Model(radius=args.radius, nsamples=args.nsamples, spatial_stride=args.spatial_stride,
+    model = Model(features=args.features, radius=args.radius, nsamples=args.nsamples, spatial_stride=args.spatial_stride,
                   temporal_kernel_size=args.temporal_kernel_size, temporal_stride=args.temporal_stride,
                   emb_relu=args.emb_relu,
                   dim=args.dim, depth=args.depth, heads=args.heads, dim_head=args.dim_head,
@@ -285,10 +283,10 @@ def main(args):
         loss_weight = list(map(float, args.loss_weight.split(",")))
         data_loader_test = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
         print("Start testing")
-        gen = evaluate(model, losses, criterions, loss_weight, data_loader_test, device, output_dim=args.output_dim, visual=True, use_gender=args.use_gender)
+        gen = evaluate(model, losses, criterions, loss_weight, data_loader_test, device, output_dim=args.output_dim, visual=True, use_gender=args.use_gender, output_path=args.output_dir)
         plot = MeshEvaluateStreamPlot()
         plot.show(gen, fps=15)
-        losses.calculate_epoch_loss(os.path.join(args.output_dir,"loss/test"), 0)
+        losses.calculate_test_loss(os.path.join(args.output_dir,"loss/test"))
         single = False
         if single:
             data = next(gen)
@@ -302,12 +300,13 @@ def parse_args():
     parser.add_argument('--seed', default=35, type=int, help='random seed')
     parser.add_argument('--model', default='P4Transformer', type=str, help='model')
     # input
-    parser.add_argument('--clip_len', default=5, type=int, metavar='N', help='number of frames per clip')
-    parser.add_argument('--num_points', default=1024, type=int, metavar='N', help='number of points per frame')
-    parser.add_argument('--normal_scale', default=1, type=int, metavar='N', help='normal scale of labels')
-    parser.add_argument('--skip_head', default=0, type=int, metavar='N', help='number of skip frames')
+    parser.add_argument('--clip_len', default=5, type=int, help='number of frames per clip')
+    parser.add_argument('--num_points', default=1024, type=int, help='number of points per frame')
+    parser.add_argument('--normal_scale', default=1, type=int, help='normal scale of labels')
+    parser.add_argument('--skip_head', default=0, type=int, help='number of skip frames')
     parser.add_argument('--new_gmm', action="store_true", help='new gmm')
-    parser.add_argument('--output_dim', default=158, type=int, metavar='N', help='output dim')
+    parser.add_argument('--output_dim', default=158, type=int, help='output dim')
+    parser.add_argument('--features', default=3, type=int, help='dim of features')
     # P4D
     parser.add_argument('--radius', default=0.7, type=float, help='radius for the ball query')
     parser.add_argument('--nsamples', default=32, type=int, help='number of neighbors for the ball query')
@@ -323,7 +322,7 @@ def parse_args():
     parser.add_argument('--dim_head', default=128, type=int, help='transformer dim for each head')
     parser.add_argument('--mlp_dim', default=2048, type=int, help='transformer mlp dim')
     # training
-    parser.add_argument('-b', '--batch_size', default=128, type=int)
+    parser.add_argument('-b', '--batch_size', default=32, type=int)
     parser.add_argument('--epochs', default=350, type=int, metavar='N', help='number of total epochs to run')
     parser.add_argument('-j', '--workers', default=10, type=int, metavar='N', help='number of data loading workers (default: 16)')
     parser.add_argument('--lr', default=0.01, type=float, help='initial learning rate')
@@ -334,6 +333,7 @@ def parse_args():
     parser.add_argument('--lr_warmup_epochs', default=10, type=int, help='number of warmup epochs')
     parser.add_argument('--loss_weight', default="1,1,1,1,1,1", type=str, help='weight of loss')
     parser.add_argument('--use_gender', default=1, type=int, help='use gender')
+    parser.add_argument('--device', default=0, type=int, help='cuda device')
     # output
     parser.add_argument('--print_freq', default=10, type=int, help='print frequency')
     parser.add_argument('--output_dir', default='', type=str, help='path where to save')

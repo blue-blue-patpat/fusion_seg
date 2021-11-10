@@ -17,10 +17,10 @@ class P4Transformer(nn.Module):
                  temporal_kernel_size, temporal_stride,                                 # P4DConv: temporal
                  emb_relu,                                                              # embedding: relu
                  dim, depth, heads, dim_head,                                           # transformer
-                 mlp_dim, output_dim):                                                 # output
+                 mlp_dim, output_dim, features=3):                                                 # output
         super().__init__()
 
-        self.tube_embedding = P4DConv(in_planes=3, mlp_planes=[dim], mlp_batch_norm=[False], mlp_activation=[False],
+        self.tube_embedding = P4DConv(in_planes=features, mlp_planes=[dim], mlp_batch_norm=[False], mlp_activation=[False],
                                   spatial_kernel_size=[radius, nsamples], spatial_stride=spatial_stride,
                                   temporal_kernel_size=temporal_kernel_size, temporal_stride=temporal_stride, temporal_padding=[1, 1],
                                   operator='+', spatial_pooling='max', temporal_pooling='max')
