@@ -13,7 +13,7 @@ import cv2
 
 from nn.p4t import utils
 from nn.p4t.scheduler import WarmupMultiStepLR
-from nn.p4t.datasets.mmbody import MMBody3D
+from nn.p4t.datasets.mmbody import MMJoint3D
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
 from visualization.o3d_plot import NNPredLabelStreamPlot
@@ -31,7 +31,7 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
         start_time = time.time()
         clip, target = clip.to(device), target.to(device)
         output = model(clip)
-        loss = criterion(output, target[:,-1])
+        loss = criterion(output, target)
 
         optimizer.zero_grad()
         loss.backward()
@@ -56,14 +56,14 @@ def evaluate(model, criterion, data_loader, device, visual=False, scale=1, outpu
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output = model(clip)
-            loss = criterion(output, target[:,-1])
+            loss = criterion(output, target)
 
             # FIXME need to take into account that the datasets
             # could have been padded in distributed setup
             clip = clip.cpu().numpy()
             output = output.cpu().numpy()
             target = target.cpu().numpy()
-            rmse = mean_squared_error(target[:,-1], output, squared=False) * scale
+            rmse = mean_squared_error(target, output, squared=False) * scale
             print("batch rmse:", rmse)
 
             batch_size = clip.shape[0]
@@ -75,7 +75,7 @@ def evaluate(model, criterion, data_loader, device, visual=False, scale=1, outpu
                 for b, batch in enumerate(clip):
                     arbe_frame = batch[-1][:,:3] * scale
                     pred = output[b].reshape(-1, 3) * scale
-                    label = target[b, -1].reshape(-1, 3) * scale
+                    label = target[b].reshape(-1, 3) * scale
                     frame_rmse.append((index_map[0].numpy()[b], index_map[1].numpy()[b], mean_squared_error(pred, label, squared=False)))
                     yield dict(
                         arbe_pcl = dict(
@@ -131,7 +131,7 @@ def main(args):
     # Data loading code
     print("Loading data")
 
-    dataset_all = MMBody3D(
+    dataset_all = MMJoint3D(
             root_path=args.data_path,
             frames_per_clip=args.clip_len,
             step_between_clips=1,
@@ -154,7 +154,7 @@ def main(args):
                   temporal_kernel_size=args.temporal_kernel_size, temporal_stride=args.temporal_stride,
                   emb_relu=args.emb_relu,
                   dim=args.dim, depth=args.depth, heads=args.heads, dim_head=args.dim_head,
-                  mlp_dim=args.mlp_dim, num_classes=dataset_all.output_dim)
+                  mlp_dim=args.mlp_dim, output_dim=dataset_all.output_dim)
 
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
@@ -212,9 +212,9 @@ def main(args):
                     'lr_scheduler': lr_scheduler.state_dict(),
                     'epoch': epoch,
                     'args': args}
-                utils.save_on_master(
-                    checkpoint,
-                    os.path.join(args.output_dir, 'model_{}.pth'.format(epoch)))
+                # utils.save_on_master(
+                #     checkpoint,
+                #     os.path.join(args.output_dir, 'model_{}.pth'.format(epoch)))
                 utils.save_on_master(
                     checkpoint,
                     os.path.join(args.output_dir, 'checkpoint.pth'))

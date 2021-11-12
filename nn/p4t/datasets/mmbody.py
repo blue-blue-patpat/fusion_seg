@@ -25,16 +25,20 @@ class MMJoint3D(Dataset):
     def init_index_map(self):
         self.index_map = [0,]
         self.video_loaders = []
+        videos_paths = []
+        for root_path in map(str, self.root_path.split(",")):
+            if self.train:
+                videos_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] != 'E']
+            else:
+                videos_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] == 'E']
 
-        if self.train:
-            videos_path = [os.path.join(self.root_path, p) for p in os.listdir(self.root_path) if p[-1] == 'T']
-        else:
-            videos_path = [os.path.join(self.root_path, p) for p in os.listdir(self.root_path) if p[-1] == 'T']
-
-        for idx, path in enumerate(videos_path):
+        for idx, path in enumerate(videos_paths):
             # init result loader, reindex
-            video_loader = ResultFileLoader(root_path=path, skip_head=self.skip_head, enabled_sources=["arbe", "arbe_feature", "mesh", "mesh_param", "reindex"])
-            # add video to list
+            try:
+                video_loader = ResultFileLoader(root_path=path, skip_head=self.skip_head, enabled_sources=["arbe", "arbe_feature", "mesh", "mesh_param", "reindex"])
+            except Exception as e:
+                print(e)
+                continue
             self.video_loaders.append(video_loader)
             self.index_map.append(self.index_map[-1] + len(video_loader))
 

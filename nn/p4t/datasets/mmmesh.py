@@ -30,14 +30,15 @@ class MMMesh3D(Dataset):
         self.video_loaders = []
         videos_paths = []
         self.sequence_path = []
-        choice_dir = ['2021-10-23_21-00-09_T']
+        choice_dir = ['2021-10-22_18-01-40_N']
         for root_path in map(str, self.root_path.split(",")):
             if self.train:
-                videos_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if  p in choice_dir]
-                #videos_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] == 'T']
+                videos_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p in choice_dir]
+                # videos_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] == 'T']
                 #videos_paths += [os.path.join(root_path, p) for p in os.listdir(root_path)]
             else:
-                videos_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] == 'F' or p[-1] == 'M']
+                videos_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p in choice_dir]
+                # videos_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] == 'F' or p[-1] == 'M']
                 # videos_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] == 'T']
 
         for idx, path in enumerate(videos_paths):
@@ -49,11 +50,12 @@ class MMMesh3D(Dataset):
                 continue
             if len(video_loader) < 6:
                 continue
+            video_loader.skip_head = 300
             self.video_loaders.append(video_loader)
             self.sequence_path.append(path)
             video_len = len(video_loader)
-            if int(path[32:34]) >= 22:
-                video_len = min(video_len, 300)
+            # if int(path[32:34]) >= 22:
+            #     video_len = min(video_len, 300)
             self.index_map.append(self.index_map[-1] + video_len)
 
     def pad_data(self, data):
@@ -169,7 +171,7 @@ class MMMeshPKL(Dataset):
             if self.train:
                 video_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1]=='T' or p[-1]=='O' or p[-1]=='N']
             else:
-                video_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-3] == 'C']
+                video_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-3] == 'R']
                 # video_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] == 'M' or p[-1] == 'F']
 
         for p in video_paths:

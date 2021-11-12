@@ -206,9 +206,9 @@ class SMPLLoss(_Loss):
             if not use_gender:
                 input_model = target_model = self.smpl_model[2]
             else:
-                # input_model = target_model = self.smpl_model[0 if target[i][-1] < 0.5 else 1]
-                input_model = self.smpl_model[0 if input[i][-1] < 0.5 else 1]
-                target_model = self.smpl_model[0 if target[i][-1] < 0.5 else 1]
+                input_model = target_model = self.smpl_model[0 if target[i][-1] < 0.5 else 1]
+                # input_model = self.smpl_model[0 if input[i][-1] < 0.5 else 1]
+                # target_model = self.smpl_model[0 if target[i][-1] < 0.5 else 1]
 
             v_i, j_i = input_model(_input[i][-11:-1], _input[i][3:-11].view(-1,3,3), -_input[i][:3])
             verts_input.append(v_i)

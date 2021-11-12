@@ -4,7 +4,7 @@ import numpy as np
 
 from math import pi
 from scipy.special import logsumexp
-from nn.p4t.utils import calculate_matmul, calculate_matmul_n_times
+from nn.p4t.tools import calculate_matmul, calculate_matmul_n_times
 
 
 class GaussianMixture(torch.nn.Module):
