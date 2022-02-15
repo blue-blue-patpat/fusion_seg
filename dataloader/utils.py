@@ -251,6 +251,9 @@ def file_paths_from_dir(path, extension='*', enable_print=True, collect_dir=Fals
         dir_list = []
     filepaths = []
     for f in dir_list:
+        # ignore hidden files
+        if f.split('/')[-1][0] == '.':
+            continue
         _path = os.path.join(path, f)
         if os.path.isdir(_path):
             if collect_dir:

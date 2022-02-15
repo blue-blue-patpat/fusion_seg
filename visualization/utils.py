@@ -174,20 +174,26 @@ def o3d_smpl_mesh(params: Union[np.ndarray, np.lib.npyio.NpzFile, dict] = None, 
     return o3d_mesh(mesh, color, last_update=_mesh)
 
 
-def pcl_filter(pcl_box, pcl_target, bound=0.5):
+def pcl_filter(pcl_box, pcl_target, bound=0.2, offset=0):
     """
     Filter out the pcls of pcl_b that is not in the bounding_box of pcl_a
     """
-    from itertools import compress
-
     upper_bound = pcl_box[:,:3].max(axis=0) + bound
     lower_bound = pcl_box[:,:3].min(axis=0) - bound
-    pcl_in_bound = (pcl_target[:,:3] < upper_bound) & (pcl_target[:,:3] > lower_bound)
+    lower_bound[2] += offset
 
-    filter_list = []
-    for row in pcl_in_bound:
-        filter_list.append(False if False in row else True)
-    return np.array(list(compress(pcl_target, filter_list)))
+    mask_x = (pcl_target[:, 0] >= lower_bound[0]) & (pcl_target[:, 0] <= upper_bound[0])
+    mask_y = (pcl_target[:, 1] >= lower_bound[1]) & (pcl_target[:, 1] <= upper_bound[1])
+    mask_z = (pcl_target[:, 2] >= lower_bound[2]) & (pcl_target[:, 2] <= upper_bound[2])
+    index = mask_x & mask_y & mask_z
+    return pcl_target[index]
+
+    # pcl_in_bound = (pcl_target[:,:3] < upper_bound) & (pcl_target[:,:3] > lower_bound)
+    # filter_list = []
+    # for row in pcl_in_bound:
+    #     filter_list.append(False if False in row else True)
+    
+    # return np.array(list(compress(pcl_target, filter_list)))
 
 
 @nb.jit
@@ -229,6 +235,16 @@ def pcl_filter_nb(pcl_box, pcl_target, bound=0.5):
 
     return filter2_np_nb(pcl_target, lower_bound, upper_bound)
 
+def pcl_filter_nb_noground(pcl_box, pcl_target, bound=0.5):
+    """
+    Filter out the pcls of pcl_b that is not in the bounding_box of pcl_a
+    """
+
+    upper_bound = pcl_box[:,:3].max(axis=0) + bound
+    lower_bound = pcl_box[:,:3].min(axis=0) - bound
+    lower_bound[2] = lower_bound[2] + 0.21
+
+    return filter2_np_nb(pcl_target, lower_bound, upper_bound)
 
 class O3DItemUpdater():
     def __init__(self, func: Callable) -> None:

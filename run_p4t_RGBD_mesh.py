@@ -3,8 +3,6 @@ from json import dump
 import os
 import time
 import sys
-from human_body_prior.models.vposer_model import VPoser
-from human_body_prior.tools.model_loader import load_model
 import numpy as np
 from numpy.lib import average
 import torch
@@ -14,20 +12,22 @@ import torchvision
 from sklearn.metrics import mean_squared_error
 import matplotlib.pyplot as plt
 import cv2
+from human_body_prior.models.vposer_model import VPoser
 from minimal.models import KinematicModel, KinematicPCAWrapper
-from minimal.config import SMPL_MODEL_1_0_MALE_PATH, SMPL_MODEL_1_0_PATH,SMPL_MODEL_1_0_NEUTRAL_PATH, VPOSER_DIR
-
+from minimal.config import SMPL_MODEL_1_0_MALE_PATH, SMPL_MODEL_1_0_PATH, SMPL_MODEL_1_0_NEUTRAL_PATH, VPOSER_DIR
+from human_body_prior.tools.model_loader import load_model
 from nn.p4t import tools
 from nn.p4t import utils
 from nn.p4t.modules.geodesic_loss import GeodesicLoss
 from nn.p4t.scheduler import WarmupMultiStepLR
 from nn.p4t.datasets.depth_mesh import DepthMesh3D2,DepthMesh3D
 from nn.SMPL.smpl_layer import SMPLLoss
-import nn.p4t.modules.model_depth as Models
+import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
-from visualization.mesh_plot import MeshEvaluateStreamPlot, pcl2sphere
+from visualization.mesh_plot import MeshEvaluateStreamPlot
 from visualization.utils import o3d_mesh, o3d_pcl, o3d_plot, o3d_smpl_mesh
 from nn.p4t.modules.loss import LossManager
+from visualization.mesh_plot import pcl2sphere
 
 torch.cuda.set_device(0)
 device = torch.device('cuda')
@@ -86,11 +86,10 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
     gender_acc = []
-    # aim_joints_loss = 0.2187
-    # aim_vertices_loss = 0.241
     per_joint_err = []
     per_vertex_err = []
-
+    # aim_joints_loss = 0.2187
+    # aim_vertices_loss = 0.241
     if use_gender:
         smpl_m_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_MALE_PATH, compute_mesh=False))
         smpl_f_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_PATH, compute_mesh=False))
@@ -101,6 +100,7 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output = model(clip)
+            
             # translation loss
             losses.update_loss("trans_loss", loss_weight[0]*criterions["mse"](output[:,0:3], target[:,0:3]))
             # pose loss
@@ -141,16 +141,15 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
             gender_pred = np.where(output[:,-1]>0.5, 1, 0)
             acc = np.mean(np.equal(gender_pred, target[:,-1]))
             gender_acc.append(acc)
-
             # if losses.loss_dict["joints_loss"][-1].cpu().numpy()>aim_joints_loss:
             #     time.sleep(20)
             # elif losses.loss_dict["vertices_loss"][-1].cpu().numpy() > aim_vertices_loss:
             #     time.sleep(20)
             if visual:    
+                print("batch gender acc: {}%".format(acc * 100))
+                print("batch joints loss:", losses.loss_dict["joints_loss"][-1].cpu().numpy())
+                print("batch vertices loss:", losses.loss_dict["vertices_loss"][-1].cpu().numpy())
                 for b, batch in enumerate(clip):
-                    print("batch gender acc: {}%".format(acc * 100))
-                    print("batch joints loss:", losses.loss_dict["joints_loss"][-1].cpu().numpy())
-                    print("batch vertices loss:", losses.loss_dict["vertices_loss"][-1].cpu().numpy())
                     arbe_frame = batch[-1][:,:3]
                     pred = output[b]
                     pred[3+22*3:3+24*3] = 0
@@ -169,7 +168,7 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
                         ),
                         pred_smpl = dict(
                             params = pred[:-1],
-                            color = np.asarray([159, 175, 216]) / 255,
+                            color = np.asarray([229, 195, 161]) / 255,
                             #model = smpl_f_model,
                             model = smpl_m_model,
                         ),
@@ -358,7 +357,7 @@ def parse_args():
     parser.add_argument('--mlp_dim', default=2048, type=int, help='transformer mlp dim')
     # training
     parser.add_argument('-b', '--batch_size', default=32, type=int)
-    parser.add_argument('--epochs', default=350, type=int, metavar='N', help='number of total epochs to run')
+    parser.add_argument('--epochs', default=100, type=int, metavar='N', help='number of total epochs to run')
     parser.add_argument('-j', '--workers', default=10, type=int, metavar='N', help='number of data loading workers (default: 16)')
     parser.add_argument('--lr', default=0.0001, type=float, help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')

@@ -197,7 +197,8 @@ class SMPLLoss(_Loss):
         verts_target = []
         joint_input = []
         joint_target = []
-        per_joint_mse = []
+        per_joint_err = []
+        per_vertex_err = []
 
         _input = input.to(torch.float64)*self.scale
         _target = target.to(torch.float64)*self.scale
@@ -216,7 +217,8 @@ class SMPLLoss(_Loss):
             v_t, j_t = target_model(_target[i][-11:-1], _target[i][3:-11].view(-1,3,3), -_target[i][:3])
             verts_target.append(v_t)
             joint_target.append(j_t)
-            per_joint_mse.append(torch.norm((j_i - j_t), dim=1))
+            per_joint_err.append(torch.norm((j_i - j_t), dim=1))
+            per_vertex_err.append(torch.norm((v_i - v_t), dim=1))
 
         if train:
             return F.l1_loss(torch.stack(verts_input, dim=0).to(torch.float32), torch.stack(verts_target, dim=0).to(torch.float32), reduction=self.reduction),\
@@ -224,7 +226,7 @@ class SMPLLoss(_Loss):
         else:
             return torch.sqrt(F.mse_loss(torch.stack(verts_input, dim=0).to(torch.float32), torch.stack(verts_target, dim=0).to(torch.float32), reduction=self.reduction)),\
                     torch.sqrt(F.mse_loss(torch.stack(joint_input, dim=0).to(torch.float32), torch.stack(joint_target, dim=0).to(torch.float32), reduction=self.reduction)),\
-                    torch.mean(torch.stack(per_joint_mse, dim=0).to(torch.float32), dim=0)
+                    (torch.mean(torch.stack(per_joint_err, dim=0).to(torch.float32), dim=0), torch.mean(torch.stack(per_vertex_err, dim=0).to(torch.float32), dim=0))
 
 def test_gpu(gpu_id=[0]):
     if len(gpu_id) > 0 and torch.cuda.is_available():

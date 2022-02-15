@@ -6,12 +6,12 @@ import random
 import pickle
 from torch.utils.data import Dataset
 
-from dataloader.result_loader import ResultFileLoader, PKLLoader
+from dataloader.result_loader import PKLLoader_test, ResultFileLoader, PKLLoader
 from visualization.utils import pcl_filter, pcl_filter_nb, pcl_filter_nb_noground
 
 class DepthMesh3D(Dataset):
     def __init__(self, root_path, frames_per_clip=5, step_between_clips=1, num_points=4096,
-            train=True, normal_scale = 1, output_dim=158, skip_head=0, skip_tail=0):
+            train=True, normal_scale = 1, output_dim=158, skip_head=0, skip_tail=0, device="sub1"):
         super(DepthMesh3D, self).__init__()
         self.root_path = root_path
         # range of frame index in a clip
@@ -29,9 +29,13 @@ class DepthMesh3D(Dataset):
         self.index_map = [0,]
         self.video_loaders = []
         videos_paths = []
-        #choice_dir = ['2021-10-19_14-51-10_E']
-        #choice_dir =['2021-10-17_14-49-59_T','2021-10-17_14-54-06_T','2021-10-18_09-50-33_T','2021-10-18_09-56-13_T','2021-10-18_18-42-35_T','2021-10-18_18-45-27_T','2021-10-18_18-52-17_T','2021-10-19_09-20-05_T','2021-10-19_09-54-23_T','2021-10-19_14-47-47_T']
-        choice_dir =['2021-10-22_17-37-01_O']
+        #choice_dir = ['2021-10-18_18-50-29_M','2021-10-20_14-36-51_F'] #indoor
+        #choice_dir = ['2021-10-22_10-42-50_O','2021-10-22_14-23-59_O'] #corridor
+        #choice_dir = ['2021-10-22_16-56-25_O'] #outdoor
+        #choice_dir = ['2021-10-22_17-29-59_O','2021-10-22_17-37-01_O'] #rain
+        #choice_dir = ['2021-10-22_17-38-49_O','2021-10-22_17-49-03_O'] #smoke
+        choice_dir =['2021-10-18_18-50-29_M']
+        #choice_dir = ['2021-10-22_18-01-40_E','2021-10-22_18-14-58_O'] #night
         for root_path in map(str, self.root_path.split(",")):
             if self.train:
                 videos_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if  p in choice_dir]
@@ -43,12 +47,14 @@ class DepthMesh3D(Dataset):
         for idx, path in enumerate(videos_paths):
             # init result loader, reindex
             try:
-                video_loader = ResultFileLoader(root_path=path, skip_head=self.skip_head, select_key="mesh",enabled_sources=["sub2", "kinect_color","kinect_pcl", "kinect_depth","mesh", "mesh_param"])
+                #video_loader = ResultFileLoader(root_path=path, skip_head=self.skip_head, skip_tail=500, select_key="mesh",enabled_sources=["sub1", "kinect_color","kinect_pcl", "kinect_depth","mesh", "mesh_param"])
+                video_loader = ResultFileLoader(root_path=path, skip_head=self.skip_head, skip_tail=500, select_key="mesh",enabled_sources=["sub1", "kinect_color","kinect_pcl","mesh", "mesh_param"])
             except Exception as e:
                 print(e)
                 continue
+            video_loader.skip_head = 500
             video_len = len(video_loader)
-            video_len = min(video_len, 300)
+            #video_len = min(video_len, 300)
             self.index_map.append(self.index_map[-1] + video_len)
             self.video_loaders.append(video_loader)
 
@@ -72,13 +78,13 @@ class DepthMesh3D(Dataset):
 
     def load_data(self, video_loader, id):
         frame, info = video_loader[id]
-        kinect_pcl = frame["sub2_pcl"]
-        kinect_color = frame["sub2_color"]
+        kinect_pcl = frame["sub1_pcl"]
+        kinect_color = frame["sub1_color"]
         kinect_color = kinect_color.reshape(len(kinect_pcl), 3)
         kinect_data = np.hstack((kinect_pcl, kinect_color))
         # param: pose, shape
         if frame["mesh_param"] is None:
-            return None, None
+            return None, None, None
         mesh_pose = frame["mesh_param"]["pose"]
         mesh_shape = frame["mesh_param"]["shape"]
         mesh_vtx = frame["mesh_param"]["vertices"]
@@ -90,10 +96,10 @@ class DepthMesh3D(Dataset):
         # kinect_data = kinect_data[kinect_pcl.any(1)]
         # filter arbe_pcl with optitrack bounding box
         # print(mesh_vtx)
-        kinect_data = pcl_filter(mesh_vtx, kinect_data, 0.2)
-        if kinect_data.shape[0] < 50:
+        kinect_data = pcl_filter(mesh_vtx, kinect_data, 0.2, 0.21)
+        if kinect_data.shape[0] == 0:
             # remove bad frame
-            return None, None
+            return None, None, None
 
         # normalization
         kinect_data[:,:3] = (kinect_data[:,:3] - bbox_center)/self.normal_scale
@@ -103,7 +109,7 @@ class DepthMesh3D(Dataset):
         kinect_data = self.pad_data(kinect_data)
         mesh_pose[:3] += bbox_center
         label = np.concatenate((mesh_pose / self.normal_scale, mesh_shape / self.normal_scale, np.asarray(gender).reshape(-1)), axis=0)
-        return kinect_data, label
+        return kinect_data, label, info
 
     def __len__(self):
         return self.index_map[-1]
@@ -113,15 +119,15 @@ class DepthMesh3D(Dataset):
         video_loader = self.video_loaders[video_idx]
         clip = []
 
-        data, label = self.load_data(video_loader, frame_idx)
+        data, label, info = self.load_data(video_loader, frame_idx)
 
         while data is None:
             frame_idx = random.randint(self.clip_range-1, len(video_loader)-1)
-            data, label = self.load_data(video_loader, frame_idx)
+            data, label, info = self.load_data(video_loader, frame_idx)
 
         for clip_id in range(frame_idx-self.clip_range+1, frame_idx, self.step_between_clips):
             # get xyz and features
-            clip_data, clip_label = self.load_data(video_loader, clip_id)
+            clip_data, clip_label, _ = self.load_data(video_loader, clip_id)
             # remove bad frame
             if clip_data is None:
                 clip_data = data
@@ -134,7 +140,7 @@ class DepthMesh3D(Dataset):
         
         if True in np.isnan(label):
             label = np.nan_to_num(label)
-        return clip, label, (video_idx, frame_idx)
+        return clip, label, (video_idx, frame_idx, info)
 
 
 class DepthMesh3D2(Dataset):
@@ -162,17 +168,24 @@ class DepthMesh3D2(Dataset):
         video_paths = []
 
         for root_path in map(str, self.root_path.split(",")):
-            choice_dir = ['2021-10-22_10-37-40_O']
+            #choice_dir = ['2021-10-18_18-50-29_M','2021-10-20_14-36-51_F'] #indoor
+            #choice_dir = ['2021-10-22_10-46-57_E','2021-10-22_14-38-16_E'] #corridor
+            #choice_dir = ['2021-10-22_16-56-25_T'] #outdoor
+            #choice_dir = ['2021-10-22_17-29-59_T','2021-10-22_17-37-01_T'] #rain
+            #choice_dir = ['2021-10-22_17-38-49_T','2021-10-22_17-49-03_T'] #smoke
+            #choice_dir = ['2021-10-22_18-01-40_T','2021-10-22_18-14-58_T'] #night
+            choice_dir = ['2021-10-22_18-01-40_T']
             if self.train:
                 #video_paths += [os.path.join(root_path, p) for p in os.listdir(root_path)]
-                video_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] == 'T' or p[-1] == 'N' or p[-1] == 'O']
+                video_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] == 'T' ]
             else:
                 video_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if  p in choice_dir]
                 #video_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] == 'F' or p[-1] == 'M']
 
         for p in video_paths:
             try:
-                pkl_loader = PKLLoader(result_path=p, device=self.device)
+                pkl_loader = PKLLoader_test(result_path=p, device=self.device)
+                #pkl_loader = PKLLoader(result_path=p, device=self.device)
             except Exception as e:
                 print(e)
                 continue
@@ -191,6 +204,6 @@ class DepthMesh3D2(Dataset):
     def __getitem__(self, idx):
         clip = self.clips[idx]
         label = self.labels[idx]
-        return clip, label
+        return clip, label, (0,0,0)
 
 

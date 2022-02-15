@@ -262,6 +262,17 @@ class PKLLoader(ResultLoader):
         self.run()
         self.pkls = list(self.file_dict.values())[0].loc[:, "filepath"]
 
+class PKLLoader_test(ResultLoader):
+    def __init__(self, result_path, params=None, device="sub1") -> None:
+        super().__init__(result_path)
+        if params is None:
+            self.params = [
+                dict(tag="rgbd_data_test/{}".format(device), ext=".pkl"),
+            ]
+        else:
+            self.params = params
+        self.run()
+        self.pkls = list(self.file_dict.values())[0].loc[:, "filepath"]
 
 class ResultFileLoader():
     """
@@ -402,7 +413,13 @@ class ResultFileLoader():
         """
         Init Mesh
         """
-        self.mesh_loader = MinimalLoader(self.root_path) if "mesh" in self.sources else None
+        if "mesh" in self.sources:
+            params = []
+            if "mesh_param" in self.sources:
+                params.append(dict(tag="minimal/param", ext=".npz"))
+            if "mesh_obj" in self.sources:
+                params.append(dict(tag="minimal/obj", ext=".obj"))
+            self.mesh_loader = MinimalLoader(self.root_path, params=params) 
 
     def init_info(self):
         import json
@@ -594,6 +611,9 @@ class ResultFileLoader():
                 self.results.update(dict(
                     mesh_param=np.load(mesh_res["minimal/param"]["filepath"]),
                 ))
+                self.info.update(dict(
+                    mesh_param=mesh_res["minimal/param"]
+                ))
             except Exception as e:
                 self.results.update(dict(
                     mesh_param=None,
@@ -602,6 +622,9 @@ class ResultFileLoader():
             verts, faces, _ = load_obj(mesh_res["minimal/obj"]["filepath"])
             self.results.update(dict(
                 mesh_obj=(verts, faces[0]),
+            ))
+            self.info.update(dict(
+                mesh_obj=mesh_res["minimal/obj"]
             ))
         return mesh_res
 
@@ -667,7 +690,7 @@ class ResultFileLoader():
         if self.select_key == "arbe":
             return len(self.a_loader) - self.skip_head - self.skip_tail
         elif self.select_key == "mesh":
-            return len(self.mesh_loader)
+            return len(self.mesh_loader) - self.skip_head - self.skip_tail
         else:
             raise NotImplementedError("[ResultFileLoader] Unknow select_key type")
 

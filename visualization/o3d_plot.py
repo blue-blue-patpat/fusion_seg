@@ -381,7 +381,7 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
             kinect_pcl = {}
             if "kinect_pcl" in self.enabled_sources:
                 kin_pcl = frame["{}_pcl".format(self.main_device)]
-                r = np.random.choice(kin_pcl.shape[0], size=3000, replace=False)
+                r = np.random.choice(kin_pcl.shape[0], size=10000, replace=False)
                 pcl = pcl_filter(frame["optitrack"], kin_pcl[r,:], 0.2)
                 kinect_pcl = dict(
                     pcl = pcl,

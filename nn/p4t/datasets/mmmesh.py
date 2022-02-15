@@ -30,7 +30,14 @@ class MMMesh3D(Dataset):
         self.video_loaders = []
         videos_paths = []
         self.sequence_path = []
-        choice_dir = ['2021-10-22_18-01-40_N']
+        # choice_dir = ['2021-10-22_17-38-49_O','2021-10-22_17-49-03_O'] #smoke
+        #choice_dir = ['2021-10-18_18-50-29_M','2021-10-20_14-36-51_F'] #indoor
+        # choice_dir = ['2021-10-22_10-46-57_E','2021-10-22_14-38-16_E'] #corridor
+        #choice_dir = ['2021-10-22_16-56-25_T'] #outdoor
+        #choice_dir = ['2021-10-22_17-29-59_O','2021-10-22_17-37-01_T'] #rain
+        #choice_dir = ['2021-10-22_18-01-40_E','2021-10-22_18-14-58_O'] #night
+        choice_dir = ['2021-10-22_14-38-16_E']
+        # choice_dir = ['2021-10-22_16-56-25_T']
         for root_path in map(str, self.root_path.split(",")):
             if self.train:
                 videos_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p in choice_dir]
@@ -50,7 +57,7 @@ class MMMesh3D(Dataset):
                 continue
             if len(video_loader) < 6:
                 continue
-            video_loader.skip_head = 300
+            video_loader.skip_head = 0
             self.video_loaders.append(video_loader)
             self.sequence_path.append(path)
             video_len = len(video_loader)
@@ -85,7 +92,7 @@ class MMMesh3D(Dataset):
 
         # param: pose, shape
         if frame["mesh_param"] is None:
-            return None, None
+            return None, None, None
         mesh_pose = frame["mesh_param"]["pose"]
         mesh_shape = frame["mesh_param"]["shape"]
 
@@ -100,7 +107,7 @@ class MMMesh3D(Dataset):
 
         if arbe_data.shape[0] < 50:
             # remove bad frame
-            return None, None
+            return None, None, None
 
         bbox_center = ((mesh_vtx.max(axis=0) + mesh_vtx.min(axis=0))/2)[:3]
         arbe_data[:,:3] -= bbox_center
@@ -113,7 +120,7 @@ class MMMesh3D(Dataset):
 
         label = np.concatenate((mesh_pose / self.normal_scale, mesh_shape / self.normal_scale, np.asarray(gender).reshape(-1)), axis=0)
         # label = np.concatenate((mesh_pose, mesh_shape), axis=0) / self.normal_scale
-        return arbe_data, label
+        return arbe_data, label, info
 
     def __len__(self):
         return self.index_map[-1]
@@ -123,15 +130,15 @@ class MMMesh3D(Dataset):
         video_loader = self.video_loaders[video_idx]
         clip = []
 
-        data, label = self.load_data(video_loader, frame_idx)
+        data, label, info = self.load_data(video_loader, frame_idx)
 
         while data is None:
             frame_idx = random.randint(self.clip_range-1, len(video_loader)-1)
-            data, label = self.load_data(video_loader, frame_idx)
+            data, label, info = self.load_data(video_loader, frame_idx)
 
         for clip_id in range(frame_idx-self.clip_range+1, frame_idx, self.step_between_clips):
             # get xyz and features
-            clip_data, clip_label = self.load_data(video_loader, clip_id)
+            clip_data, clip_label, _ = self.load_data(video_loader, clip_id)
             # remove bad frame
             if clip_data is None:
                 clip_data = data
@@ -144,7 +151,7 @@ class MMMesh3D(Dataset):
         
         if True in np.isnan(label):
             label = np.nan_to_num(label)
-        return clip, label, (video_idx, frame_idx)
+        return clip, label, (video_idx, frame_idx, info)
 
 
 class MMMeshPKL(Dataset):
@@ -168,12 +175,14 @@ class MMMeshPKL(Dataset):
     def init_data(self):
         video_paths = []
         for root_path in map(str, self.root_path.split(",")):
+            choice_dir = ['2021-10-22_14-38-16_C_M']
             if self.train:
                 video_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1]=='T' or p[-1]=='O' or p[-1]=='N']
             else:
-                video_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-3] == 'R']
+                # video_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-3] == 'C']
+                video_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if  p in choice_dir]
                 # video_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] == 'M' or p[-1] == 'F']
-
+                
         for p in video_paths:
             try:
                 pkl_loader = PKLLoader(p, params = [dict(tag="mmWave_data", ext=".pkl")])
@@ -195,7 +204,7 @@ class MMMeshPKL(Dataset):
     def __getitem__(self, idx):
         clip = self.clips[idx]
         label = self.labels[idx]
-        return clip, label, (0, 0)
+        return clip, label, (0, 0, 0)
 
 
 # class MMMesh3D2(Dataset):

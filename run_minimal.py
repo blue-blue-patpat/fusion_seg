@@ -609,6 +609,18 @@ def check_result(root_path, **kwargs):
     MinimalResultStreamPlot(root_path, skip_head=kwargs.get("skip_head", 0), skip_tail=kwargs.get("skip_tail", 0)).show()
 
 
+def check_save_parallel(root_path, **kwargs):
+    from visualization.mesh_plot import MinimalResultParallelPlot
+
+    MinimalResultParallelPlot(root_path, pause=kwargs.pop("pause", True), save_path=kwargs.pop("save_path", "./"), skip_head=kwargs.get("skip_head", 0), skip_tail=kwargs.get("skip_tail", 0)).show()
+
+
+def check_save_result(root_path, **kwargs):
+    from visualization.mesh_plot import MeshPclStreamPlot
+
+    MeshPclStreamPlot(root_path, save_path=kwargs.pop("save_path", "./"), skip_head=kwargs.get("skip_head", 0), skip_tail=kwargs.get("skip_tail", 0)).show()
+
+
 def run():
     task_dict = dict(
         null=exit,
@@ -619,6 +631,8 @@ def run():
         parallel_stream_windowed=stream_kinect_optitrack_windowed,
         check_input=check_input,
         check_result=check_result,
+        check_save_result=check_save_result,
+        check_save_parallel=check_save_parallel,
     )
     parser = argparse.ArgumentParser(usage='"run_minimal.py -h" to show help.')
     parser.add_argument('-p', '--path', dest='root_path', type=str, help='File Root Path, default "./__test__/default"')

@@ -26,6 +26,7 @@ from message.dingtalk import TimerBot
 from visualization.mesh_plot import MeshEvaluateStreamPlot
 from visualization.utils import o3d_mesh, o3d_pcl, o3d_plot, o3d_smpl_mesh
 from nn.p4t.modules.loss import LossManager
+from visualization.mesh_plot import pcl2sphere
 
 
 def train_one_epoch(model, losses, criterions, loss_weight, optimizer, lr_scheduler, data_loader, device, epoch, print_freq, output_dim, use_gender):
@@ -78,7 +79,12 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
     gender_acc = []
-    per_joint_loss = []
+    per_joint_err = []
+    per_vertex_err = []
+    best_joints_loss = 0.0
+    worst_joints_loss = 0.5
+    best_vertices_loss = 0.0
+    worst_vertices_loss = 0.5
 
     if use_gender:
         smpl_m_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_MALE_PATH, compute_mesh=False))
@@ -97,11 +103,12 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
                 output_mat = tools.rotation6d_2_rot_mat(output[:,3:-11])
                 target_mat = tools.rodrigues_2_rot_mat(target[:,3:-11])
                 losses.update_loss("pose_loss", loss_weight[1]*criterions["rot_mat"](output_mat, target_mat))
-                v_loss, j_loss, per_j_loss = criterions["smpl"](torch.cat((output[:,:3], output_mat, output[:,-11:]), -1), torch.cat((target[:,:3], target_mat, target[:,-11:]), -1), use_gender, train=False)
+                v_loss, j_loss, per_loss = criterions["smpl"](torch.cat((output[:,:3], output_mat, output[:,-11:]), -1), torch.cat((target[:,:3], target_mat, target[:,-11:]), -1), use_gender, train=False)
             else:
                 losses.update_loss("pose_loss", loss_weight[1]*criterions["mse"](output[:,3:-11],target[:,3:-11]))
-                v_loss, j_loss, per_j_loss = criterions["smpl"](output, target, use_gender, train=False)
-            per_joint_loss.append(per_j_loss)
+                v_loss, j_loss, per_loss = criterions["smpl"](output, target, use_gender, train=False)
+            per_joint_err.append(per_loss[0])
+            per_vertex_err.append(per_loss[1])
             # shape loss
             losses.update_loss("shape_loss", loss_weight[2]*criterions["mse"](output[:,-11:-1], target[:,-11:-1]))
             # joints loss
@@ -131,6 +138,7 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
             gender_acc.append(acc)
 
             if visual:
+                print(_[2])
                 print("batch gender acc: {}%".format(acc * 100))
                 print("batch joints loss:", losses.loss_dict["joints_loss"][-1].cpu().numpy())
                 print("batch vertices loss:", losses.loss_dict["vertices_loss"][-1].cpu().numpy())
@@ -138,30 +146,53 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
                     arbe_frame = batch[-1][:,:3]
                     pred = output[b]
                     label = target[b]
+                    pred[3+22*3:3+24*3] = 0
+                    label[3+22*3:3+24*3] = 0
                     # restore to origin size, except gender
                     yield dict(
                         radar_pcl = dict(
-                            pcl = arbe_frame,
-                            color = [0,1,0]
+                            mesh = pcl2sphere(arbe_frame),
+                            color = [0,0.8,0]
                         ),
                         pred_smpl = dict(
                             params = pred[:-1],
-                            color = [1,0,0],
+                            color = np.asarray([179, 230, 213]) / 255,
                             model=smpl_m_model if pred[-1] > 0.5 else smpl_f_model,
                         ),
                         label_smpl = dict(
                             params = label[:-1],
+                            color = np.asarray([235, 189, 191]) / 255,
                             model=smpl_m_model if label[-1] > 0.5 else smpl_f_model,
                         )
                     )
+                #如果需要选择样本，取消注释   
+                # if losses.loss_dict["joints_loss"][-1].cpu().numpy() > worst_joints_loss:
+                #     time.sleep(2)
+                # elif losses.loss_dict["vertices_loss"][-1].cpu().numpy() > worst_vertices_loss:
+                #     time.sleep(2)
+                # elif losses.loss_dict["joints_loss"][-1].cpu().numpy() < best_joints_loss:
+                #     time.sleep(2)
+                # elif losses.loss_dict["vertices_loss"][-1].cpu().numpy() < best_vertices_loss:
+                #     time.sleep(2)    
         print("gender acc:", np.mean(gender_acc))
         print("joints loss:", np.average(torch.tensor(losses.loss_dict["joints_loss"])))
         print("vertices loss:", np.average(torch.tensor(losses.loss_dict["vertices_loss"])))
         if not os.path.isdir(os.path.join(output_path, "loss/test")):
             os.makedirs(os.path.join(output_path, "loss/test"))
-        np.save(os.path.join(output_path, "loss/test/per_joint_loss"), np.mean(torch.stack(per_joint_loss).cpu().numpy(), axis=0))
-        with open(os.path.join(output_path, "loss/test/gender_acc.txt"), 'w') as f:
-            f.write("gender_acc:" + str(np.mean(gender_acc)))
+        j_err = torch.stack(per_joint_err).cpu().numpy()[:,:24]
+        v_err = torch.stack(per_vertex_err).cpu().numpy()
+        np.save(os.path.join(output_path, "loss/test/per_joint_err"), j_err)
+        np.save(os.path.join(output_path, "loss/test/per_vertex_err"), v_err)
+        print("mean joint err:", np.mean(j_err)*100)
+        print("mean vertex err:", np.mean(v_err)*100)
+        print("max joint err:", np.mean(np.max(j_err, axis=1), axis=0)*100)
+        print("max vertex err:", np.mean(np.max(v_err, axis=1), axis=0)*100)
+        with open(os.path.join(output_path, "loss/test/error.txt"), 'w') as f:
+            f.write("gender_acc: " + str(np.mean(gender_acc)))
+            f.write("\nmean joint error: " + str(np.mean(j_err)*100))
+            f.write("\nmean vertex error: " + str(np.mean(v_err)*100))
+            f.write("\nmax joint error: " + str(np.mean(np.max(j_err, axis=1), axis=0)*100))
+            f.write("\nmax vertex error: " + str(np.mean(np.max(v_err, axis=1), axis=0)*100))
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
@@ -189,6 +220,7 @@ def main(args):
 
     Dataset = MMMeshPKL if args.train else MMMesh3D
     dataset = MMMeshPKL(
+    #dataset = MMMesh3D(
             root_path=args.data_path,
             frames_per_clip=args.clip_len,
             step_between_clips=1,
@@ -283,9 +315,9 @@ def main(args):
         loss_weight = list(map(float, args.loss_weight.split(",")))
         data_loader_test = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
         print("Start testing")
-        gen = evaluate(model, losses, criterions, loss_weight, data_loader_test, device, output_dim=args.output_dim, visual=True, use_gender=args.use_gender, output_path=args.output_dir)
-        plot = MeshEvaluateStreamPlot()
-        plot.show(gen, fps=15)
+        gen = evaluate(model, losses, criterions, loss_weight, data_loader_test, device, output_dim=args.output_dim, visual=args.visual, use_gender=args.use_gender, output_path=args.output_dir)
+        plot = MeshEvaluateStreamPlot(save_path="/home/nesc525/drivers/4/mm_obj")
+        plot.show(gen, fps=100)
         losses.calculate_test_loss(os.path.join(args.output_dir,"loss/test"))
         single = False
         if single:
@@ -296,7 +328,7 @@ def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description='P4Transformer Model Training')
 
-    parser.add_argument('--data_path', default='/media/nesc525/perple2', type=str, help='dataset')
+    parser.add_argument('--data_path', default='/home/nesc525/drivers/5', type=str, help='dataset')
     parser.add_argument('--seed', default=35, type=int, help='random seed')
     parser.add_argument('--model', default='P4Transformer', type=str, help='model')
     # input
@@ -325,7 +357,7 @@ def parse_args():
     parser.add_argument('-b', '--batch_size', default=32, type=int)
     parser.add_argument('--epochs', default=350, type=int, metavar='N', help='number of total epochs to run')
     parser.add_argument('-j', '--workers', default=10, type=int, metavar='N', help='number of data loading workers (default: 16)')
-    parser.add_argument('--lr', default=0.01, type=float, help='initial learning rate')
+    parser.add_argument('--lr', default=0.001, type=float, help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')
     parser.add_argument('--wd', '--weight_decay', default=1e-4, type=float, metavar='W', help='weight decay (default: 1e-4)', dest='weight_decay')
     parser.add_argument('--lr_milestones', nargs='+', default=[100,200], type=int, help='decrease lr on milestones')
@@ -341,6 +373,7 @@ def parse_args():
     parser.add_argument('--resume', default='', help='resume from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N', help='start epoch')
     parser.add_argument('--train', dest="train", action="store_true", help='train or test')
+    parser.add_argument('--visual', dest="visual", action="store_true", help='visual')
 
     args = parser.parse_args()
 
