@@ -219,14 +219,14 @@ class KinectOfflineStreamPlotCpp(O3DStreamPlot):
             pcl_loader = KinectResultLoader(root_path, pcl_params)
             # color_loader = KinectResultLoader(root_path, color_params)
             for i in range(self.start_frame, len(pcl_loader)):
-                pcl_frame = pcl_loader.select_item(pcl_loader[i]["kinect/master/pcls"]["st"], "st", False)
+                pcl_frame = pcl_loader.select_item(pcl_loader[i]["kinect/{}/pcls".format(device)]["st"], "st", False)
                 result = {}
 
                 for dev in self.devices:
                     pcl = np.load(pcl_frame["kinect/{}/pcls".format(dev)]["filepath"]).reshape(-1,3)/1000
                     # color_frame = color_loader.select_by_id(pcl_frame["kinect/{}/pcls".format(dev)]["id"])
                     # color = cv2.imread(color_frame["kinect/{}/color".format(dev)]["filepath"])
-                    result[dev] = o3d_pcl(pcl).transform(transform_mats[dev])
+                    result[dev] = o3d_pcl(pcl, color=[0,0,1]).transform(transform_mats[dev])
                     if self.write_ply:
                         o3d.io.write_point_cloud(os.path.join(root_path+"/calib/kinect/plys", "{}.ply".format(dev+str(i))), result[dev])
                 yield result

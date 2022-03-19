@@ -414,11 +414,12 @@ class ResultFileLoader():
         Init Mesh
         """
         if "mesh" in self.sources:
+            mesh_type = "mosh" if "mosh" in self.sources else "minimal"
             params = []
             if "mesh_param" in self.sources:
-                params.append(dict(tag="minimal/param", ext=".npz"))
+                params.append(dict(tag="{}/param".format(mesh_type), ext=".npz"))
             if "mesh_obj" in self.sources:
-                params.append(dict(tag="minimal/obj", ext=".obj"))
+                params.append(dict(tag="{}/obj".format(mesh_type), ext=".obj"))
             self.mesh_loader = MinimalLoader(self.root_path, params=params) 
 
     def init_info(self):
@@ -441,11 +442,10 @@ class ResultFileLoader():
         self.trans = to_radar_transform_mat(self.root_path)
 
     def init_skip(self):
-        if "mesh" not in self.sources:
-            return
-        rid_arr = np.array(self.mesh_loader.file_dict["minimal/param"]["rid"], dtype=int)
-        self.skip_head = max(self.skip_head, rid_arr.min())
-        self.skip_tail = max(self.skip_tail, len(self.a_loader) - 1 - rid_arr.max())
+        if "mesh" in self.sources and "mosh" not in self.sources:
+            rid_arr = np.array(self.mesh_loader.file_dict["minimal/param"]["rid"], dtype=int)
+            self.skip_head = max(self.skip_head, rid_arr.min())
+            self.skip_tail = max(self.skip_tail, len(self.a_loader) - 1 - rid_arr.max())
 
     def init_reindex(self):
         if "reindex" not in self.sources:
@@ -628,6 +628,46 @@ class ResultFileLoader():
             ))
         return mesh_res
 
+    def select_mosh_item(self, mesh_loader: MinimalLoader, idx: int, key: str = "id") -> dict:
+        """
+        Select Mesh transformed results by radar id
+        """
+        mesh_res = mesh_loader.select_item(idx, key, False)
+        if len(list(mesh_res.values())) == 0:
+            self.results.update(dict(mesh_param=None, mesh_obj=None))
+            self.info.update(dict(mesh=None))
+       
+        if "mesh_param" in self.sources:
+            try:
+                self.results.update(dict(
+                    mesh_param=np.load(mesh_res["mosh/param"]["filepath"]),
+                ))
+                self.info.update(dict(
+                    mesh_param=mesh_res["mosh/param"]
+                ))
+            except Exception as e:
+                self.results.update(dict(
+                    mesh_param=None,
+                ))
+        if "mesh_obj" in self.sources:
+            verts, faces, _ = load_obj(mesh_res["mosh/obj"]["filepath"])
+            verts = verts @ self.trans["optitrack"]["R"].T + self.trans["optitrack"]["t"]
+            self.results.update(dict(
+                mesh_obj=(verts, faces[0]),
+            ))
+            self.info.update(dict(
+                mesh_obj=mesh_res["mosh/obj"]
+            ))
+        return mesh_res
+
+    def select_mosh_item_by_t(self, mesh_loader: MinimalLoader, t: float) -> None:
+        """
+        Select OptiTrack transformed results by timestamp
+        """
+        _t = t + self.offsets.get('mosh', self.offsets['optitrack']) / self.fps
+        res = mesh_loader.select_item(_t, "st", False)
+        return self.select_mosh_item(mesh_loader, list(res.values())[0]["id"])
+
     def select_by_radar(self, index: int) -> tuple:
         """
         Returns the $index$^th radar frame with its synchronized frames of other devices
@@ -644,7 +684,11 @@ class ResultFileLoader():
         if self.o_loader is not None:
             self.select_trans_optitrack_item_by_t(self.o_loader, t)
         if self.mesh_loader is not None:
-            self.select_mesh_item(self.mesh_loader, rid, "rid")
+            if "mosh" not in self.sources:
+                self.select_mesh_item(self.mesh_loader, rid, "rid")
+            else:
+                self.select_mosh_item_by_t(self.mesh_loader, t)
+
         self.results["information"] = self.info_dict
 
     def select_by_mesh(self, index: int) -> tuple:

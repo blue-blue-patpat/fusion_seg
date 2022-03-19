@@ -18,6 +18,8 @@ class MinimalStreamPlot(O3DStreamPlot):
             mesh=o3d_mesh,
             pcl=o3d_pcl,
             kpts=o3d_pcl,
+            opti=o3d_pcl,
+            skel=o3d_skeleton,
         )
 
     def init_show(self):

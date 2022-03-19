@@ -12,7 +12,14 @@ def o3d_plot(o3d_items: list, title="", show_coord=True, **kwargs):
         _items = o3d_items + [o3d_coord(**kwargs)]
     else:
         _items = o3d_items
-    o3d.visualization.draw_geometries(_items, title)
+    view = o3d.visualization.VisualizerWithKeyCallback()
+    view.create_window()
+    render = view.get_render_option()
+    render.point_size = 0.5
+    for item in _items:
+        view.add_geometry(item)
+    view.run()
+    # o3d.visualization.draw_geometries(_items, title)
 
 
 def o3d_coord(size=0.1, origin=[0, 0, 0]):
@@ -113,6 +120,9 @@ def o3d_mesh(mesh: Union[Meshes, Iterable] = None, color: list = None,
         if isinstance(mesh, Meshes):
             _mesh.vertices = o3d.utility.Vector3dVector(mesh.verts_packed().cpu())
             _mesh.triangles = o3d.utility.Vector3iVector(mesh.faces_packed().cpu())
+        elif isinstance(mesh, o3d.geometry.TriangleMesh):
+            _mesh.vertices = mesh.vertices
+            _mesh.triangles = mesh.triangles
         else:
             _mesh.vertices = o3d.utility.Vector3dVector(mesh[0])
             if mesh[1] is not None:
@@ -265,6 +275,8 @@ class O3DStreamPlot():
         self.view = o3d.visualization.VisualizerWithKeyCallback()
         self.view.create_window(width=width, height=height)
         self.ctr = self.view.get_view_control()
+        self.render = self.view.get_render_option()
+        self.render.point_size = 0.5
 
         self.with_coord = with_coord
         self.first_render = True

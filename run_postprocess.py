@@ -20,7 +20,7 @@ def postprocess(root_path, *devices, output_path=""):
         if len(csv_file):
             parse_opti_csv(csv_file.file_dict["optitrack"].loc[0,"filepath"])
     except:
-        pass
+        print('No optitrack csv!')
 
     def process(device):
         mkv_path = os.path.join(root_path, "kinect", device)
@@ -29,7 +29,10 @@ def postprocess(root_path, *devices, output_path=""):
 
     for device in devices:
         # pool.apply_async(process, (device,))
-        process(device)
+        try:
+            process(device)
+        except:
+            print('No kinect skeleton!')
 
     mkv_loader = KinectMKVtLoader(root_path, params)
     mkv_list = [m.loc[0,"filepath"] for m in mkv_loader.file_dict.values()]

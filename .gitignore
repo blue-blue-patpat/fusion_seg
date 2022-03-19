@@ -10,3 +10,7 @@ nn/p4t/modules/src
 kinect/pyk4a
 nn/plstm
 nn/paconv
+test.py
+test.ipynb
+test2.py
+test3.py
