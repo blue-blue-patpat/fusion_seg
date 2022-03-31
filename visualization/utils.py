@@ -14,8 +14,8 @@ def o3d_plot(o3d_items: list, title="", show_coord=True, **kwargs):
         _items = o3d_items
     view = o3d.visualization.VisualizerWithKeyCallback()
     view.create_window()
-    render = view.get_render_option()
-    render.point_size = 0.5
+    # render = view.get_render_option()
+    # render.point_size = 0.5
     for item in _items:
         view.add_geometry(item)
     view.run()
@@ -276,7 +276,10 @@ class O3DStreamPlot():
         self.view.create_window(width=width, height=height)
         self.ctr = self.view.get_view_control()
         self.render = self.view.get_render_option()
-        self.render.point_size = 0.5
+        try:
+            self.render.point_size = 3.0
+        except:
+            print('No render setting')
 
         self.with_coord = with_coord
         self.first_render = True

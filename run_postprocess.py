@@ -6,10 +6,10 @@ import os
 from optitrack.optitrack_loader import parse_opti_csv
 
 
-def postprocess(root_path, *devices, output_path=""):
+def postprocess(root_path, devices, output_path=None):
     if not devices:
         devices = ["master","sub1","sub2"]
-    if not output_path:
+    if output_path is None:
         output_path = root_path
     params = [dict(tag="kinect/{}".format(device), ext=".mkv") for device in devices]
     pool = Pool()
@@ -27,12 +27,12 @@ def postprocess(root_path, *devices, output_path=""):
         os.system("/home/nesc525/chen/kinect/Azure-Kinect-Samples/build/bin/offline_processor {}/out.mkv {}/out.json".format(mkv_path, mkv_path))
         extract_skeleton(root_path, device)
 
-    for device in devices:
-        # pool.apply_async(process, (device,))
-        try:
-            process(device)
-        except:
-            print('No kinect skeleton!')
+    # for device in devices:
+    #     # pool.apply_async(process, (device,))
+    #     try:
+    #         process(device)
+    #     except:
+    #         print('No kinect skeleton!')
 
     mkv_loader = KinectMKVtLoader(root_path, params)
     mkv_list = [m.loc[0,"filepath"] for m in mkv_loader.file_dict.values()]
@@ -63,7 +63,7 @@ def run():
 
     args = parser.parse_args()
 
-    task_dict[args.task](args.root_path, *args.device.split(','))
+    task_dict[args.task](args.root_path, args.device.split(','))
 
 if __name__ == '__main__':
     run()

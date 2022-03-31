@@ -1,35 +1,31 @@
 import datetime
-from json import dump
 import os
 import time
 import sys
 import numpy as np
-from numpy.lib import average
 import torch
 import torch.utils.data
 from torch import nn
 import torchvision
 from sklearn.metrics import mean_squared_error
-import matplotlib.pyplot as plt
-import cv2
-from minimal.models import KinematicModel, KinematicPCAWrapper
-from minimal.config import SMPL_MODEL_1_0_MALE_PATH, SMPL_MODEL_1_0_PATH, SMPL_MODEL_1_0_NEUTRAL_PATH
+from human_body_prior.body_model.body_model import BodyModel
+from mosh.config import SMPLX_MODEL_FEMALE_PATH, SMPLX_MODEL_MALE_PATH, SMPLX_MODEL_NEUTRAL_PATH
 
-from nn.p4t import tools
+from nn.p4t.tools import rotation6d_2_rot_mat, rodrigues_2_rot_mat, rotation6d_2_rodrigues, rot_mat_2_rodrigues
 from nn.p4t import utils
 from nn.p4t.modules.geodesic_loss import GeodesicLoss
 from nn.p4t.scheduler import WarmupMultiStepLR
-from nn.p4t.datasets.mmmesh import MMMesh3D, MMMeshPKL
-from nn.SMPL.smpl_layer import SMPLLoss
+from nn.p4t.datasets.mmmosh import MMMosh, MMMoshPKL, MMDataset
+from nn.SMPL.mosh_loss import MoshLoss
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
-from visualization.mesh_plot import MeshEvaluateStreamPlot
-from visualization.utils import o3d_mesh, o3d_pcl, o3d_plot, o3d_smpl_mesh
+from visualization.mesh_plot import MoshEvaluateStreamPlot
 from nn.p4t.modules.loss import LossManager
 from visualization.mesh_plot import pcl2sphere
+from mosh.utils import mosh_param_parser
 
 
-def train_one_epoch(model, losses, criterions, loss_weight, optimizer, lr_scheduler, data_loader, device, epoch, print_freq, output_dim, use_gender):
+def train_one_epoch(model, losses, criterions, loss_weight, optimizer, lr_scheduler, data_loader, device, epoch, print_freq, use_6d_pose, use_gender):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value}'))
@@ -45,16 +41,17 @@ def train_one_epoch(model, losses, criterions, loss_weight, optimizer, lr_schedu
         # translation loss
         losses.update_loss("trans_loss", loss_weight[0]*criterions["mse"](output[:,0:3], target[:,0:3]))
         # pose loss
-        if output_dim >= 157:
-            output_mat = tools.rotation6d_2_rot_mat(output[:,3:-11])
-            target_mat = tools.rodrigues_2_rot_mat(target[:,3:-11])
+        if use_6d_pose:
+            output_mat = rotation6d_2_rot_mat(output[:,3:-16])
+            target_mat = rodrigues_2_rot_mat(target[:,3:-16])
             losses.update_loss("pose_loss", loss_weight[1]*criterions["rot_mat"](output_mat, target_mat))
-            v_loss, j_loss = criterions["smpl"](torch.cat((output[:,:3], output_mat, output[:,-11:]), -1), torch.cat((target[:,:3], target_mat, target[:,-11:]), -1), use_gender)
+            v_loss, j_loss = criterions["smpl"](torch.cat((output[:,:3], output_mat, output[:,-16:]), -1), 
+                                        torch.cat((target[:,:3], target_mat, target[:,-16:]), -1), use_gender)
         else:
-            losses.update_loss("pose_loss", loss_weight[1]*criterions["mse"](output[:,3:-11],target[:,3:-11]))
+            losses.update_loss("pose_loss", loss_weight[1]*criterions["mse"](output[:,3:-16],target[:,3:-16]))
             v_loss, j_loss = criterions["smpl"](output, target, use_gender)
         # shape loss
-        losses.update_loss("shape_loss", loss_weight[2]*criterions["mse"](output[:,-11:-1], target[:,-11:-1]))
+        losses.update_loss("shape_loss", loss_weight[2]*criterions["mse"](output[:,-16:], target[:,-16:]))
         # joints loss
         losses.update_loss("joints_loss", loss_weight[3]*j_loss)
         # vertices loss
@@ -64,9 +61,10 @@ def train_one_epoch(model, losses, criterions, loss_weight, optimizer, lr_schedu
             losses.update_loss("gender_loss", loss_weight[5]*criterions["entropy"](output[:,-1], target[:,-1]))
 
         loss = losses.calculate_total_loss()
-        
         optimizer.zero_grad()
+        #with torch.autograd.detect_anomaly():
         loss.backward()
+        nn.utils.clip_grad_value_(model.parameters(), 5)
         optimizer.step()
 
         metric_logger.update(loss=loss.item(), lr=optimizer.param_groups[0]["lr"])
@@ -74,23 +72,19 @@ def train_one_epoch(model, losses, criterions, loss_weight, optimizer, lr_schedu
         lr_scheduler.step()
         sys.stdout.flush()
 
-def evaluate(model, losses, criterions, loss_weight, data_loader, device, output_dim, use_gender, visual=False, output_path=''):
+def evaluate(model, losses, criterions, loss_weight, data_loader, device, use_6d_pose=True, use_gender=False, visual=False, output_path=''):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
     gender_acc = []
     per_joint_err = []
     per_vertex_err = []
-    best_joints_loss = 0.0
-    worst_joints_loss = 0.5
-    best_vertices_loss = 0.0
-    worst_vertices_loss = 0.5
 
     if use_gender:
-        smpl_m_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_MALE_PATH, compute_mesh=False))
-        smpl_f_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_PATH, compute_mesh=False))
+        body_model_male = BodyModel(bm_fname=SMPLX_MODEL_MALE_PATH, num_betas=16, num_expressions=0)
+        body_model_female = BodyModel(bm_fname=SMPLX_MODEL_FEMALE_PATH, num_betas=16, num_expressions=0)
     else:
-        smpl_m_model = smpl_f_model = KinematicPCAWrapper(KinematicModel().init_from_file(SMPL_MODEL_1_0_NEUTRAL_PATH, compute_mesh=False))
+        body_model_neutral = BodyModel(bm_fname=SMPLX_MODEL_NEUTRAL_PATH, num_betas=16, num_expressions=0)
     with torch.no_grad():
         for clip, target, _ in metric_logger.log_every(data_loader, 100, header):
             clip = clip.to(device, non_blocking=True)
@@ -99,18 +93,19 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
             # translation loss
             losses.update_loss("trans_loss", loss_weight[0]*criterions["mse"](output[:,0:3], target[:,0:3]))
             # pose loss
-            if output_dim >= 157:
-                output_mat = tools.rotation6d_2_rot_mat(output[:,3:-11])
-                target_mat = tools.rodrigues_2_rot_mat(target[:,3:-11])
+            if use_6d_pose:
+                output_mat = rotation6d_2_rot_mat(output[:,3:-16])
+                target_mat = rodrigues_2_rot_mat(target[:,3:-16])
                 losses.update_loss("pose_loss", loss_weight[1]*criterions["rot_mat"](output_mat, target_mat))
-                v_loss, j_loss, per_loss = criterions["smpl"](torch.cat((output[:,:3], output_mat, output[:,-11:]), -1), torch.cat((target[:,:3], target_mat, target[:,-11:]), -1), use_gender, train=False)
+                v_loss, j_loss, per_loss = criterions["smpl"](torch.cat((output[:,:3], output_mat, output[:,-16:]), -1), 
+                                            torch.cat((target[:,:3], target_mat, target[:,-16:]), -1), use_gender, train=False)
             else:
-                losses.update_loss("pose_loss", loss_weight[1]*criterions["mse"](output[:,3:-11],target[:,3:-11]))
+                losses.update_loss("pose_loss", loss_weight[1]*criterions["mse"](output[:,3:-16],target[:,3:-16]))
                 v_loss, j_loss, per_loss = criterions["smpl"](output, target, use_gender, train=False)
             per_joint_err.append(per_loss[0])
             per_vertex_err.append(per_loss[1])
             # shape loss
-            losses.update_loss("shape_loss", loss_weight[2]*criterions["mse"](output[:,-11:-1], target[:,-11:-1]))
+            losses.update_loss("shape_loss", loss_weight[2]*criterions["mse"](output[:,-16:], target[:,-16:]))
             # joints loss
             losses.update_loss("joints_loss", loss_weight[3]*j_loss)
             # vertices loss
@@ -121,8 +116,8 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
 
             loss = losses.calculate_total_loss()
 
-            if output_dim >= 158:
-                output = torch.cat(output[:,:3], tools.rotation6d_2_rodrigues(output[:,3:-11]), output[:,-11:], dim=-1)
+            if use_6d_pose:
+                output = torch.cat([output[:,:3], rotation6d_2_rodrigues(output[:,3:-16]), output[:,-16:]], dim=-1)
 
             # could have been padded in distributed setup
             clip = clip.cpu().numpy()
@@ -133,21 +128,21 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
             metric_logger.update(loss=loss.item())
             metric_logger.meters['loss'].update(loss, n=batch_size)
 
-            gender_pred = np.where(output[:,-1]>0.5, 1, 0)
-            acc = np.mean(np.equal(gender_pred, target[:,-1]))
-            gender_acc.append(acc)
+            # gender_pred = np.where(output[:,-1]>0.5, 1, 0)
+            # acc = np.mean(np.equal(gender_pred, target[:,-1]))
+            # gender_acc.append(acc)
 
             if visual:
-                print(_[2])
-                print("batch gender acc: {}%".format(acc * 100))
+                # print(_[2])
+                # print("batch gender acc: {}%".format(acc * 100))
                 print("batch joints loss:", losses.loss_dict["joints_loss"][-1].cpu().numpy())
                 print("batch vertices loss:", losses.loss_dict["vertices_loss"][-1].cpu().numpy())
+                pred_mesh = mosh_param_parser(output, body_model_neutral)
+                label_mesh = mosh_param_parser(target, body_model_neutral)
                 for b, batch in enumerate(clip):
+                    t1 = time.time()
                     arbe_frame = batch[-1][:,:3]
-                    pred = output[b]
-                    label = target[b]
-                    pred[3+22*3:3+24*3] = 0
-                    label[3+22*3:3+24*3] = 0
+
                     # restore to origin size, except gender
                     yield dict(
                         radar_pcl = dict(
@@ -155,26 +150,17 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
                             color = [0,0.8,0]
                         ),
                         pred_smpl = dict(
-                            params = pred[:-1],
+                            mesh = [pred_mesh['vertices'][b], pred_mesh['faces']],
                             color = np.asarray([179, 230, 213]) / 255,
-                            model=smpl_m_model if pred[-1] > 0.5 else smpl_f_model,
                         ),
                         label_smpl = dict(
-                            params = label[:-1],
+                            mesh = [label_mesh['vertices'][b], label_mesh['faces']],
                             color = np.asarray([235, 189, 191]) / 255,
-                            model=smpl_m_model if label[-1] > 0.5 else smpl_f_model,
                         )
                     )
-                #如果需要选择样本，取消注释   
-                # if losses.loss_dict["joints_loss"][-1].cpu().numpy() > worst_joints_loss:
-                #     time.sleep(2)
-                # elif losses.loss_dict["vertices_loss"][-1].cpu().numpy() > worst_vertices_loss:
-                #     time.sleep(2)
-                # elif losses.loss_dict["joints_loss"][-1].cpu().numpy() < best_joints_loss:
-                #     time.sleep(2)
-                # elif losses.loss_dict["vertices_loss"][-1].cpu().numpy() < best_vertices_loss:
-                #     time.sleep(2)    
-        print("gender acc:", np.mean(gender_acc))
+                    print(time.time()-t1)
+
+        # print("gender acc:", np.mean(gender_acc))
         print("joints loss:", np.average(torch.tensor(losses.loss_dict["joints_loss"])))
         print("vertices loss:", np.average(torch.tensor(losses.loss_dict["vertices_loss"])))
         if not os.path.isdir(os.path.join(output_path, "loss/test")):
@@ -188,7 +174,7 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
         print("max joint err:", np.mean(np.max(j_err, axis=1), axis=0)*100)
         print("max vertex err:", np.mean(np.max(v_err, axis=1), axis=0)*100)
         with open(os.path.join(output_path, "loss/test/error.txt"), 'w') as f:
-            f.write("gender_acc: " + str(np.mean(gender_acc)))
+            # f.write("gender_acc: " + str(np.mean(gender_acc)))
             f.write("\nmean joint error: " + str(np.mean(j_err)*100))
             f.write("\nmean vertex error: " + str(np.mean(v_err)*100))
             f.write("\nmax joint error: " + str(np.mean(np.max(j_err, axis=1), axis=0)*100))
@@ -218,17 +204,15 @@ def main(args):
     # Data loading code
     print("Loading data")
 
-    Dataset = MMMeshPKL if args.train else MMMesh3D
-    dataset = MMMeshPKL(
-    #dataset = MMMesh3D(
-            root_path=args.data_path,
+    # dataset = MMMoshPKL(
+    dataset = MMDataset(
+            driver_path=args.data_path,
             frames_per_clip=args.clip_len,
             step_between_clips=1,
-            num_points=args.num_points,
             normal_scale=args.normal_scale,
             skip_head=args.skip_head,
-            output_dim=args.output_dim,
-            train=args.train
+            train=args.train,
+            data_type=args.data_type,
     )
 
     train_size = int(0.9 * len(dataset))
@@ -246,7 +230,7 @@ def main(args):
                   temporal_kernel_size=args.temporal_kernel_size, temporal_stride=args.temporal_stride,
                   emb_relu=args.emb_relu,
                   dim=args.dim, depth=args.depth, heads=args.heads, dim_head=args.dim_head,
-                  mlp_dim=args.mlp_dim, output_dim=dataset.output_dim)
+                  mlp_dim=args.mlp_dim, output_dim=args.output_dim)
 
     # if torch.cuda.device_count() > 1:
     #     model = nn.DataParallel(model)
@@ -255,10 +239,10 @@ def main(args):
     losses = LossManager()
 
     mse_criterion = nn.MSELoss()
-    smpl_criterion = SMPLLoss(device=device, scale=args.normal_scale)
-    rm_criterion = GeodesicLoss()
+    smpl_criterion = MoshLoss(device=device, scale=args.normal_scale)
+    rot_mat_criterion = GeodesicLoss()
     entropy_criterion = nn.BCEWithLogitsLoss()
-    criterions = dict(mse=mse_criterion, smpl=smpl_criterion, rot_mat=rm_criterion, entropy=entropy_criterion)
+    criterions = dict(mse=mse_criterion, smpl=smpl_criterion, rot_mat=rot_mat_criterion, entropy=entropy_criterion)
 
     lr = args.lr
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -286,9 +270,9 @@ def main(args):
         loss_weight = list(map(float, args.loss_weight.split(",")))
 
         for epoch in range(args.start_epoch, args.epochs):
-            train_one_epoch(model, losses, criterions, loss_weight, optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq, args.output_dim, args.use_gender)
+            train_one_epoch(model, losses, criterions, loss_weight, optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq, args.use_6d_pose, args.use_gender)
             losses.calculate_epoch_loss(os.path.join(args.output_dir,"loss/train"), epoch, bot)
-            list(evaluate(model, losses, criterions, loss_weight, data_loader_eval, device, args.output_dim, use_gender=args.use_gender))
+            list(evaluate(model, losses, criterions, loss_weight, data_loader_eval, device, args.use_6d_pose, use_gender=args.use_gender))
             losses.calculate_epoch_loss(os.path.join(args.output_dir,"loss/eval"), epoch, bot)
 
             if args.output_dir:
@@ -315,14 +299,10 @@ def main(args):
         loss_weight = list(map(float, args.loss_weight.split(",")))
         data_loader_test = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
         print("Start testing")
-        gen = evaluate(model, losses, criterions, loss_weight, data_loader_test, device, output_dim=args.output_dim, visual=args.visual, use_gender=args.use_gender, output_path=args.output_dir)
-        plot = MeshEvaluateStreamPlot(save_path="/home/nesc525/drivers/4/mm_obj")
+        gen = evaluate(model, losses, criterions, loss_weight, data_loader_test, device, use_6d_pose=args.use_6d_pose, visual=args.visual, use_gender=args.use_gender, output_path=args.output_dir)
+        plot = MoshEvaluateStreamPlot()
         plot.show(gen, fps=100)
         losses.calculate_test_loss(os.path.join(args.output_dir,"loss/test"))
-        single = False
-        if single:
-            data = next(gen)
-            o3d_plot([o3d_pcl(**data["radar_pcl"]), o3d_smpl_mesh(**data["pred_smpl"]), o3d_smpl_mesh(**data["label_smpl"])])
 
 def parse_args():
     import argparse
@@ -337,8 +317,10 @@ def parse_args():
     parser.add_argument('--normal_scale', default=1, type=int, help='normal scale of labels')
     parser.add_argument('--skip_head', default=0, type=int, help='number of skip frames')
     parser.add_argument('--new_gmm', action="store_true", help='new gmm')
-    parser.add_argument('--output_dim', default=158, type=int, help='output dim')
+    parser.add_argument('--output_dim', default=151, type=int, help='output dim')
+    parser.add_argument('--use_6d_pose', default=1, type=int, help='use 6d pose')
     parser.add_argument('--features', default=3, type=int, help='dim of features')
+    parser.add_argument('--data_type', default="arbe_data", type=str, help='type of input data, arbe_data, k_master_data or k_sub2_data')
     # P4D
     parser.add_argument('--radius', default=0.7, type=float, help='radius for the ball query')
     parser.add_argument('--nsamples', default=32, type=int, help='number of neighbors for the ball query')
@@ -364,7 +346,7 @@ def parse_args():
     parser.add_argument('--lr_gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
     parser.add_argument('--lr_warmup_epochs', default=10, type=int, help='number of warmup epochs')
     parser.add_argument('--loss_weight', default="1,1,1,1,1,1", type=str, help='weight of loss')
-    parser.add_argument('--use_gender', default=1, type=int, help='use gender')
+    parser.add_argument('--use_gender', default=0, type=int, help='use gender')
     parser.add_argument('--device', default=0, type=int, help='cuda device')
     # output
     parser.add_argument('--print_freq', default=10, type=int, help='print frequency')
@@ -381,4 +363,5 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
+    torch.autograd.set_detect_anomaly(True)
     main(args)

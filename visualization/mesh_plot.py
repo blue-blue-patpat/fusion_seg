@@ -324,6 +324,42 @@ class MeshEvaluateStreamPlot(O3DStreamPlot):
         self.ctr.set_lookat(np.array([0,0,0]))
         self.ctr.set_zoom(1)
 
+class MoshEvaluateStreamPlot(O3DStreamPlot):
+    updater_dict = {}
+    save_path = ''
+    def __init__(self, *args, **kwargs) -> None:
+        MoshEvaluateStreamPlot.save_path = kwargs.pop("save_path", "./")
+        super().__init__(width=1800, *args, **kwargs)
+
+        MoshEvaluateStreamPlot.updater_dict = self.updater_dict
+        self.idx = 0
+
+        def save(v):
+            import open3d as o3d
+            import os
+
+            save_path = MoshEvaluateStreamPlot.save_path
+
+            o3d.io.write_triangle_mesh(os.path.join(save_path, "radar_pcl{}.ply".format(self.idx)), MoshEvaluateStreamPlot.updater_dict["radar_pcl"].update_item)
+            o3d.io.write_triangle_mesh(os.path.join(save_path, "pred_smpl{}.ply".format(self.idx)), MoshEvaluateStreamPlot.updater_dict["pred_smpl"].update_item)
+            o3d.io.write_triangle_mesh(os.path.join(save_path, "label_smpl{}.ply".format(self.idx)), MoshEvaluateStreamPlot.updater_dict["label_smpl"].update_item)
+            self.idx += 1
+        self.view.register_key_callback(66, save)
+
+    def init_updater(self):
+        self.plot_funcs = dict(
+            radar_pcl=o3d_mesh,
+            pred_smpl=o3d_mesh,
+            label_smpl=o3d_mesh,
+        )
+
+    def init_show(self):
+        super().init_show()
+        self.ctr.set_up(np.array([[0],[0],[1]]))
+        self.ctr.set_front(np.array([[0],[-1],[0]]))
+        self.ctr.set_lookat(np.array([0,0,0]))
+        self.ctr.set_zoom(1)
+
 
 def pcl2sphere(pcl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     verts = []

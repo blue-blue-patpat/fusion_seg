@@ -43,3 +43,28 @@ class Offsets(dict):
                 return False
             return True
         return False
+
+
+class CalibOffsets(dict):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def to_file(self, file_path: str):
+        with open(os.path.join(file_path, "calib_offsets.txt"), "w") as f:
+            f.write(self.__repr__())
+
+    @staticmethod
+    def from_file(file_path: str):
+        with open(os.path.join(file_path, "calib_offsets.txt"), "r") as f:
+            return CalibOffsets(eval(f.readline()))
+
+    @staticmethod
+    def verify_file(file_path: str):
+        p = os.path.join(file_path, "calib_offsets.txt")
+        if os.path.exists(p):
+            try:
+                CalibOffsets.from_file(file_path)
+            except Exception as e:
+                return False
+            return True
+        return False

@@ -5,7 +5,7 @@ import pandas as pd
 from pytorch3d.io import load_obj
 from sklearn.neighbors import KNeighborsClassifier
 from dataloader.utils import file_paths_from_dir, filename_decoder
-from sync.offsets import Offsets
+from sync.offsets import Offsets, CalibOffsets
 
 
 class ResultLoader():
@@ -262,6 +262,17 @@ class PKLLoader(ResultLoader):
         self.run()
         self.pkls = list(self.file_dict.values())[0].loc[:, "filepath"]
 
+class PKLLoader_mosh(ResultLoader):
+    def __init__(self, result_path, params=None, device="sub1") -> None:
+        super().__init__(result_path)
+        if params is None:
+            self.params = [dict(tag="pkl", ext=".pkl"),]
+        else:
+            self.params = params
+        self.run()
+        self.pkls = list(self.file_dict.values())[0].loc[:, "filepath"]
+
+
 class PKLLoader_test(ResultLoader):
     def __init__(self, result_path, params=None, device="sub1") -> None:
         super().__init__(result_path)
@@ -341,14 +352,25 @@ class ResultFileLoader():
         # Verify if offsets can be restored from file
         if Offsets.verify_file(root_path):
             # Init from file
-            self.offsets = Offsets.from_file(root_path)
+            self.sync_offsets = Offsets.from_file(root_path)
         elif isinstance(offsets, dict):
             # Init from arg
-            self.offsets = Offsets(offsets)
+            self.sync_offsets = Offsets(offsets)
         else:
             # Init empty offsets
-            self.offsets = Offsets(dict(zip(self.sources, [0]*len(self.sources))), base=self.sources[0])
+            self.sync_offsets = Offsets(dict(zip(self.sources, [0]*len(self.sources))), base=self.sources[0])
 
+        if CalibOffsets.verify_file(root_path):
+            # Init from file
+            self.calib_offsets = CalibOffsets.from_file(root_path)
+        else:
+            self.calib_offsets = CalibOffsets()
+            for k, v in self.trans.items():
+                self.calib_offsets.update({k:list(v['t'])})
+        
+        # rectify calib
+        self.rectify_calibration()
+            
         # triggered by source reindex
         self.init_reindex()
 
@@ -421,6 +443,8 @@ class ResultFileLoader():
             if "mesh_obj" in self.sources:
                 params.append(dict(tag="{}/obj".format(mesh_type), ext=".obj"))
             self.mesh_loader = MinimalLoader(self.root_path, params=params) 
+        else:
+            self.mesh_loader = None
 
     def init_info(self):
         import json
@@ -497,9 +521,14 @@ class ResultFileLoader():
         
         if len(self.enabled_kinect_devices) > 0:
             for device in self.kinect_devices:
-                if self.__dict__["k_{}_loader".format(device)] is None and device in self.offsets.keys():
+                if self.__dict__["k_{}_loader".format(device)] is None and device in self.sync_offsets.keys():
                     self.__dict__["k_{}_loader".format(device)] = KinectResultLoader(self.root_path, device=device)
 
+    def rectify_calibration(self):
+        for k, v in self.calib_offsets.items():
+            if k in self.trans.keys():
+                self.trans[k]['t'] = v
+    
     def select_radar_item_by_id(self, r_loader: ArbeResultLoader, idx: int) -> dict:
         if "reindex" in self.sources:
             arbe_res = r_loader.select_item(idx, "reindexed_id")
@@ -527,8 +556,8 @@ class ResultFileLoader():
         """
         Select Kinect transformed results by timestamp
         """
-        if k_loader.device in self.offsets.keys():
-            _t = t + self.offsets[k_loader.device] / self.fps
+        if k_loader.device in self.sync_offsets.keys():
+            _t = t + self.sync_offsets[k_loader.device] / self.fps
             # Use index: skid
             if "kinect_skeleton" in self.sources:
                 res_skeleton = k_loader.select_item_in_tag(_t, "st", "kinect/{}/skeleton".format(k_loader.device), False)
@@ -538,9 +567,9 @@ class ResultFileLoader():
 
         else:
             for device in self.kinect_devices:
-                if device in self.offsets.keys():
+                if device in self.sync_offsets.keys():
                     _loader = self.__dict__["k_{}_loader".format(device)]
-                    _t = t + self.offsets[device] / self.fps
+                    _t = t + self.sync_offsets[device] / self.fps
                     # Init loader if None
                     if _loader is None:
                         _loader = self.__dict__["k_{}_loader".format(device)] = KinectResultLoader(self.root_path, device=device)
@@ -586,7 +615,7 @@ class ResultFileLoader():
         """
         Select OptiTrack transformed results by timestamp
         """
-        _t = t + self.offsets["optitrack"] / self.fps
+        _t = t + self.sync_offsets["optitrack"] / self.fps
         res = o_loader.select_item(_t, "st", False)
         arr = np.load(res["optitrack"]["filepath"])
         self.results.update(dict(
@@ -639,21 +668,34 @@ class ResultFileLoader():
        
         if "mesh_param" in self.sources:
             try:
+                # add offset to translation
+                mosh_params = dict(np.load(mesh_res["mosh/param"]["filepath"]))
+                mosh_offset = mosh_params['joints'][0] - mosh_params['pose'][:3]
+                trans = self.trans["optitrack"]["R"] @ (mosh_params['pose'][:3] + mosh_offset) + self.trans["optitrack"]["t"] - mosh_offset
+                # optitrack to radar coordinate
+                orient_mat = self.trans["optitrack"]["R"] @ cv2.Rodrigues(mosh_params['pose'][3:6])[0]
+                root_orient = cv2.Rodrigues(orient_mat)[0].reshape(-1)
+                pose = np.hstack((trans, root_orient, mosh_params['pose'][6:]))
+                mosh_params['pose'] = pose
+                mosh_params['vertices'] = mosh_params['vertices'] @ self.trans["optitrack"]["R"].T + self.trans["optitrack"]["t"]
+                mosh_params['joints'] = mosh_params['joints'] @ self.trans["optitrack"]["R"].T + self.trans["optitrack"]["t"]
+
                 self.results.update(dict(
-                    mesh_param=np.load(mesh_res["mosh/param"]["filepath"]),
+                    mesh_param=mosh_params,
                 ))
                 self.info.update(dict(
                     mesh_param=mesh_res["mosh/param"]
                 ))
             except Exception as e:
+                print(e)
                 self.results.update(dict(
                     mesh_param=None,
                 ))
         if "mesh_obj" in self.sources:
             verts, faces, _ = load_obj(mesh_res["mosh/obj"]["filepath"])
-            verts = verts @ self.trans["optitrack"]["R"].T + self.trans["optitrack"]["t"]
+            verts = np.array(verts) @ self.trans["optitrack"]["R"].T + self.trans["optitrack"]["t"]
             self.results.update(dict(
-                mesh_obj=(verts, faces[0]),
+                mesh_obj=(verts, np.array(faces[0])),
             ))
             self.info.update(dict(
                 mesh_obj=mesh_res["mosh/obj"]
@@ -664,7 +706,7 @@ class ResultFileLoader():
         """
         Select OptiTrack transformed results by timestamp
         """
-        _t = t + self.offsets.get('mosh', self.offsets['optitrack']) / self.fps
+        _t = t + self.sync_offsets.get('mosh', self.sync_offsets['optitrack']) / self.fps
         res = mesh_loader.select_item(_t, "st", False)
         return self.select_mosh_item(mesh_loader, list(res.values())[0]["id"])
 
@@ -741,7 +783,7 @@ class ResultFileLoader():
     def __repr__(self):
         res = super().__repr__()
         res += "\n----\noffsets="
-        res += str(self.offsets)
+        res += str(self.sync_offsets)
         res += "\n----\n"
 
         if "arbe" in self.sources:

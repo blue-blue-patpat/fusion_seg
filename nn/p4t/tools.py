@@ -185,7 +185,7 @@ def rot_mat_2_rodrigues(R):
 
     is_zero = torch.eq(thetas, torch.tensor(0.0))
     
-    multi = torch.where(is_zero, torch.autograd.Variable(torch.zeros_like(thetas)), 1 / (2 * torch.sin(thetas)))
+    multi = torch.where(is_zero, torch.autograd.Variable(torch.zeros_like(thetas)), 1 / (2 * torch.sin(thetas))) ##
     
     rx = multi * (Rs[:, 2, 1] - Rs[:, 1, 2]) * thetas
     ry = multi * (Rs[:, 0, 2] - Rs[:, 2, 0]) * thetas
@@ -196,7 +196,7 @@ def rot_mat_2_rodrigues(R):
 
 def rotation6d_2_rodrigues(nn_output):
     batch_size = nn_output.shape[0]
-    R = rotation6d_2_rot_mat(nn_output[:,3:-11])
+    R = rotation6d_2_rot_mat(nn_output)
     rvecs = rot_mat_2_rodrigues(R).view(batch_size, -1)
     
-    return torch.cat((nn_output[:,:3], rvecs, nn_output[:,-11:]), dim=-1)
+    return rvecs

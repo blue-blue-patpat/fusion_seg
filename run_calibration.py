@@ -140,9 +140,10 @@ def run_optitrack_calib(kwargs):
 
     output_path = os.path.join(kwargs["input"], "calib/optitrack")
     clean_dir(output_path)
-    loader = OptitrackCalibResultLoader(kwargs["input"])
 
-    coords = read_csv(loader.file_dict["calib/input"].iloc[0]["filepath"])
+    # input_path = os.path.join(kwargs["input"], '"calib/input"')
+    input_path = os.path.join(kwargs["input"], 'optitrack')
+    coords = read_csv(os.path.join(input_path, os.listdir(input_path)[0]))
     R, t = trans_matrix(coords)
 
     np.savez(os.path.join(output_path, "optitrack_to_radar"), R=R, t=t)
@@ -156,7 +157,8 @@ def run_kinect_calib_cpp(kwargs):
     root_path = kwargs["input"]
     devices = list(kwargs.get("devices", 'master,sub1,sub2').split(','))
     clean_dir(root_path+"/calib/kinect/plys")
-    os.system("ignoredata/kinect_files/calib/calib_k4a {path}/kinect/master/out.mkv {path}/kinect/sub1/out.mkv {path}/kinect/sub2/out.mkv".format(path=root_path))
+    mkv_path = [os.path.join(root_path, 'kinect', p, 'out.mkv') for p in devices]
+    os.system("ignoredata/kinect_files/calib/calib_k4a " + ' '.join(p for p in mkv_path))
     os.system("mv *.ply {}/calib/kinect/plys".format(root_path))
     for i, dev in enumerate(devices):
         json_file = root_path+'/kinect/{}/matrix{}.json'.format(dev, i)
@@ -167,8 +169,8 @@ def run_kinect_calib_cpp(kwargs):
         os.remove(json_file)
     try:
         run_optitrack_calib(kwargs)
-    except:
-        pass
+    except Exception as e:
+        print(e)
 
 
 def run_modify_offset(kwargs):
@@ -184,28 +186,36 @@ def run_modify_offset(kwargs):
             
     print(ResultFileLoader(root_path, enabled_sources=enabled_sources))
     
-    main_device = kwargs.get("main_device", "master")
-    plt = KinectArbeOptitrackStreamPlot(root_path, main_device=main_device,skip_head=skip_head, skip_tail=skip_tail, enabled_sources=enabled_sources)
+    kinect_device = kwargs.get("kinect", "master")
+    plt = KinectArbeOptitrackStreamPlot(root_path, kinect_device=kinect_device,skip_head=skip_head, skip_tail=skip_tail, enabled_sources=enabled_sources)
 
     while True:
         plt.show(fps=int(kwargs.get("fps", 30)))
         print("Current Offsets:")
-        print(plt.file_loader.offsets)
+        print(plt.file_loader.sync_offsets)
+        print(plt.file_loader.calib_offsets)
         print("\n----")
-        new_offsets = dict([arg.split('=') for arg in input("Set new offset value in 'key1=value1,key2=value2' format:").split(",") if '=' in arg])
-        for k, v in new_offsets.items():
-            if k in plt.file_loader.offsets.keys():
-                plt.file_loader.offsets[k] = int(v)
-        print("Updated Offsets:")
-        print(plt.file_loader.offsets)
+        sync_offsets = dict([arg.split('=') for arg in input("Set sync offset value in 'key1=value1,key2=value2' format:").split(",") if '=' in arg])
+        for k, v in sync_offsets.items():
+            if k in plt.file_loader.sync_offsets.keys():
+                plt.file_loader.sync_offsets[k] = int(v)
+
+        calib_offsets = dict([arg.split('=') for arg in input("Set calib offset value in 'key1=[x,y,z]#key2=[x,y,z]' format:").split("#") if '=' in arg])
+        for k, v in calib_offsets.items():
+            if k in plt.file_loader.trans.keys():
+                plt.file_loader.calib_offsets[k] = [float(i) for i in eval(v)]
+        plt.file_loader.rectify_calibration()
+
         cmd = input("Continue[c]\tWrite File and Continue[w]\tWrite and Quit[wq]\tQuit[q]\n")
         if cmd == 'c':
             continue
         elif cmd == 'w':
-            plt.file_loader.offsets.to_file(root_path)
+            plt.file_loader.sync_offsets.to_file(root_path)
+            plt.file_loader.calib_offsets.to_file(root_path)
             continue
         elif cmd == 'wq':
-            plt.file_loader.offsets.to_file(root_path)
+            plt.file_loader.sync_offsets.to_file(root_path)
+            plt.file_loader.calib_offsets.to_file(root_path)
             break
         elif cmd == 'q':
             break

@@ -318,17 +318,14 @@ class OptitrackArbeStreamPlot(O3DStreamPlot):
 
 
 class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
-    def __init__(self, input_path: str, main_device="master", angle_of_view=[0,-1,0,1], enabled_sources=None, *args, **kwargs) -> None:
+    def __init__(self, input_path: str, enabled_sources, kinect_device, angle_of_view=[0,-1,0,1], *args, **kwargs) -> None:
         super().__init__()
         self.input_path = input_path
-        self.main_device = main_device
+        self.kinect_device = kinect_device
         self.angle_of_view = angle_of_view
         self.skip_head = int(kwargs.get("skip_head", 0))
         self.skip_tail = int(kwargs.get("skip_tail", 0))
-        if enabled_sources is None:
-            self.enabled_sources = ["arbe", "optitrack", self.main_device, "kinect_skeleton"]
-        else:
-            self.enabled_sources = enabled_sources
+        self.enabled_sources = enabled_sources
         self.file_loader = ResultFileLoader(
             self.input_path, self.skip_head, self.skip_tail,
             enabled_sources=self.enabled_sources
@@ -336,6 +333,7 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
 
     def init_updater(self):
         self.plot_funcs = dict(
+            mesh=o3d_mesh,
             optitrack=o3d_skeleton,
             kinect_skeleton=o3d_skeleton,
             kinect_pcl=o3d_pcl,
@@ -357,32 +355,31 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
 
             arbe_pcl = {}
             if "arbe" in self.enabled_sources:
-                if "optitrack" in self.enabled_sources:
-                    arbe_pcl = dict(
-                        pcl = pcl_filter(frame["optitrack"], frame["arbe"], 0.2),
-                        color = [0,1,0]
-                    )
-                else:
-                    arbe_pcl = dict(
-                        pcl = pcl_filter(frame["{}_skeleton".format(self.main_device)], frame["arbe"], 0.2),
-                        color = [0,1,0]
-                    )
-
-            kinect_skeleton = {}
-            if "kinect_skeleton" in self.enabled_sources:
-                kinect_lines =  KINECT_SKELETON_LINES
-                kinect_colors = np.array([[0,0,1]]*len(kinect_lines))
-                kinect_skeleton = dict(
-                    skeleton = frame["{}_skeleton".format(self.main_device)],
-                    lines = kinect_lines,
-                    colors = kinect_colors
+                arbe_pcl = dict(
+                    pcl = pcl_filter(frame["optitrack"], frame["arbe"], 0.2),
+                    color = [0,1,0]
                 )
+                # else:
+                #     arbe_pcl = dict(
+                #         pcl = pcl_filter(frame["{}_skeleton".format(self.main_device)], frame["arbe"], 0.2),
+                #         color = [0,1,0]
+                #     )
+
+            # kinect_skeleton = {}
+            # if "kinect_skeleton" in self.enabled_sources:
+            #     kinect_lines =  KINECT_SKELETON_LINES
+            #     kinect_colors = np.array([[0,0,1]]*len(kinect_lines))
+            #     kinect_skeleton = dict(
+            #         skeleton = frame["{}_skeleton".format(self.main_device)],
+            #         lines = kinect_lines,
+            #         colors = kinect_colors
+            #     )
 
             kinect_pcl = {}
             if "kinect_pcl" in self.enabled_sources:
-                kin_pcl = frame["{}_pcl".format(self.main_device)]
-                r = np.random.choice(kin_pcl.shape[0], size=10000, replace=False)
-                pcl = pcl_filter(frame["optitrack"], kin_pcl[r,:], 0.2)
+                kin_pcl = frame["{}_pcl".format(self.kinect_device)]
+                # r = np.random.choice(kin_pcl.shape[0], size=10000, replace=False)
+                pcl = pcl_filter(frame["optitrack"], kin_pcl, 0.2)
                 kinect_pcl = dict(
                     pcl = pcl,
                     color = [0,0,1]
@@ -402,12 +399,18 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
                     lines = opti_lines,
                     colors = opti_colors
                 )
-            
+            mesh = {}
+            if "mesh_obj" in self.enabled_sources:
+                mesh = frame['mesh_obj']
+                mesh = dict(
+                    mesh = mesh,
+                    color = np.asarray([235, 189, 191]) / 255,
+                )
             yield dict(
-                kinect_skeleton=kinect_skeleton,
                 kinect_pcl=kinect_pcl,
                 arbe=arbe_pcl,
-                optitrack=optitrack
+                optitrack=optitrack,
+                mesh=mesh
             )
 
 
