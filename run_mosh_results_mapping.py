@@ -2,7 +2,8 @@ import shutil
 import time
 import os
 import numpy as np
-from mosh.utils import mosh_pkl_parser, get_spec_files
+import pickle
+from mosh.utils import mesh_from_mosh_params, get_spec_files
 
 """
 Match the timestamps of mosh results with optitrack
@@ -10,7 +11,7 @@ Match the timestamps of mosh results with optitrack
 
 def get_time_dict(driver_list=None):
     if driver_list is None:
-        driver_list = ['/home/nesc525/drivers/1', '/home/nesc525/drivers/2']
+        driver_list = ['/home/nesc525/drivers/1', '/home/nesc525/drivers/2', '/home/nesc525/drivers/3']
     time_dict = {}
     for driver_path in driver_list:
         for root_path in os.listdir(driver_path):
@@ -42,7 +43,7 @@ def map_timestamp(mosh_path):
                     if os.path.exists(param_save_path):
                         shutil.rmtree(param_save_path)
                     os.makedirs(param_save_path)
-                    pkl_res = mosh_pkl_parser(os.path.join(res_path, pkl_name))
+                    pkl_res = mesh_from_mosh_params(mosh_params=pickle.load(os.path.join(res_path, pkl_name)))
 
                     print(len(pkl_res['vertices']), len(time_dict[key_time]['opti_npz_list']))
                     mosh_offset = len(pkl_res['vertices']) - len(time_dict[key_time]['opti_npz_list'])
@@ -87,6 +88,7 @@ def map_timestamp(mosh_path):
                 if not os.path.exists(save_path):
                     os.makedirs(save_path)
 
+                print(len(obj_list), len(time_dict[key_time]['opti_npz_list']))
                 for i, obj in enumerate(obj_list):
                     shutil.copyfile(os.path.join(obj_path, obj), os.path.join(save_path, time_dict[key_time]['opti_npz_list'][i][:-4]+'.obj'))
             else:
@@ -96,8 +98,11 @@ def map_timestamp(mosh_path):
 if __name__ == '__main__':
     root_path = '/home/nesc525/drivers/4/chen/moshpp'
     result_path = os.path.join(root_path, 'mosh_results')
-    # result_path = os.path.join(root_path, 'mesh')
+    mesh_path = os.path.join(root_path, 'mesh')
     # for res in os.listdir(result_path):
     #     map_timestamp(res)
-    mosh_path = os.path.join(result_path, 'SOMA_manulabeled_mpc_perple5')
-    map_timestamp(mosh_path)
+    target = 'SOMA_manulabeled_mpc_perple9'
+    pkl_path = os.path.join(result_path, target)
+    obj_path = os.path.join(mesh_path, target)
+    map_timestamp(pkl_path)
+    map_timestamp(obj_path)

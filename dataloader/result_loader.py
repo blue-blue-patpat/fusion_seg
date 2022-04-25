@@ -658,6 +658,7 @@ class ResultFileLoader():
         return mesh_res
 
     def select_mosh_item(self, mesh_loader: MinimalLoader, idx: int, key: str = "id") -> dict:
+        from mosh.utils import mosh_pose_transform
         """
         Select Mesh transformed results by radar id
         """
@@ -670,12 +671,9 @@ class ResultFileLoader():
             try:
                 # add offset to translation
                 mosh_params = dict(np.load(mesh_res["mosh/param"]["filepath"]))
-                mosh_offset = mosh_params['joints'][0] - mosh_params['pose'][:3]
-                trans = self.trans["optitrack"]["R"] @ (mosh_params['pose'][:3] + mosh_offset) + self.trans["optitrack"]["t"] - mosh_offset
                 # optitrack to radar coordinate
-                orient_mat = self.trans["optitrack"]["R"] @ cv2.Rodrigues(mosh_params['pose'][3:6])[0]
-                root_orient = cv2.Rodrigues(orient_mat)[0].reshape(-1)
-                pose = np.hstack((trans, root_orient, mosh_params['pose'][6:]))
+                trans, root_orient = mosh_pose_transform(mosh_params['pose'][:3], mosh_params['pose'][3:6], mosh_params['joints'], self.trans["optitrack"])
+                pose = np.hstack((trans, root_orient.reshape(-1), mosh_params['pose'][6:]))
                 mosh_params['pose'] = pose
                 mosh_params['vertices'] = mosh_params['vertices'] @ self.trans["optitrack"]["R"].T + self.trans["optitrack"]["t"]
                 mosh_params['joints'] = mosh_params['joints'] @ self.trans["optitrack"]["R"].T + self.trans["optitrack"]["t"]

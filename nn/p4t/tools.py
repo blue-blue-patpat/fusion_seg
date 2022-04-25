@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -200,3 +201,7 @@ def rotation6d_2_rodrigues(nn_output):
     rvecs = rot_mat_2_rodrigues(R).view(batch_size, -1)
     
     return rvecs
+    
+def copy2cpu(tensor):
+    if isinstance(tensor, np.ndarray): return tensor
+    return tensor.detach().cpu().numpy()

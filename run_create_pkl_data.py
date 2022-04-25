@@ -157,6 +157,7 @@ def comp_pkl_gen(root_path, f_loader=None):
     if f_loader is None:
         f_loader = ResultFileLoader(root_path, enabled_sources=enable_source)
     save_path = os.path.join(root_path, 'pkl_data')
+    # save_path = os.path.join(root_path, 'pkl_data_new')
     if not os.path.exists(save_path):
         os.makedirs(save_path)
 
@@ -182,38 +183,42 @@ def comp_pkl_gen(root_path, f_loader=None):
 
         mesh_pose = frame["mesh_param"]["pose"]
         mesh_shape = frame["mesh_param"]["shape"]
+        mesh_joints = frame["mesh_param"]["joints"]
 
         # filter radar_pcl with optitrack bounding box
         arbe_data = pcl_filter(opti_pcl, np.hstack((arbe_pcl, arbe_feature)), 0.2)
-        k_master_data = pcl_filter(opti_pcl, np.hstack((k_master_pcl, k_master_color)), 0.2, 0.21)
-        k_sub2_data = pcl_filter(opti_pcl, np.hstack((k_sub2_pcl, k_sub2_color)), 0.2, 0.21)
-
-        # remove bad frame
-        if arbe_data.shape[0] == 0:
+        master_data = pcl_filter(opti_pcl, np.hstack((k_master_pcl, k_master_color)), 0.2, 0.21)
+        sub2_data = pcl_filter(opti_pcl, np.hstack((k_sub2_pcl, k_sub2_color)), 0.2, 0.21)
+        # arbe_data = pcl_filter(mesh_joints, np.hstack((arbe_pcl, arbe_feature)), 0.2)
+        # master_data = pcl_filter(mesh_joints, np.hstack((k_master_pcl, k_master_color)), 0.2, 0.21)
+        # sub2_data = pcl_filter(mesh_joints, np.hstack((k_sub2_pcl, k_sub2_color)), 0.2, 0.21)
+        # remove bad frames
+        if arbe_data.shape[0] == 0 or sub2_data.shape[0] == 0:
             continue
 
         # normalization
         bbox_center = ((opti_pcl.max(axis=0) + opti_pcl.min(axis=0))/2)[:3]
+        # bbox_center = ((mesh_joints.max(axis=0) + mesh_joints.min(axis=0))/2)[:3]
         arbe_data[:,:3] -= bbox_center
-        k_master_data[:,:3] -= bbox_center
-        k_sub2_data[:,:3] -= bbox_center
+        master_data[:,:3] -= bbox_center
+        sub2_data[:,:3] -= bbox_center
         mesh_pose[:3] -= bbox_center
         arbe_data[:,3:] /= np.array([5e-38, 5, 150])
-        k_master_data[:,3:] /= np.array([256, 256, 256])
-        k_sub2_data[:,3:] /= np.array([256, 256, 256])
+        master_data[:,3:] /= np.array([256, 256, 256])
+        sub2_data[:,3:] /= np.array([256, 256, 256])
 
         # padding
         arbe_data = pad_data(arbe_data, 1024)
-        k_master_data = pad_data(k_master_data, 4096)
-        k_sub2_data = pad_data(k_sub2_data, 4096)
+        master_data = pad_data(master_data, 4096)
+        sub2_data = pad_data(sub2_data, 4096)
 
         mesh_param = np.concatenate((mesh_pose, mesh_shape), axis=0)
         
         data = dict(
-            arbe_data=arbe_data,
-            k_master_data=k_master_data,
-            k_sub2_data=k_sub2_data,
-            opti_data=opti_pcl,
+            arbe=arbe_data,
+            kinect_master=master_data,
+            kinect_sub2=sub2_data,
+            optitrack=opti_pcl,
             mesh_param=mesh_param
         )
         data_list.append(data)
@@ -224,17 +229,19 @@ def comp_pkl_gen(root_path, f_loader=None):
     print(root_path, 'done')
 
 if __name__ == "__main__":
-    driver_path = '/home/nesc525/drivers/2'
+    driver_paths = ['/home/nesc525/drivers/1','/home/nesc525/drivers/2','/home/nesc525/drivers/3']
     path_list = []
-    for p in os.listdir(driver_path):
-        # if p in TRAIN_DIRS or p in TEST_DIRS:
-        if p[:10] == '2022-03-29':
-            path_list.append(os.path.join(driver_path, p))
+    for d_p in driver_paths:
+        for p in os.listdir(d_p):
+            if p in SMOKE_DIRS:
+            # if p[:10] == '2022-03-29':
+                path_list.append(os.path.join(d_p, p))
     # path_list = ['/home/nesc525/drivers/1/2021-10-18_10-03-20_E']
 
     pool = Pool(40)
     for path in path_list:
-        pool.apply_async(comp_pkl_gen, (path,))
+        comp_pkl_gen(path)
+        # pool.apply_async(comp_pkl_gen, (path,))
     pool.close()
     pool.join()
     print('Done')

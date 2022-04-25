@@ -24,15 +24,15 @@ def postprocess(root_path, devices, output_path=None):
 
     def process(device):
         mkv_path = os.path.join(root_path, "kinect", device)
-        os.system("/home/nesc525/chen/kinect/Azure-Kinect-Samples/build/bin/offline_processor {}/out.mkv {}/out.json".format(mkv_path, mkv_path))
-        extract_skeleton(root_path, device)
+        os.system("ignoredata/kinect_files/offline_processor {}/out.mkv {}/out.json".format(mkv_path, mkv_path))
+        try:
+            extract_skeleton(root_path, device)
+        except:
+            print('No kinect skeleton!')
 
-    # for device in devices:
-    #     # pool.apply_async(process, (device,))
-    #     try:
-    #         process(device)
-    #     except:
-    #         print('No kinect skeleton!')
+    for device in devices:
+        pool.apply_async(process, (device,))
+        # process(device)
 
     mkv_loader = KinectMKVtLoader(root_path, params)
     mkv_list = [m.loc[0,"filepath"] for m in mkv_loader.file_dict.values()]

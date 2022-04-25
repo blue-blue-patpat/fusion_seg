@@ -344,11 +344,12 @@ class MoshEvaluateStreamPlot(O3DStreamPlot):
             o3d.io.write_triangle_mesh(os.path.join(save_path, "pred_smpl{}.ply".format(self.idx)), MoshEvaluateStreamPlot.updater_dict["pred_smpl"].update_item)
             o3d.io.write_triangle_mesh(os.path.join(save_path, "label_smpl{}.ply".format(self.idx)), MoshEvaluateStreamPlot.updater_dict["label_smpl"].update_item)
             self.idx += 1
-        self.view.register_key_callback(66, save)
+        self.view.register_key_callback(66, save) # 66: b
 
     def init_updater(self):
         self.plot_funcs = dict(
-            radar_pcl=o3d_mesh,
+            radar_pcl=o3d_pcl,
+            radar_mesh=o3d_mesh,
             pred_smpl=o3d_mesh,
             label_smpl=o3d_mesh,
         )
@@ -358,7 +359,7 @@ class MoshEvaluateStreamPlot(O3DStreamPlot):
         self.ctr.set_up(np.array([[0],[0],[1]]))
         self.ctr.set_front(np.array([[0],[-1],[0]]))
         self.ctr.set_lookat(np.array([0,0,0]))
-        self.ctr.set_zoom(1)
+        self.ctr.set_zoom(0.72)
 
 
 def pcl2sphere(pcl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:

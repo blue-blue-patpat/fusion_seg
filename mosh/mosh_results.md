@@ -110,5 +110,33 @@
 2138 2140
 /home/nesc525/drivers/4/chen/moshpp/mosh_results/SOMA_manulabeled_mpc_perple10/soma_subject1/Take-2021-10-17-03.20.53-PM_stageii.pkl --> /home/nesc525/drivers/1/2021-10-17_15-20-15_E
 1805 1807
-
-/home/nesc525/drivers/2/2021-10-20_19-24-07_T need to modify the reid
+/home/nesc525/drivers/4/chen/moshpp/mosh_results/SOMA_manulabeled_mpc_perple0/soma_subject1/Take-2022-03-25-02.35.28-PM_stageii.pkl --> /home/nesc525/drivers/2/2022-03-25_14-35-54
+3503 3503
+/home/nesc525/drivers/4/chen/moshpp/mosh_results/SOMA_manulabeled_mpc_perple0/soma_subject1/Take-2022-03-25-02.41.03-PM_stageii.pkl --> /home/nesc525/drivers/2/2022-03-25_14-41-05
+2823 2824
+/home/nesc525/drivers/4/chen/moshpp/mosh_results/SOMA_manulabeled_mpc_perple0/soma_subject1/Take-2022-03-25-02.47.21-PM_stageii.pkl --> /home/nesc525/drivers/2/2022-03-25_14-46-35
+3170 3170
+/home/nesc525/drivers/4/chen/moshpp/mosh_results/SOMA_manulabeled_mpc_perple0/soma_subject1/Take-2022-03-25-02.38.47-PM_stageii.pkl --> /home/nesc525/drivers/2/2022-03-25_14-38-13
+2762 2762
+/home/nesc525/drivers/4/chen/moshpp/mosh_results/SOMA_manulabeled_mpc_perple0/soma_subject1/Take-2022-03-25-03.57.19-PM_stageii.pkl --> /home/nesc525/drivers/2/2022-03-25_15-58-49
+5042 5043
+/home/nesc525/drivers/4/chen/moshpp/mosh_results/SOMA_manulabeled_mpc_perple0/soma_subject1/Take-2022-03-25-02.43.56-PM_stageii.pkl --> /home/nesc525/drivers/2/2022-03-25_14-44-24
+3280 3280
+/home/nesc525/drivers/4/chen/moshpp/mosh_results/SOMA_manulabeled_mpc_perple0/soma_subject1/Take-2022-03-25-02.53.02-PM_stageii.pkl --> /home/nesc525/drivers/2/2022-03-25_14-53-27
+3051 3051
+/home/nesc525/drivers/4/chen/moshpp/mosh_results/SOMA_manulabeled_mpc_perple0/soma_subject1/Take-2022-03-25-04.10.32-PM_stageii.pkl --> /home/nesc525/drivers/2/2022-03-25_16-11-44
+5822 5823
+/home/nesc525/drivers/4/chen/moshpp/mosh_results/SOMA_manulabeled_mpc_perple1/soma_subject1/Take-2022-03-25-05.14.43-PM_stageii.pkl --> /home/nesc525/drivers/2/2022-03-25_17-10-08
+2944 3054
+/home/nesc525/drivers/4/chen/moshpp/mosh_results/SOMA_manulabeled_mpc_perple1/soma_subject1/Take-2022-03-25-04.59.05-PM_stageii.pkl --> /home/nesc525/drivers/2/2022-03-25_16-59-33
+3362 3362
+/home/nesc525/drivers/4/chen/moshpp/mosh_results/SOMA_manulabeled_mpc_perple1/soma_subject1/Take-2022-03-25-05.07.37-PM_stageii.pkl --> /home/nesc525/drivers/2/2022-03-25_17-08-04
+3119 3120
+/home/nesc525/drivers/4/chen/moshpp/mosh_results/SOMA_manulabeled_mpc_perple1/soma_subject1/Take-2022-03-25-05.02.18-PM_stageii.pkl --> /home/nesc525/drivers/2/2022-03-25_17-02-56
+3514 3514
+/home/nesc525/drivers/4/chen/moshpp/mosh_results/SOMA_manulabeled_mpc_perple1/soma_subject1/Take-2022-03-25-05.05.08-PM_stageii.pkl --> /home/nesc525/drivers/2/2022-03-25_17-05-04
+2851 2852
+/home/nesc525/drivers/4/chen/moshpp/mosh_results/SOMA_manulabeled_mpc_perple1/soma_subject1/Take-2022-03-25-05.16.45-PM_stageii.pkl --> /home/nesc525/drivers/2/2022-03-25_17-17-23
+3667 3668
+/home/nesc525/drivers/4/chen/moshpp/mosh_results/SOMA_manulabeled_mpc_perple1/soma_subject1/Take-2022-03-25-04.53.42-PM_stageii.pkl --> /home/nesc525/drivers/2/2022-03-25_16-54-28
+3498 3758

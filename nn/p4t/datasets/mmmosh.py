@@ -12,7 +12,7 @@ from nn.p4t.datasets.folder_list import *
 
 class MMMosh(Dataset):
     def __init__(self, driver_path, frames_per_clip=5, step_between_clips=1, num_points=1024,
-            train=True, normal_scale = 1, output_dim=151, skip_head=0, skip_tail=0):
+            train=True, normal_scale = 1, output_dim=151, skip_head=0, skip_tail=0, data_type='arbe'):
         self.driver_path = driver_path
         # range of frame index in a clip
         self.step_between_clips = step_between_clips
@@ -30,9 +30,9 @@ class MMMosh(Dataset):
         self.sequence_loaders = []
         sequences_paths = []
         self.sequence_path = []
-        self.selected_dirs = TRAIN_DIRS if self.train else TEST_DIRS
+        self.selected_dirs = TRAIN_DIRS if self.train else LAB1_DIRS
+        self.selected_dirs = RAIN_DIRS
         # self.selected_dirs = ['2021-10-17_14-54-06_T']
-        # self.selected_dirs = [p for p in os.listdir('/home/nesc525/drivers/2') if p[:10] == '2022-03-25']
         for d_path in map(str, self.driver_path.split(",")):
             if self.train:
                 sequences_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
@@ -42,7 +42,7 @@ class MMMosh(Dataset):
         for idx, path in enumerate(sequences_paths):
             # init result loader, reindex
             try:
-                sequence_loader = ResultFileLoader(root_path=path, skip_head=self.skip_head, skip_tail=50, enabled_sources=["arbe", "arbe_feature", "master", "sub2", "kinect_pcl", "kinect_pcl_remove_zeros", "optitrack", "mesh", "mosh", "mesh_param"])
+                sequence_loader = ResultFileLoader(root_path=path, skip_head=self.skip_head, enabled_sources=["arbe", "arbe_feature", "master", "sub2", "kinect_pcl", "kinect_pcl_remove_zeros", "optitrack", "mesh", "mosh", "mesh_param"])
             except Exception as e:
                 print(e)
                 continue
@@ -170,12 +170,8 @@ class MMMoshPKL(Dataset):
         for root_path in map(str, self.driver_path.split(",")):
             if self.train:
                 sequence_list += [os.path.join(root_path, p) for p in os.listdir(root_path) if p in self.selected_dirs]
-                # sequences_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] == 'T']
-                #sequences_paths += [os.path.join(root_path, p) for p in os.listdir(root_path)]
             else:
                 sequence_list += [os.path.join(root_path, p) for p in os.listdir(root_path) if p in self.selected_dirs]
-                # sequences_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] == 'F' or p[-1] == 'M']
-                # sequences_paths += [os.path.join(root_path, p) for p in os.listdir(root_path) if p[-1] == 'T']
 
         for p in sequence_list:
             pkl_path = os.path.join(p, 'pkl')
@@ -267,7 +263,7 @@ class MMMoshPKL(Dataset):
 
 class MMDataset(Dataset):
     def __init__(self, driver_path, frames_per_clip=5, step_between_clips=1, train=True, 
-                normal_scale=1, output_dim=151, skip_head=0, skip_tail=0, data_type='arbe_data'):
+                normal_scale=1, output_dim=151, skip_head=0, skip_tail=0, data_device='arbe', test_data='test'):
         self.driver_path = driver_path
         # range of frame index in a clip
         self.step_between_clips = step_between_clips
@@ -277,22 +273,20 @@ class MMDataset(Dataset):
         self.output_dim = output_dim
         self.skip_head = skip_head
         self.skip_tail = skip_tail
-        self.data_type = data_type
-        self.num_points = 1024 if self.data_type=='arbe_data' else 4096
+        self.data_device = data_device
+        self.num_points = 1024 if self.data_device=='arbe' else 4096
+        self.test_data = test_data
         self.init_index_map()
 
     def init_index_map(self):
         self.index_map = [0,]
         self.sequence_list = []
         sequences_paths = []
-        self.selected_dirs = TRAIN_DIRS if self.train else TEST_DIRS
+        self.selected_dirs = TRAIN_DIRS if self.train else SELECTED_DIRS[self.test_data]
         # self.selected_dirs = ['2022-03-25_16-54-28']
         # self.selected_dirs = [p for p in os.listdir('/home/nesc525/drivers/2') if p[:10] == '2022-03-25']
         for d_path in map(str, self.driver_path.split(",")):
-            if self.train:
-                sequences_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
-            else:
-                sequences_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
+            sequences_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
 
         # init result loader, reindex
         for path in sequences_paths:
@@ -304,7 +298,7 @@ class MMDataset(Dataset):
             for pkl_fname in sequence_loader.pkls:
                 with open(pkl_fname, "rb") as f:
                     sequence_data = pickle.load(f, encoding='bytes')
-                sequence_len = len(sequence_data)
+                sequence_len = len(sequence_data) - self.skip_head
                 if sequence_len > 6:
                     self.sequence_list.append(pkl_fname)
                     self.index_map.append(self.index_map[-1] + sequence_len)
@@ -322,7 +316,7 @@ class MMDataset(Dataset):
 
     def __getitem__(self, idx):
         sequence_idx, frame_idx = self.global_to_sequence_index(idx)
-
+        frame_idx += self.skip_head
         sequence_fname = self.sequence_list[sequence_idx]
         with open(sequence_fname, "rb") as f:
             sequence = pickle.load(f, encoding='bytes')
@@ -334,10 +328,12 @@ class MMDataset(Dataset):
             # get xyz and features
             clip_data = sequence[clip_id]
             # clip padding
-            clip.append(clip_data[self.data_type])
-        clip.append(data[self.data_type])
+            clip.append(clip_data[self.data_device])
+        clip.append(data[self.data_device])
         clip = np.asarray(clip, dtype=np.float32)
         label = np.asarray(data['mesh_param'], dtype=np.float32)
+        if True in np.isnan(clip):
+            label = np.nan_to_num(clip)
         if True in np.isnan(label):
             label = np.nan_to_num(label)
             

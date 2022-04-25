@@ -1,4 +1,4 @@
-import time
+import time, os
 from typing import Callable, Dict, Generator, Iterable, Union, overload
 import numba as nb
 import numpy as np
@@ -333,12 +333,15 @@ class O3DStreamPlot():
         self.view.poll_events()
         self.view.update_renderer()
 
-    def show(self, gen: Generator = None, fps: float=30):
+    def show(self, gen: Generator = None, fps: float=30, save_path: str = ''):
         print("[O3DStreamPlot] rotate: W(left)/A(up)/S(down)/D(right); resize: L(-)/H(+); pause/resume: space; speed: 1(1x)/2(2x)/4(4x)")
         
         if gen is None:
             gen = self.generator()
+        if save_path and not os.path.exists(save_path):
+            os.makedirs(save_path)
         tick = time.time()
+        frame_idx = 0
         while True:
             duration = 1/(fps*self.speed_rate)
             while time.time() - tick < duration:
@@ -359,6 +362,9 @@ class O3DStreamPlot():
                     continue
                 self.updater_dict[updater_key].update(update_params)
             self.update_plot()
+            if save_path:
+                self.view.capture_screen_image(os.path.join(save_path, '{}.png'.format(frame_idx)),True)
+            frame_idx += 1
 
         # self.close_view()
 

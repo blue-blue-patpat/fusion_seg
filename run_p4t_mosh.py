@@ -10,19 +10,19 @@ import torchvision
 from sklearn.metrics import mean_squared_error
 from human_body_prior.body_model.body_model import BodyModel
 from mosh.config import SMPLX_MODEL_FEMALE_PATH, SMPLX_MODEL_MALE_PATH, SMPLX_MODEL_NEUTRAL_PATH
+from nn.p4t.tools import copy2cpu as c2c
 
 from nn.p4t.tools import rotation6d_2_rot_mat, rodrigues_2_rot_mat, rotation6d_2_rodrigues, rot_mat_2_rodrigues
 from nn.p4t import utils
 from nn.p4t.modules.geodesic_loss import GeodesicLoss
 from nn.p4t.scheduler import WarmupMultiStepLR
 from nn.p4t.datasets.mmmosh import MMMosh, MMMoshPKL, MMDataset
-from nn.SMPL.mosh_loss import MoshLoss
+from nn.SMPL.mosh_loss import MoshLoss, SMPLXModel
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
 from visualization.mesh_plot import MoshEvaluateStreamPlot
 from nn.p4t.modules.loss import LossManager
 from visualization.mesh_plot import pcl2sphere
-from mosh.utils import mosh_param_parser
 
 
 def train_one_epoch(model, losses, criterions, loss_weight, optimizer, lr_scheduler, data_loader, device, epoch, print_freq, use_6d_pose, use_gender):
@@ -72,121 +72,124 @@ def train_one_epoch(model, losses, criterions, loss_weight, optimizer, lr_schedu
         lr_scheduler.step()
         sys.stdout.flush()
 
-def evaluate(model, losses, criterions, loss_weight, data_loader, device, use_6d_pose=True, use_gender=False, visual=False, output_path=''):
+def evaluate(model, losses, criterions, data_loader, device, use_6d_pose=True, use_gender=False, visual=False, input_data='mmWave', output_path='ignoredata/error/test', num_frames=-1):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
-    gender_acc = []
     per_joint_err = []
     per_vertex_err = []
+    shape_err = []
+    colors = dict(mmWave=[179, 230, 213],Depth=[208, 163, 230],RGBD=[229, 195, 161],RGB=[159, 175, 216])
+    frames = 0
 
     if use_gender:
         body_model_male = BodyModel(bm_fname=SMPLX_MODEL_MALE_PATH, num_betas=16, num_expressions=0)
         body_model_female = BodyModel(bm_fname=SMPLX_MODEL_FEMALE_PATH, num_betas=16, num_expressions=0)
     else:
-        body_model_neutral = BodyModel(bm_fname=SMPLX_MODEL_NEUTRAL_PATH, num_betas=16, num_expressions=0)
+        body_model = SMPLXModel(bm_fname=SMPLX_MODEL_NEUTRAL_PATH, num_betas=16, num_expressions=0, device=device)
     with torch.no_grad():
         for clip, target, _ in metric_logger.log_every(data_loader, 100, header):
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output = model(clip)
             # translation loss
-            losses.update_loss("trans_loss", loss_weight[0]*criterions["mse"](output[:,0:3], target[:,0:3]))
+            losses.update_loss("trans_loss", criterions["mse"](output[:,0:3], target[:,0:3]))
             # pose loss
             if use_6d_pose:
                 output_mat = rotation6d_2_rot_mat(output[:,3:-16])
                 target_mat = rodrigues_2_rot_mat(target[:,3:-16])
-                losses.update_loss("pose_loss", loss_weight[1]*criterions["rot_mat"](output_mat, target_mat))
-                v_loss, j_loss, per_loss = criterions["smpl"](torch.cat((output[:,:3], output_mat, output[:,-16:]), -1), 
-                                            torch.cat((target[:,:3], target_mat, target[:,-16:]), -1), use_gender, train=False)
+                losses.update_loss("pose_loss", criterions["rot_mat"](output_mat, target_mat))
+                output = torch.cat((output[:,:3], output_mat, output[:,-16:]), -1)
+                target = torch.cat((target[:,:3], target_mat, target[:,-16:]), -1)
+                v_loss, j_loss, per_err = criterions["smpl"](output, target, use_gender, train=False)
             else:
-                losses.update_loss("pose_loss", loss_weight[1]*criterions["mse"](output[:,3:-16],target[:,3:-16]))
-                v_loss, j_loss, per_loss = criterions["smpl"](output, target, use_gender, train=False)
-            per_joint_err.append(per_loss[0])
-            per_vertex_err.append(per_loss[1])
+                losses.update_loss("pose_loss", criterions["mse"](output[:,3:-16],target[:,3:-16]))
+                v_loss, j_loss, per_err = criterions["smpl"](output, target, use_gender, train=False)
+            per_joint_err.append(per_err[0])
+            per_vertex_err.append(per_err[1])
+            shape_err.append(abs(output[:,-16:] - target[:,-16:]))
             # shape loss
-            losses.update_loss("shape_loss", loss_weight[2]*criterions["mse"](output[:,-16:], target[:,-16:]))
+            losses.update_loss("shape_loss", criterions["mse"](output[:,-16:], target[:,-16:]))
             # joints loss
-            losses.update_loss("joints_loss", loss_weight[3]*j_loss)
+            losses.update_loss("joints_loss", j_loss)
             # vertices loss
-            losses.update_loss("vertices_loss", loss_weight[4]*v_loss)
+            losses.update_loss("vertices_loss", v_loss)
             # gender loss
             if use_gender:
-                losses.update_loss("gender_loss", loss_weight[5]*criterions["entropy"](output[:,-1], target[:,-1]))
+                losses.update_loss("gender_loss", criterions["entropy"](output[:,-1], target[:,-1]))
 
             loss = losses.calculate_total_loss()
 
-            if use_6d_pose:
-                output = torch.cat([output[:,:3], rotation6d_2_rodrigues(output[:,3:-16]), output[:,-16:]], dim=-1)
-
             # could have been padded in distributed setup
             clip = clip.cpu().numpy()
-            output = output.cpu().numpy()
-            target = target.cpu().numpy()
 
             batch_size = clip.shape[0]
             metric_logger.update(loss=loss.item())
             metric_logger.meters['loss'].update(loss, n=batch_size)
-
-            # gender_pred = np.where(output[:,-1]>0.5, 1, 0)
-            # acc = np.mean(np.equal(gender_pred, target[:,-1]))
-            # gender_acc.append(acc)
+            print("batch joints err (cm):", np.mean(c2c(per_joint_err[-1][:,:22]))*100)
+            print("batch vertices err (cm):", np.mean(c2c(per_vertex_err[-1]))*100)
 
             if visual:
-                # print(_[2])
-                # print("batch gender acc: {}%".format(acc * 100))
-                print("batch joints loss:", losses.loss_dict["joints_loss"][-1].cpu().numpy())
-                print("batch vertices loss:", losses.loss_dict["vertices_loss"][-1].cpu().numpy())
-                pred_mesh = mosh_param_parser(output, body_model_neutral)
-                label_mesh = mosh_param_parser(target, body_model_neutral)
+                pred_mesh = body_model(output[:,:3], output[:,3:-16], output[:,-16:])
+                label_mesh = body_model(target[:,:3], target[:,3:-16], target[:,-16:])
                 for b, batch in enumerate(clip):
-                    t1 = time.time()
-                    arbe_frame = batch[-1][:,:3]
-
-                    # restore to origin size, except gender
+                    data_frame = batch[-1][:,:3]
+                    print(c2c(_[0][b]), c2c(_[1][b]))
+                    # shape_error = criterions["mse"](output[b,-16], target[b,-16])
                     yield dict(
                         radar_pcl = dict(
-                            mesh = pcl2sphere(arbe_frame),
-                            color = [0,0.8,0]
+                            # pcl = data_frame,
+                            mesh = pcl2sphere(data_frame),
+                            color = [0,0.8,0] if input_data == 'mmWave' else np.asarray([255, 181, 74]) / 255, # mm
                         ),
                         pred_smpl = dict(
-                            mesh = [pred_mesh['vertices'][b], pred_mesh['faces']],
-                            color = np.asarray([179, 230, 213]) / 255,
+                            mesh = [c2c(pred_mesh['verts'][b]), c2c(pred_mesh['faces'])],
+                            color = np.asarray(colors[input_data]) /255
+                            # color = np.asarray([179, 230, 213]) / 255, # mm
+                            # color = np.asarray([208, 163, 230]) / 255, # depth
+                            # color = np.asarray([229, 195, 161]) / 255, # rgbd
+                            # color = np.asarray([159, 175, 216]) / 255, # rgb
                         ),
                         label_smpl = dict(
-                            mesh = [label_mesh['vertices'][b], label_mesh['faces']],
+                            mesh = [c2c(label_mesh['verts'][b]), c2c(label_mesh['faces'])],
                             color = np.asarray([235, 189, 191]) / 255,
                         )
                     )
-                    print(time.time()-t1)
+                    frames += 1
+                    if frames > num_frames:
+                        return
 
-        # print("gender acc:", np.mean(gender_acc))
         print("joints loss:", np.average(torch.tensor(losses.loss_dict["joints_loss"])))
         print("vertices loss:", np.average(torch.tensor(losses.loss_dict["vertices_loss"])))
-        if not os.path.isdir(os.path.join(output_path, "loss/test")):
-            os.makedirs(os.path.join(output_path, "loss/test"))
-        j_err = torch.stack(per_joint_err).cpu().numpy()[:,:24]
-        v_err = torch.stack(per_vertex_err).cpu().numpy()
-        np.save(os.path.join(output_path, "loss/test/per_joint_err"), j_err)
-        np.save(os.path.join(output_path, "loss/test/per_vertex_err"), v_err)
-        print("mean joint err:", np.mean(j_err)*100)
-        print("mean vertex err:", np.mean(v_err)*100)
-        print("max joint err:", np.mean(np.max(j_err, axis=1), axis=0)*100)
-        print("max vertex err:", np.mean(np.max(v_err, axis=1), axis=0)*100)
-        with open(os.path.join(output_path, "loss/test/error.txt"), 'w') as f:
-            # f.write("gender_acc: " + str(np.mean(gender_acc)))
-            f.write("\nmean joint error: " + str(np.mean(j_err)*100))
+
+        if not os.path.isdir(output_path):
+            os.makedirs(output_path)
+        j_err = c2c(torch.vstack(per_joint_err)[:,:22]) # 22 means the number of joints
+        v_err = c2c(torch.vstack(per_vertex_err))
+        s_err = c2c(torch.vstack(shape_err))
+        np.save(os.path.join(output_path, "per_joint_err"), j_err)
+        np.save(os.path.join(output_path, "per_vertex_err"), v_err)
+        np.save(os.path.join(output_path, "shape_err"), s_err)
+        print("mean joint err (cm):", np.mean(j_err)*100)
+        print("mean vertex err (cm):", np.mean(v_err)*100)
+        print("max joint err (cm):", np.mean(np.max(j_err, axis=1), axis=0)*100)
+        print("max vertex err (cm):", np.mean(np.max(v_err, axis=1), axis=0)*100)
+        print("mean shape err (cm):", np.mean(s_err))
+        with open(os.path.join(output_path, "error.txt"), 'w') as f:
+            f.write("mean joint error: " + str(np.mean(j_err)*100))
             f.write("\nmean vertex error: " + str(np.mean(v_err)*100))
             f.write("\nmax joint error: " + str(np.mean(np.max(j_err, axis=1), axis=0)*100))
             f.write("\nmax vertex error: " + str(np.mean(np.max(v_err, axis=1), axis=0)*100))
+            f.write("\nmean shape error: " + str(np.mean(s_err)))
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
 
 
 def main(args):
-    if args.output_dir:
-        utils.mkdir(args.output_dir)
+    output_dir = os.path.join(args.output_dir, args.input_data) if args.output_dir else ''
+    if output_dir and not os.path.exists(output_dir):
+        utils.mkdir(output_dir)
 
     print(args)
     print("torch version: ", torch.__version__)
@@ -204,7 +207,7 @@ def main(args):
     # Data loading code
     print("Loading data")
 
-    # dataset = MMMoshPKL(
+    # dataset = MMMosh(
     dataset = MMDataset(
             driver_path=args.data_path,
             frames_per_clip=args.clip_len,
@@ -212,7 +215,8 @@ def main(args):
             normal_scale=args.normal_scale,
             skip_head=args.skip_head,
             train=args.train,
-            data_type=args.data_type,
+            data_device=args.data_device,
+            test_data=args.test_data
     )
 
     train_size = int(0.9 * len(dataset))
@@ -226,7 +230,8 @@ def main(args):
 
     print("Creating model")
     Model = getattr(Models, args.model)
-    model = Model(features=args.features, radius=args.radius, nsamples=args.nsamples, spatial_stride=args.spatial_stride,
+    features = 0 if args.input_data == 'Depth' else 3
+    model = Model(features=features, radius=args.radius, nsamples=args.nsamples, spatial_stride=args.spatial_stride,
                   temporal_kernel_size=args.temporal_kernel_size, temporal_stride=args.temporal_stride,
                   emb_relu=args.emb_relu,
                   dim=args.dim, depth=args.depth, heads=args.heads, dim_head=args.dim_head,
@@ -256,7 +261,8 @@ def main(args):
     model_without_ddp = model
 
     if args.resume:
-        checkpoint = torch.load(args.resume, map_location='cpu')
+        resume = os.path.join(args.resume, args.input_data, 'pth', 'checkpoint.pth')
+        checkpoint = torch.load(resume, map_location='cpu')
         model_without_ddp.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
         lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
@@ -271,11 +277,11 @@ def main(args):
 
         for epoch in range(args.start_epoch, args.epochs):
             train_one_epoch(model, losses, criterions, loss_weight, optimizer, lr_scheduler, data_loader_train, device, epoch, args.print_freq, args.use_6d_pose, args.use_gender)
-            losses.calculate_epoch_loss(os.path.join(args.output_dir,"loss/train"), epoch, bot)
-            list(evaluate(model, losses, criterions, loss_weight, data_loader_eval, device, args.use_6d_pose, use_gender=args.use_gender))
-            losses.calculate_epoch_loss(os.path.join(args.output_dir,"loss/eval"), epoch, bot)
+            losses.calculate_epoch_loss(os.path.join(output_dir,"loss/train"), epoch, bot)
+            list(evaluate(model, losses, criterions, data_loader_eval, device, args.use_6d_pose, use_gender=args.use_gender))
+            losses.calculate_epoch_loss(os.path.join(output_dir,"loss/eval"), epoch, bot)
 
-            if args.output_dir:
+            if output_dir:
                 checkpoint = {
                     'model': model_without_ddp.state_dict(),
                     'optimizer': optimizer.state_dict(),
@@ -284,12 +290,12 @@ def main(args):
                     'args': args}
                 utils.save_on_master(
                     checkpoint,
-                    os.path.join(args.output_dir, 'checkpoint.pth'))
+                    os.path.join(output_dir, 'pth', 'checkpoint.pth'))
                 if (epoch + 5) % 5 == 0:
                     utils.save_on_master(
                         checkpoint,
-                        os.path.join(args.output_dir, 'epoch{}.pth'.format(epoch)))
-                    os.system("cp -r {}/loss {}/backup".format(args.output_dir, args.output_dir))
+                        os.path.join(output_dir, 'pth', 'epoch{}.pth'.format(epoch)))
+                    os.system("cp -r {}/loss {}/backup".format(output_dir, output_dir))
 
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -299,10 +305,11 @@ def main(args):
         loss_weight = list(map(float, args.loss_weight.split(",")))
         data_loader_test = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
         print("Start testing")
-        gen = evaluate(model, losses, criterions, loss_weight, data_loader_test, device, use_6d_pose=args.use_6d_pose, visual=args.visual, use_gender=args.use_gender, output_path=args.output_dir)
+        save_path = os.path.join(output_dir, "test", args.test_data)
+        gen = evaluate(model, losses, criterions, data_loader_test, device, use_6d_pose=args.use_6d_pose, visual=args.visual, use_gender=args.use_gender, input_data=args.input_data, output_path=save_path, num_frames=args.num_frames)
         plot = MoshEvaluateStreamPlot()
-        plot.show(gen, fps=100)
-        losses.calculate_test_loss(os.path.join(args.output_dir,"loss/test"))
+        plot.show(gen, fps=30, save_path=os.path.join(save_path, 'snapshot'))
+        losses.calculate_test_loss(save_path)
 
 def parse_args():
     import argparse
@@ -320,7 +327,9 @@ def parse_args():
     parser.add_argument('--output_dim', default=151, type=int, help='output dim')
     parser.add_argument('--use_6d_pose', default=1, type=int, help='use 6d pose')
     parser.add_argument('--features', default=3, type=int, help='dim of features')
-    parser.add_argument('--data_type', default="arbe_data", type=str, help='type of input data, arbe_data, k_master_data or k_sub2_data')
+    parser.add_argument('--input_data', default="mmWave", type=str, help='type of input data, mmWave, Depth or RGBD')
+    parser.add_argument('--data_device', default="arbe", type=str, help='device of input data, arbe, kinect_master or kinect_sub2')
+    parser.add_argument('--test_data', default="test", type=str, help='type of test data, test, rain, smoke, night, occlusion, confusion')
     # P4D
     parser.add_argument('--radius', default=0.7, type=float, help='radius for the ball query')
     parser.add_argument('--nsamples', default=32, type=int, help='number of neighbors for the ball query')
@@ -350,6 +359,7 @@ def parse_args():
     parser.add_argument('--device', default=0, type=int, help='cuda device')
     # output
     parser.add_argument('--print_freq', default=10, type=int, help='print frequency')
+    parser.add_argument('--num_frames', default=-1, type=int, help='number of test frames')
     parser.add_argument('--output_dir', default='', type=str, help='path where to save')
     # resume
     parser.add_argument('--resume', default='', help='resume from checkpoint')

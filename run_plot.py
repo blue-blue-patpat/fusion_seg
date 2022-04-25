@@ -40,10 +40,10 @@ def cdf_plot():
     # path = "/media/nesc525/disk4/p4t_rgbd/{}/loss".format(device)
     joint_loss_in_lab = np.load(os.path.join(path, "indoor_test/joints_loss.npy"))
     joint_loss_corridor = np.load(os.path.join(path, "corridor_test/joints_loss.npy"))
-    joint_loss_night = np.load(os.path.join(path, "night_test/joints_loss.npy"))
+    joint_loss_night = np.load(os.path.join(path, "poor_lighting/joints_loss.npy"))
     joint_loss_outdoor = np.load(os.path.join(path, "outdoor_test/joints_loss.npy"))
-    joint_loss_rain = np.load(os.path.join(path, "rain_test/joints_loss.npy"))
-    joint_loss_smoke = np.load(os.path.join(path, "smoke_test/joints_loss.npy"))
+    joint_loss_rain = np.load(os.path.join(path, "rain/joints_loss.npy"))
+    joint_loss_smoke = np.load(os.path.join(path, "smoke/joints_loss.npy"))
     joint_loss_occlusion = np.load(os.path.join(path, "mask_test/joints_loss.npy"))
 
     # vertices_loss_in_lab = np.load(os.path.join(path, "vertices_loss.npy"))

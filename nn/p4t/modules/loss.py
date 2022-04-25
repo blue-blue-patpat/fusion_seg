@@ -99,32 +99,32 @@ class LossManager():
         plt.close()
         cv2.imwrite(os.path.join(output_path, 'loss.png'), img)
         if ding_bot:
-            ding_bot.add_md("tran_mmbody", "【IMG】 \n ![img]({}) \n 【LOSS】\n epoch={}, loss={}".format(ding_bot.img2b64(img), epoch, total_loss[-1]))
+            ding_bot.add_md("train_mmbody", "【IMG】 \n ![img]({}) \n 【LOSS】\n epoch={}, loss={}".format(ding_bot.img2b64(img), epoch, total_loss[-1]))
             ding_bot.enable()
         
         self.loss_dict = {}
         self.batch_loss = []
 
     def calculate_test_loss(self, output_path):
-            fig = plt.figure()
-            if not os.path.isdir(output_path):
-                os.makedirs(output_path)
-            loss_json = os.path.join(output_path, "loss.json")
-            losses = {}
-            with open(loss_json, "w") as f:
-                for i, (name, loss) in enumerate(self.loss_dict.items()):
-                    _loss = np.sort(torch.tensor(loss))
-                    losses.update({name:np.mean(_loss).tolist()})
-                    hist, bin_edges = np.histogram(_loss, bins=100)
-                    cdf = np.cumsum(hist)/len(_loss)
-                    fig.add_subplot(2, 3, i+1, title=name).plot(bin_edges[:-1], cdf)
-                total_loss = np.average(torch.tensor(self.batch_loss))
-                losses.update({"total_loss":total_loss.tolist()})
-                json.dump(losses, f)
-            fig.tight_layout()
-            fig.canvas.draw()
-            img = cv2.cvtColor(np.asarray(fig.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
-            plt.close()
-            cv2.imwrite(os.path.join(output_path, 'loss.png'), img)
-            np.save(os.path.join(output_path, "joints_loss"), np.sort(torch.tensor(self.loss_dict["joints_loss"])))
-            np.save(os.path.join(output_path, "vertices_loss"), np.sort(torch.tensor(self.loss_dict["vertices_loss"])))
+        fig = plt.figure()
+        if not os.path.isdir(output_path):
+            os.makedirs(output_path)
+        loss_json = os.path.join(output_path, "loss.json")
+        losses = {}
+        for i, (name, loss) in enumerate(self.loss_dict.items()):
+            _loss = np.sort(torch.tensor(loss))
+            losses.update({name:np.mean(_loss).tolist()})
+            hist, bin_edges = np.histogram(_loss, bins=100)
+            cdf = np.cumsum(hist)/len(_loss)
+            fig.add_subplot(2, 3, i+1, title=name).plot(bin_edges[:-1], cdf)
+        total_loss = np.average(torch.tensor(self.batch_loss))
+        losses.update({"total_loss":total_loss.tolist()})
+        with open(loss_json, "w") as f:
+            json.dump(losses, f)
+        fig.tight_layout()
+        fig.canvas.draw()
+        img = cv2.cvtColor(np.asarray(fig.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
+        plt.close()
+        cv2.imwrite(os.path.join(output_path, 'loss.png'), img)
+        np.save(os.path.join(output_path, "joints_loss"), np.sort(torch.tensor(self.loss_dict["joints_loss"])))
+        np.save(os.path.join(output_path, "vertices_loss"), np.sort(torch.tensor(self.loss_dict["vertices_loss"])))
