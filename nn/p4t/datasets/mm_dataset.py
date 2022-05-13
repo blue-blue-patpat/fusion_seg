@@ -10,19 +10,23 @@ from visualization.utils import o3d_pcl, o3d_plot, pcl_filter, pcl_project
 from nn.p4t.datasets.folder_list import *
 
 class MMMosh(Dataset):
-    def __init__(self, driver_path, frames_per_clip=5, step_between_clips=1, train=True, normal_scale=1, output_dim=151, skip_head=0, skip_tail=0, data_device='arbe', test_data='lab1'):
+    def __init__(self, driver_path, clip_frames=5, train=True, **kwargs):
+    # def __init__(self, driver_path, clip_frames=5, clip_step=1, train=True, normal_scale=1, output_dim=151, skip_head=0, skip_tail=0, enable_source=None, data_device='arbe', test_data='lab1'):
         self.driver_path = driver_path
         # range of frame index in a clip
-        self.step_between_clips = step_between_clips
-        self.clip_range = frames_per_clip * step_between_clips
+        self.clip_step = kwargs.get('clip_step', 1)
+        self.clip_range = clip_frames * self.clip_step
         self.train = train
-        self.normal_scale = normal_scale
-        self.output_dim = output_dim
-        self.skip_head = skip_head
-        self.skip_tail = skip_tail
-        self.data_device = data_device
+        self.normal_scale = kwargs.get('normal_scale', 1)
+        self.output_dim = kwargs.get('output_dim', 151)
+        self.skip_head = kwargs.get('skip_head', 0)
+        self.skip_tail = kwargs.get('skip_tail', 0)
+        self.enable_sources = kwargs.get('enable_sources',["arbe","arbe_feature","master","sub2","kinect_color","kinect_pcl","kinect_pcl_remove_zeros","optitrack","mesh","mosh","mesh_param"])
+        self.input_data = kwargs.get('input_data', 'mmWave')
+        self.data_device = kwargs.get('data_device', 'arbe')
         self.num_points = 1024 if self.data_device=='arbe' else 4096
-        self.test_data = test_data
+        self.test_data = kwargs.get('test_data', 'lab1')
+        self.full_data = {}
         self.init_index_map()
 
     def init_index_map(self):
@@ -40,13 +44,13 @@ class MMMosh(Dataset):
         for path in seq_paths:
             # init result loader, reindex
             try:
-                seq_loader = ResultFileLoader(root_path=path, skip_head=self.skip_head, enabled_sources=["arbe", "arbe_feature", "master", "sub2", "kinect_color", "kinect_pcl", "kinect_pcl_remove_zeros", "optitrack", "mesh", "mosh", "mesh_param"])
+                seq_loader = ResultFileLoader(root_path=path, skip_head=self.skip_head, enabled_sources=self.enable_sources)
             except Exception as e:
                 print(e)
                 continue
             if len(seq_loader) < 6:
                 continue
-            seq_loader.skip_head = 0
+            # seq_loader.skip_head = 0
             self.seq_loaders.append(seq_loader)
             seq_len = len(seq_loader)
             self.index_map.append(self.index_map[-1] + seq_len)
@@ -105,7 +109,7 @@ class MMMosh(Dataset):
         arbe_data = self.pad_data(arbe_data)
 
         label = np.concatenate((mesh_pose / self.normal_scale, mesh_shape / self.normal_scale), axis=0)
-        
+
         return arbe_data, label
 
     def __len__(self):
@@ -122,7 +126,7 @@ class MMMosh(Dataset):
             frame_idx = random.randint(self.clip_range-1, len(seq_loader)-1)
             data, label = self.load_data(seq_loader, frame_idx)
 
-        for clip_id in range(frame_idx-self.clip_range+1, frame_idx, self.step_between_clips):
+        for clip_id in range(frame_idx-self.clip_range+1, frame_idx, self.clip_step):
             # get xyz and features
             clip_data, _ = self.load_data(seq_loader, clip_id)
             # remove bad frame
@@ -141,7 +145,18 @@ class MMMosh(Dataset):
 
 
 class MMFusion(MMMosh):
+    def __init__(self, driver_path, clip_frames=5, train=True, **kwargs):
+        enable_sources = ["arbe","master","kinect_color","mesh","mosh","mesh_param"]
+        super().__init__(driver_path, clip_frames, train, enable_sources=enable_sources, **kwargs)
+
     def load_data(self, seq_loader, idx):
+        seq_pkl = os.path.join(seq_loader.root_path, 'pkl_data/{}.pkl'.format(self.input_data))
+        if os.path.exists(seq_pkl):
+            with open(seq_pkl, 'rb') as f:
+                self.loaded_seq = pickle.load(f)
+        if seq_loader.root_path in self.loaded_seq.keys() and idx in self.loaded_seq[seq_loader.root_path].keys():
+            return self.loaded_seq[seq_loader.root_path][idx]
+        
         frame, info = seq_loader[idx]
         arbe_pcl = frame["arbe"]
 
@@ -174,7 +189,12 @@ class MMFusion(MMMosh):
         arbe_data = self.pad_data(arbe_data)
 
         label = np.concatenate((mesh_pose, mesh_shape), axis=0)
-        
+
+        if seq_loader.root_path in self.loaded_seq.keys():
+            self.loaded_seq[seq_loader.root_path].update({idx:[arbe_data, label]})
+        else:
+            self.loaded_seq[seq_loader.root_path] = {idx:(arbe_data, label)}
+
         return arbe_data, label
 
 
@@ -211,7 +231,7 @@ class MMMoshPKL(MMMosh):
         clip = []
         data = seq[frame_idx]
 
-        for clip_id in range(frame_idx-self.clip_range+1, frame_idx, self.step_between_clips):
+        for clip_id in range(frame_idx-self.clip_range+1, frame_idx, self.clip_step):
             # get xyz and features
             clip_data = seq[clip_id]
             # clip padding
@@ -291,7 +311,7 @@ class MMFusionPKL(MMMoshPKL):
         seq_path = self.seq_paths[seq_idx]
         data = self.load_data(seq_path, frame_idx)
         clip = []
-        for clip_id in range(frame_idx-self.clip_range+1, frame_idx, self.step_between_clips):
+        for clip_id in range(frame_idx-self.clip_range+1, frame_idx, self.clip_step):
             # get xyz and features
             clip_data = self.load_data(seq_path, clip_id)
             # clip padding
