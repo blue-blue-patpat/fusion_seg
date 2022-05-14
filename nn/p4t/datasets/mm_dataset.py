@@ -4,13 +4,13 @@ import numpy as np
 import random
 from torch.utils.data import Dataset
 import pickle
-from multiprocessing import Process, Queue
+from multiprocessing import Process
 
 from dataloader.result_loader import ResultFileLoader, PKLLoader
 from visualization.utils import o3d_pcl, o3d_plot, pcl_filter, pcl_project
 from nn.p4t.datasets.folder_list import *
 
-class MMMosh(Dataset):
+class MMBody(Dataset):
     def __init__(self, driver_path, clip_frames=5, train=True, **kwargs):
         self.driver_path = driver_path
         # range of frame index in a clip
@@ -21,7 +21,7 @@ class MMMosh(Dataset):
         self.output_dim = kwargs.get('output_dim', 151)
         self.skip_head = kwargs.get('skip_head', 0)
         self.skip_tail = kwargs.get('skip_tail', 0)
-        self.enable_sources = kwargs.get('enable_sources',["arbe","arbe_feature","master","sub2","kinect_color","kinect_pcl","kinect_pcl_remove_zeros","optitrack","mesh","mosh","mesh_param"])
+        self.enable_sources = kwargs.get('enable_sources',["arbe","arbe_feature","mesh","mosh","mesh_param"])
         self.input_data = kwargs.get('input_data', 'mmWave')
         self.data_device = kwargs.get('data_device', 'arbe')
         self.num_points = 1024 if self.data_device=='arbe' else 4096
@@ -32,46 +32,49 @@ class MMMosh(Dataset):
 
     def init_index_map(self):
         self.index_map = [0,]
-        self.seq_loaders = []
+        self.seq_paths = []
         seq_paths = []
         self.selected_dirs = TRAIN_DIRS if self.train else SELECTED_DIRS[self.test_data]
         for d_path in map(str, self.driver_path.split(",")):
-            if self.train:
-                seq_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
-            else:
-                seq_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
+            seq_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
         
+        def write_pkl():
+            data = []
+            for i in range(len(seq_loader)):
+                data.append(self.load_data(seq_loader, i))
+            if not os.path.exists(os.path.join(path, 'pkl_data')):
+                os.mkdir(os.path.join(path, 'pkl_data'))
+            with open(seq_pkl, 'wb') as f:
+                pickle.dump(data, f)
+            print(path, 'done')
+
+        process_dict = {}
         for path in seq_paths:
             seq_pkl = os.path.join(path, 'pkl_data/{}.pkl'.format(self.input_data))
-            if os.path.exists(seq_pkl):
-                with open(seq_pkl, 'rb') as f:
-                    seq_loader = pickle.load(f)
-                seq_len = len(seq_loader) - self.skip_head - self.skip_tail
-                if seq_len < 6:
-                    continue
-                self.full_data.update({path:seq_loader[self.skip_head:self.skip_head+seq_len]})
-                self.seq_loaders.append(path)
-            else:
-                try:
+            try:
+                if os.path.exists(seq_pkl):
+                    with open(seq_pkl, 'rb') as f:
+                        seq_loader = pickle.load(f)[self.skip_head:-self.skip_tail-1]
+                else:
                     # init result loader, reindex
                     seq_loader = ResultFileLoader(root_path=path, skip_head=self.skip_head, skip_tail=self.skip_tail, enabled_sources=self.enable_sources)
-                    seq_len = len(seq_loader)
-                    if seq_len < 6:
-                        continue
-                    self.seq_loaders.append(seq_loader)
                     if self.prep_full_data:
-                        self.full_data[path] = []
-                        for i in range(seq_len):
-                            self.full_data[path].append(self.load_data(seq_loader, i))
-                        if not os.path.exists(os.path.join(path, 'pkl_data')):
-                            os.mkdir(os.path.join(path, 'pkl_data'))
-                        with open(seq_pkl, 'wb') as f:
-                            pickle.dump(self.full_data[path], f)
-                except Exception as e:
-                    print(e)
-                    continue
+                        p = Process(target=write_pkl)
+                        p.start()
+                        process_dict.update({path:p})
+            except Exception as e:
+                print(e)
+                continue
 
-            self.index_map.append(self.index_map[-1] + seq_len)
+            if len(seq_loader) < 6:
+                continue
+            self.full_data.update({path:seq_loader})
+            self.seq_paths.append(path)
+            self.index_map.append(self.index_map[-1] + len(seq_loader))
+        for path, p in process_dict.items():
+            p.join()
+            with open(os.path.join(path, 'pkl_data/{}.pkl'.format(self.input_data)), 'rb') as f:
+                self.full_data[path] = pickle.load(f)
 
     def pad_data(self, data):
         if data.shape[0] > self.num_points:
@@ -90,13 +93,13 @@ class MMMosh(Dataset):
                 return seq_idx, frame_idx if frame_idx >= self.clip_range else self.clip_range - 1
         raise IndexError
 
-    def load_data(self, seq_loader, idx):
-        if isinstance(seq_loader, str):
-            return self.full_data[seq_loader][idx]
+    def __len__(self):
+        return self.index_map[-1]
 
-        if seq_loader.root_path in self.full_data.keys() and idx < len(self.full_data[seq_loader.root_path]):
-            return self.full_data[seq_loader.root_path][idx]
-        
+    def load_data(self, seq_loader, idx):
+        if isinstance(seq_loader, list):
+            return seq_loader[idx]
+
         frame, info = seq_loader[idx]
         arbe_pcl = frame["arbe"]
         arbe_feature = frame["arbe_feature"][:, [0,4,5]]
@@ -108,24 +111,18 @@ class MMMosh(Dataset):
         if frame["mesh_param"] is None:
             return None, None
         
-        opti_pcl = frame['optitrack']
-
         mesh_pose = frame["mesh_param"]["pose"]
         mesh_shape = frame["mesh_param"]["shape"]
-        # mesh_vtx = frame["mesh_param"]["vertices"]
-        mesh_jnt = frame["mesh_param"]["joints"]
+        mesh_joint = frame["mesh_param"]["joints"]
 
-        # 0 for female, 1 for male
-        # gender = 1 if frame["information"].get("gender", "male") == "male" else 0
-
-        # filter radar_pcl with optitrack bounding box
-        arbe_data = pcl_filter(opti_pcl, np.hstack((arbe_pcl, arbe_feature)), 0.2)
+        # filter radar_pcl with bounding box
+        arbe_data = pcl_filter(mesh_joint, np.hstack((arbe_pcl, arbe_feature)), 0.2)
 
         if arbe_data.shape[0] == 0:
             # remove bad frame
             return None, None
 
-        bbox_center = ((mesh_jnt.max(axis=0) + mesh_jnt.min(axis=0))/2)[:3]
+        bbox_center = ((mesh_joint.max(axis=0) + mesh_joint.min(axis=0))/2)[:3]
         arbe_data[:,:3] -= bbox_center
         mesh_pose[:3] -= bbox_center
 
@@ -135,14 +132,11 @@ class MMMosh(Dataset):
 
         return arbe_data, label
 
-    def __len__(self):
-        return self.index_map[-1]
-
     def __getitem__(self, idx):
         seq_idx, frame_idx = self.global_to_seq_index(idx)
-        seq_loader = self.seq_loaders[seq_idx]
+        seq_path = self.seq_paths[seq_idx]
         clip = []
-
+        seq_loader =self.full_data[seq_path]
         data, label = self.load_data(seq_loader, frame_idx)
 
         while data is None:
@@ -167,17 +161,14 @@ class MMMosh(Dataset):
         return clip, label, (seq_idx, frame_idx)
 
 
-class MMFusion(MMMosh):
+class MMFusion(MMBody):
     def __init__(self, driver_path, clip_frames=5, train=True, **kwargs):
         enable_sources = ["arbe","master","kinect_color","mesh","mosh","mesh_param"]
         super().__init__(driver_path, clip_frames, train, enable_sources=enable_sources, **kwargs)
 
     def load_data(self, seq_loader, idx):
-        if isinstance(seq_loader, str):
-            return self.full_data[seq_loader][idx]
-
-        if seq_loader.root_path in self.full_data.keys() and idx < len(self.full_data[seq_loader.root_path]):
-            return self.full_data[seq_loader.root_path][idx]
+        if isinstance(seq_loader, list):
+            return seq_loader[idx]
         
         frame, info = seq_loader[idx]
         arbe_pcl = frame["arbe"]
@@ -188,12 +179,11 @@ class MMFusion(MMMosh):
         
         mesh_pose = frame["mesh_param"]["pose"]
         mesh_shape = frame["mesh_param"]["shape"]
-        # mesh_vtx = frame["mesh_param"]["vertices"]
         mesh_joint = frame["mesh_param"]["joints"]
         rgb_data = frame['master_color']
         trans_mat = seq_loader.trans['kinect_master']
 
-        # filter radar_pcl with optitrack bounding box
+        # filter radar_pcl with bounding box
         arbe_data = pcl_filter(mesh_joint, arbe_pcl, 0.2)
 
         if arbe_data.shape[0] == 0:
@@ -214,7 +204,7 @@ class MMFusion(MMMosh):
         return arbe_data, label
 
 
-class MMMoshPKL(MMMosh):
+class MMMoshPKL(MMBody):
     def init_index_map(self):
         self.index_map = [0,]
         self.seq_paths = []
@@ -303,7 +293,7 @@ class MMFusionPKL(MMMoshPKL):
         mesh_params = mesh_frame["params"]
         mesh_joints = mesh_frame["joints"]
 
-        # filter radar_pcl with optitrack bounding box
+        # filter radar_pcl with bounding box
         arbe_frame = pcl_filter(mesh_joints, arbe_frame, 0.2)
 
         # remove bad frame
