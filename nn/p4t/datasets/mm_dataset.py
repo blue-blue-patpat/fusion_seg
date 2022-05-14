@@ -11,7 +11,6 @@ from nn.p4t.datasets.folder_list import *
 
 class MMMosh(Dataset):
     def __init__(self, driver_path, clip_frames=5, train=True, **kwargs):
-    # def __init__(self, driver_path, clip_frames=5, clip_step=1, train=True, normal_scale=1, output_dim=151, skip_head=0, skip_tail=0, enable_source=None, data_device='arbe', test_data='lab1'):
         self.driver_path = driver_path
         # range of frame index in a clip
         self.clip_step = kwargs.get('clip_step', 1)
@@ -27,6 +26,7 @@ class MMMosh(Dataset):
         self.num_points = 1024 if self.data_device=='arbe' else 4096
         self.test_data = kwargs.get('test_data', 'lab1')
         self.full_data = {}
+        self.prep_pkl_data = kwargs.get('prep_data', True)
         self.init_index_map()
 
     def init_index_map(self):
@@ -40,20 +40,45 @@ class MMMosh(Dataset):
                 seq_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
             else:
                 seq_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
-
+        
+        from multiprocessing.dummy import Pool
+        pool = Pool(40)
         for path in seq_paths:
+            pool.apply_async(self.creat_pkl, (path,))
+        pool.close()
+        pool.join()
+        print('Done')
+
+    def creat_pkl(self, path):
+        import time
+        seq_pkl = os.path.join(path, 'pkl_data/{}.pkl'.format(self.input_data))
+        if os.path.exists(seq_pkl):
+            os.remove(seq_pkl)
+        try:
             # init result loader, reindex
-            try:
-                seq_loader = ResultFileLoader(root_path=path, skip_head=self.skip_head, enabled_sources=self.enable_sources)
-            except Exception as e:
-                print(e)
-                continue
-            if len(seq_loader) < 6:
-                continue
-            # seq_loader.skip_head = 0
-            self.seq_loaders.append(seq_loader)
+            seq_loader = ResultFileLoader(root_path=path, skip_head=self.skip_head, enabled_sources=self.enable_sources)
             seq_len = len(seq_loader)
-            self.index_map.append(self.index_map[-1] + seq_len)
+            if self.prep_pkl_data:
+                self.full_data[path] = []
+                for i in range(seq_len):
+                    t_s = time.time()
+                    self.full_data[path].append(self.load_data(seq_loader, i))
+                    t_e = time.time()
+                    print(path, i, t_e-t_s)
+                if not os.path.exists(os.path.join(path, 'pkl_data')):
+                    os.mkdir(os.path.join(path, 'pkl_data'))
+                with open(seq_pkl, 'wb') as f:
+                    pickle.dump(self.full_data[path], f)
+        except Exception as e:
+            print(e)
+            # continue
+            return
+        if seq_len < 6:
+            # continue
+            return
+        self.seq_loaders.append(seq_loader)
+        self.index_map.append(self.index_map[-1] + seq_len)
+        print(path, 'done')
 
     def pad_data(self, data):
         if data.shape[0] > self.num_points:
@@ -73,6 +98,9 @@ class MMMosh(Dataset):
         raise IndexError
 
     def load_data(self, seq_loader, idx):
+        if seq_loader.root_path in self.full_data.keys() and idx in self.full_data[seq_loader.root_path].keys():
+            return self.full_data[seq_loader.root_path][idx]
+        
         frame, info = seq_loader[idx]
         arbe_pcl = frame["arbe"]
         arbe_feature = frame["arbe_feature"][:, [0,4,5]]
@@ -107,7 +135,6 @@ class MMMosh(Dataset):
 
         # padding
         arbe_data = self.pad_data(arbe_data)
-
         label = np.concatenate((mesh_pose / self.normal_scale, mesh_shape / self.normal_scale), axis=0)
 
         return arbe_data, label
@@ -150,12 +177,9 @@ class MMFusion(MMMosh):
         super().__init__(driver_path, clip_frames, train, enable_sources=enable_sources, **kwargs)
 
     def load_data(self, seq_loader, idx):
-        seq_pkl = os.path.join(seq_loader.root_path, 'pkl_data/{}.pkl'.format(self.input_data))
-        if os.path.exists(seq_pkl):
-            with open(seq_pkl, 'rb') as f:
-                self.loaded_seq = pickle.load(f)
-        if seq_loader.root_path in self.loaded_seq.keys() and idx in self.loaded_seq[seq_loader.root_path].keys():
-            return self.loaded_seq[seq_loader.root_path][idx]
+        # if seq_loader.root_path in self.full_data.keys() and idx in self.full_data[seq_loader.root_path].keys():
+        if seq_loader.root_path in self.full_data.keys() and idx < len(self.full_data[seq_loader.root_path]):
+            return self.full_data[seq_loader.root_path][idx]
         
         frame, info = seq_loader[idx]
         arbe_pcl = frame["arbe"]
@@ -187,13 +211,7 @@ class MMFusion(MMMosh):
 
         # padding
         arbe_data = self.pad_data(arbe_data)
-
         label = np.concatenate((mesh_pose, mesh_shape), axis=0)
-
-        if seq_loader.root_path in self.loaded_seq.keys():
-            self.loaded_seq[seq_loader.root_path].update({idx:[arbe_data, label]})
-        else:
-            self.loaded_seq[seq_loader.root_path] = {idx:(arbe_data, label)}
 
         return arbe_data, label
 
