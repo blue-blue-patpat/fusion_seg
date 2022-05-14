@@ -4,6 +4,7 @@ import numpy as np
 import random
 from torch.utils.data import Dataset
 import pickle
+from multiprocessing import Process, Queue
 
 from dataloader.result_loader import ResultFileLoader, PKLLoader
 from visualization.utils import o3d_pcl, o3d_plot, pcl_filter, pcl_project
@@ -26,7 +27,7 @@ class MMMosh(Dataset):
         self.num_points = 1024 if self.data_device=='arbe' else 4096
         self.test_data = kwargs.get('test_data', 'lab1')
         self.full_data = {}
-        self.prep_pkl_data = kwargs.get('prep_data', True)
+        self.prep_full_data = kwargs.get('prep_data', True)
         self.init_index_map()
 
     def init_index_map(self):
@@ -34,51 +35,43 @@ class MMMosh(Dataset):
         self.seq_loaders = []
         seq_paths = []
         self.selected_dirs = TRAIN_DIRS if self.train else SELECTED_DIRS[self.test_data]
-        # self.selected_dirs = ['2021-10-17_14-54-06_T']
         for d_path in map(str, self.driver_path.split(",")):
             if self.train:
                 seq_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
             else:
                 seq_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
         
-        from multiprocessing.dummy import Pool
-        pool = Pool(40)
         for path in seq_paths:
-            pool.apply_async(self.creat_pkl, (path,))
-        pool.close()
-        pool.join()
-        print('Done')
+            seq_pkl = os.path.join(path, 'pkl_data/{}.pkl'.format(self.input_data))
+            if os.path.exists(seq_pkl):
+                with open(seq_pkl, 'rb') as f:
+                    seq_loader = pickle.load(f)
+                seq_len = len(seq_loader) - self.skip_head - self.skip_tail
+                if seq_len < 6:
+                    continue
+                self.full_data.update({path:seq_loader[self.skip_head:self.skip_head+seq_len]})
+                self.seq_loaders.append(path)
+            else:
+                try:
+                    # init result loader, reindex
+                    seq_loader = ResultFileLoader(root_path=path, skip_head=self.skip_head, skip_tail=self.skip_tail, enabled_sources=self.enable_sources)
+                    seq_len = len(seq_loader)
+                    if seq_len < 6:
+                        continue
+                    self.seq_loaders.append(seq_loader)
+                    if self.prep_full_data:
+                        self.full_data[path] = []
+                        for i in range(seq_len):
+                            self.full_data[path].append(self.load_data(seq_loader, i))
+                        if not os.path.exists(os.path.join(path, 'pkl_data')):
+                            os.mkdir(os.path.join(path, 'pkl_data'))
+                        with open(seq_pkl, 'wb') as f:
+                            pickle.dump(self.full_data[path], f)
+                except Exception as e:
+                    print(e)
+                    continue
 
-    def creat_pkl(self, path):
-        import time
-        seq_pkl = os.path.join(path, 'pkl_data/{}.pkl'.format(self.input_data))
-        if os.path.exists(seq_pkl):
-            os.remove(seq_pkl)
-        try:
-            # init result loader, reindex
-            seq_loader = ResultFileLoader(root_path=path, skip_head=self.skip_head, enabled_sources=self.enable_sources)
-            seq_len = len(seq_loader)
-            if self.prep_pkl_data:
-                self.full_data[path] = []
-                for i in range(seq_len):
-                    t_s = time.time()
-                    self.full_data[path].append(self.load_data(seq_loader, i))
-                    t_e = time.time()
-                    print(path, i, t_e-t_s)
-                if not os.path.exists(os.path.join(path, 'pkl_data')):
-                    os.mkdir(os.path.join(path, 'pkl_data'))
-                with open(seq_pkl, 'wb') as f:
-                    pickle.dump(self.full_data[path], f)
-        except Exception as e:
-            print(e)
-            # continue
-            return
-        if seq_len < 6:
-            # continue
-            return
-        self.seq_loaders.append(seq_loader)
-        self.index_map.append(self.index_map[-1] + seq_len)
-        print(path, 'done')
+            self.index_map.append(self.index_map[-1] + seq_len)
 
     def pad_data(self, data):
         if data.shape[0] > self.num_points:
@@ -98,7 +91,10 @@ class MMMosh(Dataset):
         raise IndexError
 
     def load_data(self, seq_loader, idx):
-        if seq_loader.root_path in self.full_data.keys() and idx in self.full_data[seq_loader.root_path].keys():
+        if isinstance(seq_loader, str):
+            return self.full_data[seq_loader][idx]
+
+        if seq_loader.root_path in self.full_data.keys() and idx < len(self.full_data[seq_loader.root_path]):
             return self.full_data[seq_loader.root_path][idx]
         
         frame, info = seq_loader[idx]
@@ -177,7 +173,9 @@ class MMFusion(MMMosh):
         super().__init__(driver_path, clip_frames, train, enable_sources=enable_sources, **kwargs)
 
     def load_data(self, seq_loader, idx):
-        # if seq_loader.root_path in self.full_data.keys() and idx in self.full_data[seq_loader.root_path].keys():
+        if isinstance(seq_loader, str):
+            return self.full_data[seq_loader][idx]
+
         if seq_loader.root_path in self.full_data.keys() and idx < len(self.full_data[seq_loader.root_path]):
             return self.full_data[seq_loader.root_path][idx]
         
