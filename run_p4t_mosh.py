@@ -16,7 +16,7 @@ from nn.p4t.tools import rotation6d_2_rot_mat, rodrigues_2_rot_mat, rotation6d_2
 from nn.p4t import utils
 from nn.p4t.modules.geodesic_loss import GeodesicLoss
 from nn.p4t.scheduler import WarmupMultiStepLR
-from nn.p4t.datasets.mmmosh import MMMosh, MMMoshPKL, MMDataset
+from nn.p4t.datasets.mm_dataset import MMBody, MMMoshPKL, MMFusion
 from nn.SMPL.mosh_loss import MoshLoss, SMPLXModel
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
@@ -82,11 +82,11 @@ def evaluate(model, losses, criterions, data_loader, device, use_6d_pose=True, u
     colors = dict(mmWave=[179, 230, 213],Depth=[208, 163, 230],RGBD=[229, 195, 161],RGB=[159, 175, 216])
     frames = 0
 
-    if use_gender:
-        body_model_male = BodyModel(bm_fname=SMPLX_MODEL_MALE_PATH, num_betas=16, num_expressions=0)
-        body_model_female = BodyModel(bm_fname=SMPLX_MODEL_FEMALE_PATH, num_betas=16, num_expressions=0)
-    else:
-        body_model = SMPLXModel(bm_fname=SMPLX_MODEL_NEUTRAL_PATH, num_betas=16, num_expressions=0, device=device)
+    # if use_gender:
+    #     body_model_male = BodyModel(bm_fname=SMPLX_MODEL_MALE_PATH, num_betas=16, num_expressions=0)
+    #     body_model_female = BodyModel(bm_fname=SMPLX_MODEL_FEMALE_PATH, num_betas=16, num_expressions=0)
+    # else:
+    body_model = SMPLXModel(bm_fname=SMPLX_MODEL_NEUTRAL_PATH, num_betas=16, num_expressions=0, device=device)
     with torch.no_grad():
         for clip, target, _ in metric_logger.log_every(data_loader, 100, header):
             clip = clip.to(device, non_blocking=True)
@@ -126,29 +126,22 @@ def evaluate(model, losses, criterions, data_loader, device, use_6d_pose=True, u
             batch_size = clip.shape[0]
             metric_logger.update(loss=loss.item())
             metric_logger.meters['loss'].update(loss, n=batch_size)
-            print("batch joints err (cm):", np.mean(c2c(per_joint_err[-1][:,:22]))*100)
-            print("batch vertices err (cm):", np.mean(c2c(per_vertex_err[-1]))*100)
 
             if visual:
                 pred_mesh = body_model(output[:,:3], output[:,3:-16], output[:,-16:])
                 label_mesh = body_model(target[:,:3], target[:,3:-16], target[:,-16:])
                 for b, batch in enumerate(clip):
                     data_frame = batch[-1][:,:3]
-                    print(c2c(_[0][b]), c2c(_[1][b]))
                     # shape_error = criterions["mse"](output[b,-16], target[b,-16])
                     yield dict(
                         radar_pcl = dict(
                             # pcl = data_frame,
                             mesh = pcl2sphere(data_frame),
-                            color = [0,0.8,0] if input_data == 'mmWave' else np.asarray([255, 181, 74]) / 255, # mm
+                            color = [0,0.8,0] if input_data == 'mmWave' else np.asarray([255, 181, 74]) / 255,
                         ),
                         pred_smpl = dict(
                             mesh = [c2c(pred_mesh['verts'][b]), c2c(pred_mesh['faces'])],
                             color = np.asarray(colors[input_data]) /255
-                            # color = np.asarray([179, 230, 213]) / 255, # mm
-                            # color = np.asarray([208, 163, 230]) / 255, # depth
-                            # color = np.asarray([229, 195, 161]) / 255, # rgbd
-                            # color = np.asarray([159, 175, 216]) / 255, # rgb
                         ),
                         label_smpl = dict(
                             mesh = [c2c(label_mesh['verts'][b]), c2c(label_mesh['faces'])],
@@ -189,7 +182,7 @@ def evaluate(model, losses, criterions, data_loader, device, use_6d_pose=True, u
 def main(args):
     output_dir = os.path.join(args.output_dir, args.input_data) if args.output_dir else ''
     if output_dir and not os.path.exists(output_dir):
-        utils.mkdir(output_dir)
+        utils.mkdir(os.path.join(output_dir, 'pth'))
 
     print(args)
     print("torch version: ", torch.__version__)
@@ -207,14 +200,15 @@ def main(args):
     # Data loading code
     print("Loading data")
 
-    # dataset = MMMosh(
-    dataset = MMDataset(
+    dataset_dict = {'mmWave':MMBody, 'Fusion':MMFusion, 'Fusion_Conv':MMFusion}
+    dataset = dataset_dict[args.input_data](
             driver_path=args.data_path,
-            frames_per_clip=args.clip_len,
-            step_between_clips=1,
+            clip_frames=args.clip_len,
+            clip_step=1,
             normal_scale=args.normal_scale,
             skip_head=args.skip_head,
             train=args.train,
+            input_data=args.input_data,
             data_device=args.data_device,
             test_data=args.test_data
     )
@@ -288,13 +282,9 @@ def main(args):
                     'lr_scheduler': lr_scheduler.state_dict(),
                     'epoch': epoch,
                     'args': args}
-                utils.save_on_master(
-                    checkpoint,
-                    os.path.join(output_dir, 'pth', 'checkpoint.pth'))
+                utils.save_on_master(checkpoint, os.path.join(output_dir, 'pth', 'checkpoint.pth'))
                 if (epoch + 5) % 5 == 0:
-                    utils.save_on_master(
-                        checkpoint,
-                        os.path.join(output_dir, 'pth', 'epoch{}.pth'.format(epoch)))
+                    utils.save_on_master(checkpoint, os.path.join(output_dir, 'pth', 'epoch{}.pth'.format(epoch)))
                     os.system("cp -r {}/loss {}/backup".format(output_dir, output_dir))
 
         total_time = time.time() - start_time
@@ -329,7 +319,7 @@ def parse_args():
     parser.add_argument('--features', default=3, type=int, help='dim of features')
     parser.add_argument('--input_data', default="mmWave", type=str, help='type of input data, mmWave, Depth or RGBD')
     parser.add_argument('--data_device', default="arbe", type=str, help='device of input data, arbe, kinect_master or kinect_sub2')
-    parser.add_argument('--test_data', default="test", type=str, help='type of test data, test, rain, smoke, night, occlusion, confusion')
+    parser.add_argument('--test_data', default="lab1", type=str, help='type of test data, test, rain, smoke, night, occlusion, confusion')
     # P4D
     parser.add_argument('--radius', default=0.7, type=float, help='radius for the ball query')
     parser.add_argument('--nsamples', default=32, type=int, help='number of neighbors for the ball query')
@@ -347,7 +337,7 @@ def parse_args():
     # training
     parser.add_argument('-b', '--batch_size', default=32, type=int)
     parser.add_argument('--epochs', default=350, type=int, metavar='N', help='number of total epochs to run')
-    parser.add_argument('-j', '--workers', default=10, type=int, metavar='N', help='number of data loading workers (default: 16)')
+    parser.add_argument('-j', '--workers', default=30, type=int, metavar='N', help='number of data loading workers (default: 16)')
     parser.add_argument('--lr', default=0.001, type=float, help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')
     parser.add_argument('--wd', '--weight_decay', default=1e-4, type=float, metavar='W', help='weight decay (default: 1e-4)', dest='weight_decay')

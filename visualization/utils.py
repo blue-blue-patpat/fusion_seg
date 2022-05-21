@@ -198,13 +198,6 @@ def pcl_filter(pcl_box, pcl_target, bound=0.2, offset=0):
     index = mask_x & mask_y & mask_z
     return pcl_target[index]
 
-    # pcl_in_bound = (pcl_target[:,:3] < upper_bound) & (pcl_target[:,:3] > lower_bound)
-    # filter_list = []
-    # for row in pcl_in_bound:
-    #     filter_list.append(False if False in row else True)
-    
-    # return np.array(list(compress(pcl_target, filter_list)))
-
 
 @nb.jit
 def filter2_np_nb(arr: np.ndarray, lower_bound: np.ndarray, upper_bound: np.ndarray):
@@ -255,6 +248,78 @@ def pcl_filter_nb_noground(pcl_box, pcl_target, bound=0.5):
     lower_bound[2] = lower_bound[2] + 0.21
 
     return filter2_np_nb(pcl_target, lower_bound, upper_bound)
+
+
+from pyk4a import CalibrationType, PyK4APlayback
+import cv2
+
+def image_crop(skeleton, image, playback, visual=False):
+    skel_max = skeleton.max(axis=0) + 0.2
+    skel_min = skeleton.min(axis=0) - 0.2
+    box_3d = [
+    [skel_min[0], skel_min[1], skel_min[2]],
+    [skel_min[0], skel_min[1], skel_max[2]],
+    [skel_min[0], skel_max[1], skel_max[2]],
+    [skel_min[0], skel_max[1], skel_min[2]],
+    [skel_max[0], skel_max[1], skel_max[2]],
+    [skel_max[0], skel_min[1], skel_max[2]],
+    [skel_max[0], skel_max[1], skel_min[2]],
+    [skel_max[0], skel_min[1], skel_min[2]],
+    ]
+    box_2d = []
+
+    for p in box_3d:
+        box_2d.append(playback.calibration.convert_3d_to_2d(p, CalibrationType.COLOR))
+    box_2d = np.floor(box_2d).astype(int)
+    box_2d[:,[0,1]] = box_2d[:,[1,0]]
+    box_max = box_2d.max(0)
+    box_min = box_2d.min(0)
+    crop_img = image[box_min[0]:box_max[0], box_min[1]:box_max[1]]
+
+    if visual:
+        cv2.namedWindow('img', 0)
+        cv2.resizeWindow("img", 640, 480)
+        cv2.rectangle(image, box_min[::-1], box_max[::-1], (0, 0, 255), 2)
+        cv2.imshow('img', image)
+        cv2.waitKey(0)
+    
+    return crop_img, box_min, box_max
+
+def pcl_project(pcl, playback):
+    pcl_2d = []
+    for p in pcl:
+        pcl_2d.append(playback.calibration.convert_3d_to_2d(p, CalibrationType.COLOR))
+    pcl_2d = np.floor(pcl_2d).astype(int)
+    pcl_2d[:,[0,1]] = pcl_2d[:,[1,0]]
+    
+    return pcl_2d
+
+def get_pcl_feature(pcl, image, skeleton, mkv_fname, use_conv=False, visual=False):
+    from nn.p4t.tools import feature_extract
+    playback = PyK4APlayback(mkv_fname)
+    playback.open()
+    pcl_2d = pcl_project(pcl, playback)
+
+    if not use_conv:
+        pcl_color = image[pcl_2d[:,0], pcl_2d[:,1]]
+        pcl_with_feature = np.hstack((pcl, pcl_color/255))
+
+    else:
+        crop_img, box_min, _ = image_crop(skeleton, image, playback, visual)
+        feature_map = feature_extract(crop_img)
+        feature_map = cv2.resize(feature_map, crop_img.shape[:-1])
+        feature = feature_map[pcl_2d[:,0]-box_min[0], pcl_2d[:,1]-box_min[1]]
+        pcl_with_feature = np.hstack((pcl, feature))
+
+    if visual:
+        image[pcl_2d[:,0],pcl_2d[:,1]] = [0, 255, 0]
+        cv2.namedWindow('img', 0)
+        cv2.resizeWindow("img", 640, 480)
+        cv2.imshow('img', image)
+        cv2.waitKey(0)
+
+    return pcl_with_feature
+
 
 class O3DItemUpdater():
     def __init__(self, func: Callable) -> None:

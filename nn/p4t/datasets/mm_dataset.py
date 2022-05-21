@@ -7,7 +7,7 @@ import pickle
 from multiprocessing import Process
 
 from dataloader.result_loader import ResultFileLoader, PKLLoader
-from visualization.utils import o3d_pcl, o3d_plot, pcl_filter, pcl_project
+from visualization.utils import o3d_pcl, o3d_plot, pcl_filter, get_pcl_feature
 from nn.p4t.datasets.folder_list import *
 
 class MMBody(Dataset):
@@ -27,7 +27,7 @@ class MMBody(Dataset):
         self.num_points = 1024 if self.data_device=='arbe' else 4096
         self.test_data = kwargs.get('test_data', 'lab1')
         self.full_data = {}
-        self.prep_full_data = kwargs.get('prep_data', True)
+        self.use_pkl = kwargs.get('use_pkl', True)
         self.init_index_map()
 
     def init_index_map(self):
@@ -46,19 +46,19 @@ class MMBody(Dataset):
                 os.mkdir(os.path.join(path, 'pkl_data'))
             with open(seq_pkl, 'wb') as f:
                 pickle.dump(data, f)
-            print(path, 'done')
+            print(path, 'Done')
 
         process_dict = {}
         for path in seq_paths:
             seq_pkl = os.path.join(path, 'pkl_data/{}.pkl'.format(self.input_data))
             try:
-                if os.path.exists(seq_pkl):
+                if os.path.exists(seq_pkl) and self.use_pkl:
                     with open(seq_pkl, 'rb') as f:
                         seq_loader = pickle.load(f)[self.skip_head:-self.skip_tail-1]
                 else:
                     # init result loader, reindex
                     seq_loader = ResultFileLoader(root_path=path, skip_head=self.skip_head, skip_tail=self.skip_tail, enabled_sources=self.enable_sources)
-                    if self.prep_full_data:
+                    if self.use_pkl:
                         p = Process(target=write_pkl)
                         p.start()
                         process_dict.update({path:p})
@@ -71,6 +71,7 @@ class MMBody(Dataset):
             self.full_data.update({path:seq_loader})
             self.seq_paths.append(path)
             self.index_map.append(self.index_map[-1] + len(seq_loader))
+            
         for path, p in process_dict.items():
             p.join()
             with open(os.path.join(path, 'pkl_data/{}.pkl'.format(self.input_data)), 'rb') as f:
@@ -191,7 +192,10 @@ class MMFusion(MMBody):
             return None, None
         
         mkv_fname = os.path.join(seq_loader.root_path, 'kinect/master/out.mkv')
-        arbe_data = pcl_project(arbe_data, rgb_data, trans_mat, mkv_fname)
+        # transform radar pcl coordinate to kinect master
+        trans_pcl = (arbe_data - trans_mat['t']) @ trans_mat['R']
+        trans_joint = (mesh_joint - trans_mat['t']) @ trans_mat['R']
+        arbe_data = get_pcl_feature(trans_pcl, rgb_data, trans_joint, mkv_fname, use_conv=True)
 
         bbox_center = ((mesh_joint.max(axis=0) + mesh_joint.min(axis=0))/2)[:3]
         arbe_data[:,:3] -= bbox_center
@@ -252,82 +256,3 @@ class MMMoshPKL(MMBody):
             
         return clip, label, (seq_idx, frame_idx)
 
-
-class MMFusionPKL(MMMoshPKL):
-    def init_index_map(self):
-        self.index_map = [0,]
-        self.seq_paths = []
-        seq_paths = []
-        self.selected_dirs = TRAIN_DIRS if self.train else SELECTED_DIRS[self.test_data]
-        for d_path in map(str, self.driver_path.split(",")):
-            seq_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
-
-        # init result loader, reindex
-        for path in seq_paths:
-            try:
-                with open(os.path.join(path, 'pkl_data/arbe.pkl'), "rb") as f:
-                    seq_data = pickle.load(f, encoding='bytes')
-            except Exception as e:
-                print(e)
-                continue
-            seq_len = len(seq_data) - self.skip_head
-            if seq_len > 6:
-                self.seq_paths.append(path)
-                self.index_map.append(self.index_map[-1] + seq_len)
-
-    def load_data(self, seq_path, idx):
-        from calib.utils import to_radar_rectified_trans_mat
-
-        with open(os.path.join(seq_path, 'pkl_data/arbe.pkl'), 'rb') as f:
-            arbe_data = pickle.load(f)
-        with open(os.path.join(seq_path, 'pkl_data/rgb.pkl'), 'rb') as f:
-            rgb_data = pickle.load(f)
-        with open(os.path.join(seq_path, 'pkl_data/mesh.pkl'), 'rb') as f:
-            mesh_data = pickle.load(f)
-        trans_mat = to_radar_rectified_trans_mat(seq_path)['kinect_master']
-
-        arbe_frame = arbe_data[idx][:, :3]
-        rgb_frame = rgb_data[idx]
-        mesh_frame = mesh_data[idx]
-
-        mesh_params = mesh_frame["params"]
-        mesh_joints = mesh_frame["joints"]
-
-        # filter radar_pcl with bounding box
-        arbe_frame = pcl_filter(mesh_joints, arbe_frame, 0.2)
-
-        # remove bad frame
-        if arbe_frame.shape[0] == 0:
-            return None, None
-        
-        arbe_frame = pcl_project(arbe_frame, rgb_frame, trans_mat, os.path.join(seq_path, 'kinect/master/out.mkv'))
-
-        bbox_center = ((mesh_joints.max(axis=0) + mesh_joints.min(axis=0))/2)[:3]
-        arbe_frame[:,:3] -= bbox_center
-        mesh_params[:3] -= bbox_center
-
-        # padding
-        arbe_frame = self.pad_data(arbe_frame)
-
-        return arbe_frame, mesh_params
-
-    def __getitem__(self, idx):
-        seq_idx, frame_idx = self.global_to_sequence_index(idx)
-        frame_idx += self.skip_head
-        seq_path = self.seq_paths[seq_idx]
-        data = self.load_data(seq_path, frame_idx)
-        clip = []
-        for clip_id in range(frame_idx-self.clip_range+1, frame_idx, self.clip_step):
-            # get xyz and features
-            clip_data = self.load_data(seq_path, clip_id)
-            # clip padding
-            clip.append(clip_data[self.data_device])
-        clip.append(data[self.data_device])
-        clip = np.asarray(clip, dtype=np.float32)
-        label = np.asarray(data['mesh_param'], dtype=np.float32)
-        if True in np.isnan(clip):
-            label = np.nan_to_num(clip)
-        if True in np.isnan(label):
-            label = np.nan_to_num(label)
-            
-        return clip, label, (seq_idx, frame_idx)
