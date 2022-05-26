@@ -21,13 +21,20 @@ class MMBody(Dataset):
         self.output_dim = kwargs.get('output_dim', 151)
         self.skip_head = kwargs.get('skip_head', 0)
         self.skip_tail = kwargs.get('skip_tail', 0)
-        self.enable_sources = kwargs.get('enable_sources',["arbe","arbe_feature","mesh","mosh","mesh_param"])
+        self.enable_sources = kwargs.get('enable_sources',["arbe","arbe_feature","master","kinect_color","mesh","mosh","mesh_param"])
         self.input_data = kwargs.get('input_data', 'mmWave')
         self.data_device = kwargs.get('data_device', 'arbe')
         self.num_points = 1024 if self.data_device=='arbe' else 4096
         self.test_data = kwargs.get('test_data', 'lab1')
         self.full_data = {}
         self.use_pkl = kwargs.get('use_pkl', True)
+        self.feature_type = kwargs.get('feature_type', 'arbe')
+        if self.feature_type == 'arbe' or self.feature_type == 'rgb' or self.feature_type == 'feature_map':
+            self.features = 3
+        elif self.feature_type == 'image_feature':
+            self.features = 1000
+        else:
+            self.features = 0
         self.init_index_map()
 
     def init_index_map(self):
@@ -50,7 +57,7 @@ class MMBody(Dataset):
 
         process_dict = {}
         for path in seq_paths:
-            seq_pkl = os.path.join(path, 'pkl_data/{}.pkl'.format(self.input_data))
+            seq_pkl = os.path.join(path, 'pkl_data/{}_{}.pkl'.format(self.input_data, self.feature_type))
             try:
                 if os.path.exists(seq_pkl) and self.use_pkl:
                     with open(seq_pkl, 'rb') as f:
@@ -74,7 +81,7 @@ class MMBody(Dataset):
             
         for path, p in process_dict.items():
             p.join()
-            with open(os.path.join(path, 'pkl_data/{}.pkl'.format(self.input_data)), 'rb') as f:
+            with open(os.path.join(path, 'pkl_data/{}_{}.pkl'.format(self.input_data, self.feature_type)), 'rb') as f:
                 self.full_data[path] = pickle.load(f)
 
     def pad_data(self, data):
@@ -103,10 +110,6 @@ class MMBody(Dataset):
 
         frame, info = seq_loader[idx]
         arbe_pcl = frame["arbe"]
-        arbe_feature = frame["arbe_feature"][:, [0,4,5]]
-        
-        # normalization
-        arbe_feature /= np.array([5e-38, 5, 150])
 
         # param: pose, shape
         if frame["mesh_param"] is None:
@@ -116,8 +119,21 @@ class MMBody(Dataset):
         mesh_shape = frame["mesh_param"]["shape"]
         mesh_joint = frame["mesh_param"]["joints"]
 
-        # filter radar_pcl with bounding box
-        arbe_data = pcl_filter(mesh_joint, np.hstack((arbe_pcl, arbe_feature)), 0.2)
+        if self.feature_type == 'arbe':
+            arbe_feature = frame["arbe_feature"][:, [0,4,5]]
+            arbe_feature /= np.array([5e-38, 5, 150])
+            # filter radar_pcl with bounding box
+            arbe_data = pcl_filter(mesh_joint, np.hstack((arbe_pcl, arbe_feature)), 0.2)
+        
+        else:
+            rgb_data = frame['master_color']
+            trans_mat = seq_loader.trans['kinect_master']
+            mkv_fname = os.path.join(seq_loader.root_path, 'kinect/master/out.mkv')
+            arbe_data = pcl_filter(mesh_joint, arbe_pcl, 0.2)
+            # transform radar pcl coordinate to kinect master
+            trans_pcl = (arbe_data - trans_mat['t']) @ trans_mat['R']
+            trans_joint = (mesh_joint - trans_mat['t']) @ trans_mat['R']
+            arbe_data = get_pcl_feature(trans_pcl, rgb_data, trans_joint, mkv_fname, self.feature_type, visual=False)
 
         if arbe_data.shape[0] == 0:
             # remove bad frame
@@ -195,7 +211,7 @@ class MMFusion(MMBody):
         # transform radar pcl coordinate to kinect master
         trans_pcl = (arbe_data - trans_mat['t']) @ trans_mat['R']
         trans_joint = (mesh_joint - trans_mat['t']) @ trans_mat['R']
-        arbe_data = get_pcl_feature(trans_pcl, rgb_data, trans_joint, mkv_fname, use_conv=True)
+        arbe_data = get_pcl_feature(trans_pcl, rgb_data, trans_joint, mkv_fname, use_conv=True, use_feature_map=True, visual=False)
 
         bbox_center = ((mesh_joint.max(axis=0) + mesh_joint.min(axis=0))/2)[:3]
         arbe_data[:,:3] -= bbox_center
