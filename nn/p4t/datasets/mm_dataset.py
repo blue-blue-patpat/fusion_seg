@@ -7,34 +7,27 @@ import pickle
 from multiprocessing import Process
 
 from dataloader.result_loader import ResultFileLoader, PKLLoader
-from visualization.utils import o3d_pcl, o3d_plot, pcl_filter, get_pcl_feature
+from visualization.utils import o3d_pcl, o3d_plot, pcl_filter, get_rgb_feature, image_crop
 from nn.p4t.datasets.folder_list import *
 
-class MMBody(Dataset):
+class mmWave(Dataset):
     def __init__(self, driver_path, clip_frames=5, train=True, **kwargs):
         self.driver_path = driver_path
+        self.train = train
         # range of frame index in a clip
         self.clip_step = kwargs.get('clip_step', 1)
         self.clip_range = clip_frames * self.clip_step
-        self.train = train
-        self.normal_scale = kwargs.get('normal_scale', 1)
         self.output_dim = kwargs.get('output_dim', 151)
         self.skip_head = kwargs.get('skip_head', 0)
         self.skip_tail = kwargs.get('skip_tail', 0)
+        self.test_data = kwargs.get('test_data', 'lab1')
+        self.use_pkl = kwargs.get('use_pkl', True)
+        self.create_pkl = kwargs.get('create_pkl', True)
         self.enable_sources = kwargs.get('enable_sources',["arbe","arbe_feature","master","kinect_color","mesh","mosh","mesh_param"])
         self.input_data = kwargs.get('input_data', 'mmWave')
-        self.data_device = kwargs.get('data_device', 'arbe')
-        self.num_points = 1024 if self.data_device=='arbe' else 4096
-        self.test_data = kwargs.get('test_data', 'lab1')
-        self.full_data = {}
-        self.use_pkl = kwargs.get('use_pkl', True)
+        self.num_points = kwargs.get('num_points', 1024)
         self.feature_type = kwargs.get('feature_type', 'arbe')
-        if self.feature_type == 'arbe' or self.feature_type == 'rgb' or self.feature_type == 'feature_map':
-            self.features = 3
-        elif self.feature_type == 'image_feature':
-            self.features = 1000
-        else:
-            self.features = 0
+        self.features = 6 if self.feature_type == 'arbe_and_rgb' else 3
         self.init_index_map()
 
     def init_index_map(self):
@@ -42,20 +35,11 @@ class MMBody(Dataset):
         self.seq_paths = []
         seq_paths = []
         self.selected_dirs = TRAIN_DIRS if self.train else SELECTED_DIRS[self.test_data]
-        for d_path in map(str, self.driver_path.split(",")):
+        for d_path in map(str, self.driver_path.split(',')):
             seq_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
-        
-        def write_pkl():
-            data = []
-            for i in range(len(seq_loader)):
-                data.append(self.load_data(seq_loader, i))
-            if not os.path.exists(os.path.join(path, 'pkl_data')):
-                os.mkdir(os.path.join(path, 'pkl_data'))
-            with open(seq_pkl, 'wb') as f:
-                pickle.dump(data, f)
-            print(path, 'Done')
 
         process_dict = {}
+        self.full_data = {}
         for path in seq_paths:
             seq_pkl = os.path.join(path, 'pkl_data/{}_{}.pkl'.format(self.input_data, self.feature_type))
             try:
@@ -64,11 +48,11 @@ class MMBody(Dataset):
                         seq_loader = pickle.load(f)[self.skip_head:-self.skip_tail-1]
                 else:
                     # init result loader, reindex
-                    seq_loader = ResultFileLoader(root_path=path, skip_head=self.skip_head, skip_tail=self.skip_tail, enabled_sources=self.enable_sources)
-                    if self.use_pkl:
-                        p = Process(target=write_pkl)
+                    seq_loader = ResultFileLoader(path, self.skip_head, self.skip_tail, self.enable_sources)
+                    if self.create_pkl:
+                        p = Process(target=self.write_pkl, args=(path, seq_pkl, seq_loader))
                         p.start()
-                        process_dict.update({path:p})
+                        process_dict.update({path: p})
             except Exception as e:
                 print(e)
                 continue
@@ -79,10 +63,25 @@ class MMBody(Dataset):
             self.seq_paths.append(path)
             self.index_map.append(self.index_map[-1] + len(seq_loader))
             
-        for path, p in process_dict.items():
-            p.join()
-            with open(os.path.join(path, 'pkl_data/{}_{}.pkl'.format(self.input_data, self.feature_type)), 'rb') as f:
-                self.full_data[path] = pickle.load(f)
+        if self.create_pkl:
+            for path, p in process_dict.items():
+                p.join()
+                with open(os.path.join(path, 'pkl_data/{}_{}.pkl'.format(self.input_data, self.feature_type)), 'rb') as f:
+                    self.full_data[path] = pickle.load(f)
+
+    def write_pkl(self, path, pkl_fname, seq_loader):
+        import time
+        data = []
+        for i in range(len(seq_loader)):
+            t_s = time.time()
+            data.append(self.load_data(seq_loader, i))
+            t_e = time.time()
+            print(path, i, t_e-t_s, 's')
+        if not os.path.exists(os.path.join(path, 'pkl_data')):
+            os.mkdir(os.path.join(path, 'pkl_data'))
+        with open(pkl_fname, 'wb') as f:
+            pickle.dump(data, f)
+        print(path, 'Done')
 
     def pad_data(self, data):
         if data.shape[0] > self.num_points:
@@ -108,32 +107,36 @@ class MMBody(Dataset):
         if isinstance(seq_loader, list):
             return seq_loader[idx]
 
-        frame, info = seq_loader[idx]
-        arbe_pcl = frame["arbe"]
+        frame, _ = seq_loader[idx]
+        arbe_pcl = frame['arbe']
+        arbe_feature = frame['arbe_feature'][:, [0,4,5]]
+        arbe_feature /= np.array([5e-38, 5, 150])
+        rgb_data = frame['master_color']
+        trans_mat = seq_loader.trans['kinect_master']
 
         # param: pose, shape
-        if frame["mesh_param"] is None:
+        if frame['mesh_param'] is None:
             return None, None
         
-        mesh_pose = frame["mesh_param"]["pose"]
-        mesh_shape = frame["mesh_param"]["shape"]
-        mesh_joint = frame["mesh_param"]["joints"]
+        mesh_pose = frame['mesh_param']['pose']
+        mesh_shape = frame['mesh_param']['shape']
+        mesh_joint = frame['mesh_param']['joints']
 
         if self.feature_type == 'arbe':
-            arbe_feature = frame["arbe_feature"][:, [0,4,5]]
-            arbe_feature /= np.array([5e-38, 5, 150])
             # filter radar_pcl with bounding box
             arbe_data = pcl_filter(mesh_joint, np.hstack((arbe_pcl, arbe_feature)), 0.2)
         
-        else:
-            rgb_data = frame['master_color']
-            trans_mat = seq_loader.trans['kinect_master']
-            mkv_fname = os.path.join(seq_loader.root_path, 'kinect/master/out.mkv')
+        elif self.feature_type == 'rgb':
             arbe_data = pcl_filter(mesh_joint, arbe_pcl, 0.2)
             # transform radar pcl coordinate to kinect master
             trans_pcl = (arbe_data - trans_mat['t']) @ trans_mat['R']
-            trans_joint = (mesh_joint - trans_mat['t']) @ trans_mat['R']
-            arbe_data = get_pcl_feature(trans_pcl, rgb_data, trans_joint, mkv_fname, self.feature_type, visual=False)
+            arbe_data = get_rgb_feature(trans_pcl, rgb_data, visual=False)
+
+        elif self.feature_type == 'arbe_and_rgb':
+            arbe_data = pcl_filter(mesh_joint, np.hstack((arbe_pcl, arbe_feature)), 0.2)
+            trans_pcl = (arbe_data[:, :3] - trans_mat['t']) @ trans_mat['R']
+            rgb_feature = get_rgb_feature(trans_pcl, rgb_data, visual=False)
+            arbe_data = np.hstack((arbe_data, rgb_feature[:, 3:]))
 
         if arbe_data.shape[0] == 0:
             # remove bad frame
@@ -145,7 +148,7 @@ class MMBody(Dataset):
 
         # padding
         arbe_data = self.pad_data(arbe_data)
-        label = np.concatenate((mesh_pose / self.normal_scale, mesh_shape / self.normal_scale), axis=0)
+        label = np.concatenate((mesh_pose, mesh_shape), axis=0)
 
         return arbe_data, label
 
@@ -178,26 +181,158 @@ class MMBody(Dataset):
         return clip, label, (seq_idx, frame_idx)
 
 
-class MMFusion(MMBody):
+class Depth(mmWave):
     def __init__(self, driver_path, clip_frames=5, train=True, **kwargs):
-        enable_sources = ["arbe","master","kinect_color","mesh","mosh","mesh_param"]
-        super().__init__(driver_path, clip_frames, train, enable_sources=enable_sources, **kwargs)
+        enable_sources = ["arbe","master","kinect_pcl","kinect_color","mesh","mosh","mesh_param"]
+        super().__init__(driver_path, clip_frames, train, input_data='Depth', num_points=4096, enable_sources=enable_sources, **kwargs)
+        self.features = 3 if self.feature_type == 'rgb' else 0
 
+    def init_index_map(self):
+        self.index_map = [0,]
+        self.seq_paths = []
+        seq_paths = []
+        self.selected_dirs = TRAIN_DIRS if self.train else SELECTED_DIRS[self.test_data]
+        for d_path in map(str, self.driver_path.split(',')):
+            seq_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
+        
+        process_dict = {}
+        self.full_data = {}
+        for path in seq_paths:
+            seq_pkl = os.path.join(path, 'pkl_data/{}_rgb.pkl'.format(self.input_data))
+            try:
+                if os.path.exists(seq_pkl) and self.use_pkl:
+                    with open(seq_pkl, 'rb') as f:
+                        seq_loader = pickle.load(f)[self.skip_head:-self.skip_tail-1]
+                else:
+                    # init result loader, reindex
+                    seq_loader = ResultFileLoader(path, self.skip_head, self.skip_tail, self.enable_sources)
+                    if self.create_pkl:
+                        p = Process(target=self.write_pkl, args=(path, seq_pkl, seq_loader))
+                        p.start()
+                        process_dict.update({path: p})
+            except Exception as e:
+                print(e)
+                continue
+
+            if len(seq_loader) < 6:
+                continue
+            self.full_data.update({path:seq_loader})
+            self.seq_paths.append(path)
+            self.index_map.append(self.index_map[-1] + len(seq_loader))
+            
+        if self.create_pkl:
+            for path, p in process_dict.items():
+                p.join()
+                with open(os.path.join(path, 'pkl_data/{}_rgb.pkl'.format(self.input_data)), 'rb') as f:
+                    self.full_data[path] = pickle.load(f)
+
+    def load_data(self, seq_loader, idx):
+        if isinstance(seq_loader, list):
+            if self.feature_type == 'rgb':
+                return seq_loader[idx]
+            else:
+                data, label = seq_loader[idx]
+                if data is not None:
+                    return data[:, :3], label
+                else:
+                    return data, label
+        
+        frame, _ = seq_loader[idx]
+        kinect_pcl = frame['master_pcl']
+        kinect_color = frame["master_color"]
+        kinect_color = kinect_color.reshape(len(kinect_pcl), 3) / [255, 255, 255]
+
+        # param: pose, shape
+        if frame['mesh_param'] is None:
+            return None, None
+        
+        mesh_pose = frame['mesh_param']['pose']
+        mesh_shape = frame['mesh_param']['shape']
+        mesh_joint = frame['mesh_param']['joints']
+
+        # filter radar_pcl with bounding box
+        kinect_data = pcl_filter(mesh_joint, np.hstack((kinect_pcl, kinect_color)), 0.2, 0.21)
+
+        # remove bad frame
+        if kinect_data.shape[0] == 0:
+            return None, None
+        
+        bbox_center = ((mesh_joint.max(axis=0) + mesh_joint.min(axis=0))/2)[:3]
+        kinect_data[:,:3] -= bbox_center
+        mesh_pose[:3] -= bbox_center
+
+        # padding
+        kinect_data = self.pad_data(kinect_data)
+        label = np.concatenate((mesh_pose, mesh_shape), axis=0)
+
+        if self.feature_type == 'rgb':
+            return kinect_data, label
+        else:
+            return kinect_data[:, :3], label
+
+from mosh.utils import mosh_pose_transform
+import cv2
+class mmFusion(mmWave):
+    def __init__(self, driver_path, clip_frames=5, train=True, **kwargs):
+        enable_sources = ['arbe','arbe_feature','master','kinect_color','mesh','mosh','mesh_param']
+        create_pkl = False
+        super().__init__(driver_path, clip_frames, train, enable_sources=enable_sources, create_pkl=create_pkl, **kwargs)
+        self.features = 100
+
+    def init_index_map(self):
+        self.index_map = [0,]
+        self.seq_paths = []
+        seq_paths = []
+        self.selected_dirs = TRAIN_DIRS if self.train else SELECTED_DIRS[self.test_data]
+        for d_path in map(str, self.driver_path.split(',')):
+            seq_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
+        
+        process_dict = {}
+        self.full_data = {}
+        for path in seq_paths:
+            seq_pkl = os.path.join(path, 'pkl_data/{}_image.pkl'.format(self.input_data))
+            try:
+                if os.path.exists(seq_pkl) and self.use_pkl:
+                    with open(seq_pkl, 'rb') as f:
+                        seq_loader = pickle.load(f)[self.skip_head:-self.skip_tail-1]
+                else:
+                    # init result loader, reindex
+                    seq_loader = ResultFileLoader(path, self.skip_head, self.skip_tail, self.enable_sources)
+                    if self.create_pkl:
+                        p = Process(target=self.write_pkl, args=(path, seq_pkl, seq_loader))
+                        p.start()
+                        process_dict.update({path: p})
+            except Exception as e:
+                print(e)
+                continue
+
+            if len(seq_loader) < 6:
+                continue
+            self.full_data.update({path:seq_loader})
+            self.seq_paths.append(path)
+            self.index_map.append(self.index_map[-1] + len(seq_loader))
+            
+        if self.create_pkl:
+            for path, p in process_dict.items():
+                p.join()
+                with open(os.path.join(path, 'pkl_data/{}_image.pkl'.format(self.input_data)), 'rb') as f:
+                    self.full_data[path] = pickle.load(f)
+                    
     def load_data(self, seq_loader, idx):
         if isinstance(seq_loader, list):
             return seq_loader[idx]
         
-        frame, info = seq_loader[idx]
-        arbe_pcl = frame["arbe"]
+        frame, _ = seq_loader[idx]
+        arbe_pcl = frame['arbe']
 
         # param: pose, shape
-        if frame["mesh_param"] is None:
+        if frame['mesh_param'] is None:
             return None, None
         
-        mesh_pose = frame["mesh_param"]["pose"]
-        mesh_shape = frame["mesh_param"]["shape"]
-        mesh_joint = frame["mesh_param"]["joints"]
-        rgb_data = frame['master_color']
+        mesh_pose = frame['mesh_param']['pose']
+        mesh_shape = frame['mesh_param']['shape']
+        mesh_joint = frame['mesh_param']['joints']
+        image = frame['master_color']
         trans_mat = seq_loader.trans['kinect_master']
 
         # filter radar_pcl with bounding box
@@ -207,37 +342,73 @@ class MMFusion(MMBody):
             # remove bad frame
             return None, None
         
-        mkv_fname = os.path.join(seq_loader.root_path, 'kinect/master/out.mkv')
-        # transform radar pcl coordinate to kinect master
-        trans_pcl = (arbe_data - trans_mat['t']) @ trans_mat['R']
+        # transform pcl coordinate to kinect master
+        # trans_pcl = (arbe_data - trans_mat['t']) @ trans_mat['R']
         trans_joint = (mesh_joint - trans_mat['t']) @ trans_mat['R']
-        arbe_data = get_pcl_feature(trans_pcl, rgb_data, trans_joint, mkv_fname, use_conv=True, use_feature_map=True, visual=False)
+        # trans, root_orient = mosh_pose_transform(mesh_pose[:3], mesh_pose[3:6], mesh_joint[0], trans_mat)
+        # mesh_pose = np.hstack((trans, root_orient.reshape(-1), mesh_pose[6:]))
+        crop_image = image_crop(trans_joint, image)[0]
+        image = cv2.resize(crop_image/255, (224, 224))
 
+        # bbox_center = ((trans_joint.max(axis=0) + trans_joint.min(axis=0))/2)[:3]
+        # arbe_data = trans_pcl - bbox_center
+        # mesh_pose[:3] -= bbox_center
         bbox_center = ((mesh_joint.max(axis=0) + mesh_joint.min(axis=0))/2)[:3]
-        arbe_data[:,:3] -= bbox_center
+        arbe_data -= bbox_center
         mesh_pose[:3] -= bbox_center
 
         # padding
         arbe_data = self.pad_data(arbe_data)
         label = np.concatenate((mesh_pose, mesh_shape), axis=0)
 
-        return arbe_data, label
+        return {'pcl':arbe_data, 'img':image}, label
 
+    def __getitem__(self, idx):
+        seq_idx, frame_idx = self.global_to_seq_index(idx)
+        seq_path = self.seq_paths[seq_idx]
+        pcl_clip = []
+        img_clip = []
+        seq_loader =self.full_data[seq_path]
+        data, label = self.load_data(seq_loader, frame_idx)
 
-class MMMoshPKL(MMBody):
+        while data is None:
+            frame_idx = random.randint(self.clip_range-1, len(seq_loader)-1)
+            data, label = self.load_data(seq_loader, frame_idx)
+
+        for clip_id in range(frame_idx-self.clip_range+1, frame_idx, self.clip_step):
+            # get xyz and features
+            clip_data, _ = self.load_data(seq_loader, clip_id)
+            # remove bad frame
+            if clip_data is None:
+                clip_data = data
+            # padding
+            pcl_clip.append(clip_data['pcl'])
+            img_clip.append(clip_data['img'])
+        pcl_clip.append(data['pcl'])
+        img_clip.append(data['img'])
+
+        pcl_clip = np.asarray(pcl_clip, dtype=np.float32)
+        img_clip = np.asarray(img_clip, dtype=np.float32)
+        label = np.asarray(label, dtype=np.float32)
+        if True in np.isnan(label):
+            label = np.nan_to_num(label)
+
+        return {'pcl':pcl_clip, 'img':img_clip}, label, (seq_idx, frame_idx)
+
+class MMMoshPKL(mmWave):
     def init_index_map(self):
         self.index_map = [0,]
         self.seq_paths = []
         seq_paths = []
         self.selected_dirs = TRAIN_DIRS if self.train else SELECTED_DIRS[self.test_data]
-        for d_path in map(str, self.driver_path.split(",")):
+        for d_path in map(str, self.driver_path.split(',')):
             seq_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
 
         # init result loader, reindex
         for path in seq_paths:
             pkl_fname = os.path.join(path, 'pkl_data/data.pkl')
             try:
-                with open(pkl_fname, "rb") as f:
+                with open(pkl_fname, 'rb') as f:
                     seq_data = pickle.load(f, encoding='bytes')
             except Exception as e:
                 print(e)
@@ -251,7 +422,7 @@ class MMMoshPKL(MMBody):
         seq_idx, frame_idx = self.global_to_seq_index(idx)
         frame_idx += self.skip_head
         seq_fname = self.seq_paths[seq_idx]
-        with open(seq_fname, "rb") as f:
+        with open(seq_fname, 'rb') as f:
             seq = pickle.load(f, encoding='bytes')
         
         clip = []
