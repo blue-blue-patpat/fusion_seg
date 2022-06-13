@@ -7,7 +7,7 @@ import pickle
 from multiprocessing import Process
 
 from dataloader.result_loader import ResultFileLoader, PKLLoader
-from visualization.utils import o3d_pcl, o3d_plot, pcl_filter, get_rgb_feature, image_crop
+from visualization.utils import o3d_pcl, o3d_plot, pcl_filter, get_rgb_feature, image_crop, pcl_project
 from nn.p4t.datasets.folder_list import *
 
 class mmWave(Dataset):
@@ -27,7 +27,7 @@ class mmWave(Dataset):
         self.input_data = kwargs.get('input_data', 'mmWave')
         self.num_points = kwargs.get('num_points', 1024)
         self.feature_type = kwargs.get('feature_type', 'arbe')
-        self.features = 6 if self.feature_type == 'arbe_and_rgb' else 3
+        self.features = kwargs.get('features', 3)
         self.init_index_map()
 
     def init_index_map(self):
@@ -184,8 +184,7 @@ class mmWave(Dataset):
 class Depth(mmWave):
     def __init__(self, driver_path, clip_frames=5, train=True, **kwargs):
         enable_sources = ["arbe","master","kinect_pcl","kinect_color","mesh","mosh","mesh_param"]
-        super().__init__(driver_path, clip_frames, train, input_data='Depth', num_points=4096, enable_sources=enable_sources, **kwargs)
-        self.features = 3 if self.feature_type == 'rgb' else 0
+        super().__init__(driver_path, clip_frames, train, num_points=4096, enable_sources=enable_sources, **kwargs)
 
     def init_index_map(self):
         self.index_map = [0,]
@@ -274,50 +273,14 @@ from mosh.utils import mosh_pose_transform
 import cv2
 class mmFusion(mmWave):
     def __init__(self, driver_path, clip_frames=5, train=True, **kwargs):
-        enable_sources = ['arbe','arbe_feature','master','kinect_color','mesh','mosh','mesh_param']
-        create_pkl = False
-        super().__init__(driver_path, clip_frames, train, enable_sources=enable_sources, create_pkl=create_pkl, **kwargs)
-        self.features = 100
+        enable_sources = ['arbe','arbe_feature','master','kinect_pcl','kinect_color','mesh','mosh','mesh_param']
+        # create_pkl = False
+        create_pkl = True
+        if 'create_pkl' not in kwargs.keys():
+            kwargs.update({'create_pkl': create_pkl})
+        kwargs.update({'use_pkl': False})
+        super().__init__(driver_path, clip_frames, train, enable_sources=enable_sources, **kwargs)
 
-    def init_index_map(self):
-        self.index_map = [0,]
-        self.seq_paths = []
-        seq_paths = []
-        self.selected_dirs = TRAIN_DIRS if self.train else SELECTED_DIRS[self.test_data]
-        for d_path in map(str, self.driver_path.split(',')):
-            seq_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
-        
-        process_dict = {}
-        self.full_data = {}
-        for path in seq_paths:
-            seq_pkl = os.path.join(path, 'pkl_data/{}_image.pkl'.format(self.input_data))
-            try:
-                if os.path.exists(seq_pkl) and self.use_pkl:
-                    with open(seq_pkl, 'rb') as f:
-                        seq_loader = pickle.load(f)[self.skip_head:-self.skip_tail-1]
-                else:
-                    # init result loader, reindex
-                    seq_loader = ResultFileLoader(path, self.skip_head, self.skip_tail, self.enable_sources)
-                    if self.create_pkl:
-                        p = Process(target=self.write_pkl, args=(path, seq_pkl, seq_loader))
-                        p.start()
-                        process_dict.update({path: p})
-            except Exception as e:
-                print(e)
-                continue
-
-            if len(seq_loader) < 6:
-                continue
-            self.full_data.update({path:seq_loader})
-            self.seq_paths.append(path)
-            self.index_map.append(self.index_map[-1] + len(seq_loader))
-            
-        if self.create_pkl:
-            for path, p in process_dict.items():
-                p.join()
-                with open(os.path.join(path, 'pkl_data/{}_image.pkl'.format(self.input_data)), 'rb') as f:
-                    self.full_data[path] = pickle.load(f)
-                    
     def load_data(self, seq_loader, idx):
         if isinstance(seq_loader, list):
             return seq_loader[idx]
@@ -341,33 +304,48 @@ class mmFusion(mmWave):
         if arbe_data.shape[0] == 0:
             # remove bad frame
             return None, None
-        
-        # transform pcl coordinate to kinect master
-        # trans_pcl = (arbe_data - trans_mat['t']) @ trans_mat['R']
-        trans_joint = (mesh_joint - trans_mat['t']) @ trans_mat['R']
-        # trans, root_orient = mosh_pose_transform(mesh_pose[:3], mesh_pose[3:6], mesh_joint[0], trans_mat)
-        # mesh_pose = np.hstack((trans, root_orient.reshape(-1), mesh_pose[6:]))
-        crop_image = image_crop(trans_joint, image)[0]
-        image = cv2.resize(crop_image/255, (224, 224))
 
-        # bbox_center = ((trans_joint.max(axis=0) + trans_joint.min(axis=0))/2)[:3]
-        # arbe_data = trans_pcl - bbox_center
-        # mesh_pose[:3] -= bbox_center
-        bbox_center = ((mesh_joint.max(axis=0) + mesh_joint.min(axis=0))/2)[:3]
-        arbe_data -= bbox_center
-        mesh_pose[:3] -= bbox_center
+        data = {}
+        if self.feature_type == 'image_feature':
+            trans_joint = (mesh_joint - trans_mat['t']) @ trans_mat['R']
+            crop_image = image_crop(trans_joint, image)[0]
+            image = cv2.resize(crop_image/255, (224, 224))
+
+            bbox_center = ((mesh_joint.max(axis=0) + mesh_joint.min(axis=0))/2)[:3]
+            arbe_data -= bbox_center
+            mesh_pose[:3] -= bbox_center
+            
+        elif self.feature_type == 'feature_map':
+            # transform pcl coordinate to kinect master
+            trans_pcl = (arbe_data - trans_mat['t']) @ trans_mat['R']
+            trans_joint = (mesh_joint - trans_mat['t']) @ trans_mat['R']
+            trans, root_orient = mosh_pose_transform(mesh_pose[:3], mesh_pose[3:6], mesh_joint[0], trans_mat)
+            mesh_pose = np.hstack((trans, root_orient.reshape(-1), mesh_pose[6:]))
+            crop_image, img_left_top, img_right_bottom = image_crop(trans_joint, image)
+            img_center = (img_right_bottom - img_left_top)/2
+            trans_pcl = self.pad_data(trans_pcl)
+            pcl_2d = pcl_project(trans_pcl)
+            pcl_2d = (pcl_2d -  img_left_top - img_center)/img_center
+            image = cv2.resize(crop_image/255, (224, 224))
+
+            bbox_center = ((trans_joint.max(axis=0) + trans_joint.min(axis=0))/2)[:3]
+            arbe_data = trans_pcl - bbox_center
+            mesh_pose[:3] -= bbox_center
+            data.update({'pcl_2d': pcl_2d})
 
         # padding
         arbe_data = self.pad_data(arbe_data)
         label = np.concatenate((mesh_pose, mesh_shape), axis=0)
+        data.update({'pcl':arbe_data, 'img':image})
 
-        return {'pcl':arbe_data, 'img':image}, label
+        return data, label
 
     def __getitem__(self, idx):
         seq_idx, frame_idx = self.global_to_seq_index(idx)
         seq_path = self.seq_paths[seq_idx]
         pcl_clip = []
         img_clip = []
+        pcl_2d = []
         seq_loader =self.full_data[seq_path]
         data, label = self.load_data(seq_loader, frame_idx)
 
@@ -384,16 +362,84 @@ class mmFusion(mmWave):
             # padding
             pcl_clip.append(clip_data['pcl'])
             img_clip.append(clip_data['img'])
+            if self.feature_type == 'feature_map':
+                pcl_2d.append(clip_data['pcl_2d'])
+
+        input_data = {}
         pcl_clip.append(data['pcl'])
         img_clip.append(data['img'])
-
+        if self.feature_type == 'feature_map':
+            pcl_2d.append(clip_data['pcl_2d'])
+            pcl_2d = np.asarray(pcl_2d, dtype=np.float32)
+            input_data.update({'pcl_2d':pcl_2d})
         pcl_clip = np.asarray(pcl_clip, dtype=np.float32)
         img_clip = np.asarray(img_clip, dtype=np.float32)
         label = np.asarray(label, dtype=np.float32)
         if True in np.isnan(label):
             label = np.nan_to_num(label)
+        input_data.update({'pcl':pcl_clip, 'img':img_clip})
 
-        return {'pcl':pcl_clip, 'img':img_clip}, label, (seq_idx, frame_idx)
+        return input_data, label, (seq_idx, frame_idx)
+
+
+from mosh.utils import mosh_pose_transform
+import cv2
+class DepthFusion(mmFusion):
+    def __init__(self, driver_path, clip_frames=5, train=True, **kwargs):
+        super().__init__(driver_path, clip_frames, train, num_points=4096, **kwargs)
+        
+    def load_data(self, seq_loader, idx):
+        if isinstance(seq_loader, list):
+            return seq_loader[idx]
+
+        frame, _ = seq_loader[idx]
+        kinect_pcl = frame['master_pcl']
+
+        # param: pose, shape
+        if frame['mesh_param'] is None:
+            return None, None
+        
+        mesh_pose = frame['mesh_param']['pose']
+        mesh_shape = frame['mesh_param']['shape']
+        mesh_joint = frame['mesh_param']['joints']
+        image = frame["master_color"]
+        trans_mat = seq_loader.trans['kinect_master']
+        
+        # filter radar_pcl with bounding box
+        kinect_data = pcl_filter(mesh_joint, kinect_pcl, 0.2, 0.21)
+
+        # remove bad frame
+        if kinect_data.shape[0] == 0:
+            return None, None
+                
+        if self.feature_type == 'image_feature':
+            trans_joint = (mesh_joint - trans_mat['t']) @ trans_mat['R']
+            crop_image = image_crop(trans_joint, image)[0]
+            image = cv2.resize(crop_image/255, (224, 224))
+
+            bbox_center = ((mesh_joint.max(axis=0) + mesh_joint.min(axis=0))/2)[:3]
+            kinect_data -= bbox_center
+            mesh_pose[:3] -= bbox_center
+
+        elif self.feature_type == 'feature_map':
+            # transform pcl coordinate to kinect master
+            trans_pcl = (kinect_data - trans_mat['t']) @ trans_mat['R']
+            trans_joint = (mesh_joint - trans_mat['t']) @ trans_mat['R']
+            trans, root_orient = mosh_pose_transform(mesh_pose[:3], mesh_pose[3:6], mesh_joint[0], trans_mat)
+            mesh_pose = np.hstack((trans, root_orient.reshape(-1), mesh_pose[6:]))
+            crop_image = image_crop(trans_joint, image)[0]
+            image = cv2.resize(crop_image/255, (224, 224))
+
+            bbox_center = ((trans_joint.max(axis=0) + trans_joint.min(axis=0))/2)[:3]
+            kinect_data = trans_pcl - bbox_center
+            mesh_pose[:3] -= bbox_center
+
+        # padding
+        kinect_data = self.pad_data(kinect_data)
+        label = np.concatenate((mesh_pose, mesh_shape), axis=0)
+
+        return {'pcl':kinect_data, 'img':image}, label
+
 
 class MMMoshPKL(mmWave):
     def init_index_map(self):

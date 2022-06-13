@@ -10,8 +10,8 @@ from human_body_prior.body_model.lbs import batch_rodrigues
 from nn.p4t.tools import rodrigues_2_rot_mat, rot_mat_2_rodrigues
 from mosh.config import SMPLX_MODEL_NEUTRAL_PATH
 
-def mosh_pose_transform(trans, root_orient, joints, trans_mat):
-    mosh_offset = joints[0] - trans
+def mosh_pose_transform(trans, root_orient, root_joint, trans_mat):
+    mosh_offset = root_joint - trans
     new_trans = trans_mat['R'] @ (trans + mosh_offset) + trans_mat['t'] - mosh_offset
     orient_mat = trans_mat['R'] @ cv2.Rodrigues(root_orient)[0]
     new_orient = cv2.Rodrigues(orient_mat)[0]
@@ -22,7 +22,7 @@ def get_mosh_params(fname, type):
 
 def mesh_from_mosh_params(mosh_params, trans_mat=None, body_model=None):
     if trans_mat is not None:
-        trans, root_orient = mosh_pose_transform(mosh_params['pose'][:3], mosh_params['pose'][3:6], mosh_params['joints'], trans_mat)
+        trans, root_orient = mosh_pose_transform(mosh_params['pose'][:3], mosh_params['pose'][3:6], mosh_params['joints'][0], trans_mat)
     else:
         trans=mosh_params['pose'][:3]
         root_orient=mosh_params['pose'][3:6]

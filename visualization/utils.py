@@ -252,8 +252,39 @@ def pcl_filter_nb_noground(pcl_box, pcl_target, bound=0.5):
 
 from pyk4a import CalibrationType, PyK4APlayback
 import cv2
+from torchvision import models
 
-def image_crop(skeleton, image, playback, visual=False):
+resnet18 = models.resnet18(pretrained=True)
+modules = list(resnet18.children())[:-2]
+modules.append(torch.nn.Upsample(scale_factor=32, mode='bilinear', align_corners=True))
+model = torch.nn.Sequential(*modules)
+
+def get_feature_map(img):
+    with torch.no_grad():
+        img = cv2.resize(img, (224, 224))
+        input = img.transpose(2, 0, 1)
+        input = torch.tensor(input, dtype=torch.float)[None]
+        
+        output = model(input)
+        output = output[0].numpy().transpose(1, 2, 0)
+        channel_r = np.sum(output[:,:,:170], -1)
+        channel_g = np.sum(output[:,:,170:340], -1)
+        channel_b = np.sum(output[:,:,340:], -1)
+        output = np.stack((channel_r, channel_g, channel_b), -1)
+
+    return output
+
+def get_image_feature(img):
+    with torch.no_grad():
+        img = cv2.resize(img, (224, 224))
+        input = img.transpose(2, 0, 1)
+        input = torch.tensor(input, dtype=torch.float)[None]
+        
+        output = resnet18(input)
+
+    return output.numpy()
+
+def image_crop(skeleton, image, playback=None, visual=False):
     skel_max = skeleton.max(axis=0) + 0.2
     skel_min = skeleton.min(axis=0) - 0.2
     box_3d = [
@@ -269,11 +300,14 @@ def image_crop(skeleton, image, playback, visual=False):
     box_2d = []
 
     for p in box_3d:
-        box_2d.append(playback.calibration.convert_3d_to_2d(p, CalibrationType.COLOR))
+        if playback is not None:
+            box_2d.append(playback.calibration.convert_3d_to_2d(p, CalibrationType.COLOR))
+        else:
+            box_2d.append((INTRINSIC[MAS] @ p/p[2])[:2])
     box_2d = np.floor(box_2d).astype(int)
     box_2d[:,[0,1]] = box_2d[:,[1,0]]
-    box_max = box_2d.max(0)
     box_min = box_2d.min(0)
+    box_max = box_2d.max(0)
     crop_img = image[box_min[0]:box_max[0], box_min[1]:box_max[1]]
 
     if visual:
@@ -285,31 +319,65 @@ def image_crop(skeleton, image, playback, visual=False):
     
     return crop_img, box_min, box_max
 
-def pcl_project(pcl, playback):
+from kinect.config import *
+def pcl_project(pcl, playback=None):
     pcl_2d = []
     for p in pcl:
-        pcl_2d.append(playback.calibration.convert_3d_to_2d(p, CalibrationType.COLOR))
-    pcl_2d = np.floor(pcl_2d).astype(int)
+        if playback is not None:
+            point_2d = playback.calibration.convert_3d_to_2d(p, CalibrationType.COLOR)
+        else:
+            point_2d = (INTRINSIC[MAS] @ p/p[2])[:2]
+        pcl_2d.append(point_2d)
+    pcl_2d = np.asarray(pcl_2d)
     pcl_2d[:,[0,1]] = pcl_2d[:,[1,0]]
     
     return pcl_2d
 
-def get_pcl_feature(pcl, image, skeleton, mkv_fname, use_conv=False, visual=False):
-    from nn.p4t.tools import feature_extract
-    playback = PyK4APlayback(mkv_fname)
-    playback.open()
+def get_rgb_feature(pcl, image, mkv_fname=None, visual=False):
+    if mkv_fname is not None:
+        playback = PyK4APlayback(mkv_fname)
+        playback.open()
+    else:
+        playback = None
     pcl_2d = pcl_project(pcl, playback)
+    pcl_2d = np.floor(pcl_2d).astype(int)
 
-    if not use_conv:
+    pcl_color = image[pcl_2d[:,0], pcl_2d[:,1]]
+    pcl_with_feature = np.hstack((pcl, pcl_color/255))
+    
+    if visual:
+        image[pcl_2d[:,0],pcl_2d[:,1]] = [0, 255, 0]
+        cv2.namedWindow('img', 0)
+        cv2.resizeWindow("img", 640, 480)
+        cv2.imshow('img', image)
+        cv2.waitKey(0)
+
+    return pcl_with_feature
+
+def get_pcl_feature(pcl, image, skeleton, feature_type, mkv_fname=None, visual=False):
+    if mkv_fname is not None:
+        playback = PyK4APlayback(mkv_fname)
+        playback.open()
+    else:
+        playback = None
+    pcl_2d = pcl_project(pcl, playback)
+    pcl_2d = np.floor(pcl_2d).astype(int)
+
+    if feature_type == 'rgb':
         pcl_color = image[pcl_2d[:,0], pcl_2d[:,1]]
         pcl_with_feature = np.hstack((pcl, pcl_color/255))
-
-    else:
+    
+    elif feature_type == 'feature_map':
         crop_img, box_min, _ = image_crop(skeleton, image, playback, visual)
-        feature_map = feature_extract(crop_img)
-        feature_map = cv2.resize(feature_map, crop_img.shape[:-1])
+        feature_map = get_feature_map(crop_img/255)
+        feature_map = cv2.resize(feature_map, crop_img.shape[1::-1])
         feature = feature_map[pcl_2d[:,0]-box_min[0], pcl_2d[:,1]-box_min[1]]
         pcl_with_feature = np.hstack((pcl, feature))
+    
+    else:
+        crop_img, box_min, _ = image_crop(skeleton, image, playback, visual)
+        feature = get_image_feature(crop_img/255)
+        pcl_with_feature = np.hstack((pcl, np.repeat(feature, pcl.shape[0], axis=0)))
 
     if visual:
         image[pcl_2d[:,0],pcl_2d[:,1]] = [0, 255, 0]

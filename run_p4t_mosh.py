@@ -16,7 +16,7 @@ from nn.p4t.tools import rotation6d_2_rot_mat, rodrigues_2_rot_mat, rotation6d_2
 from nn.p4t import utils
 from nn.p4t.modules.geodesic_loss import GeodesicLoss
 from nn.p4t.scheduler import WarmupMultiStepLR
-from nn.p4t.datasets.mm_dataset import MMBody, MMMoshPKL, MMFusion
+import nn.p4t.datasets.mm_dataset as Datasets
 from nn.SMPL.mosh_loss import MoshLoss, SMPLXModel
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
@@ -33,10 +33,17 @@ def train_one_epoch(model, losses, criterions, loss_weight, optimizer, lr_schedu
 
     header = 'Epoch: [{}]'.format(epoch)
 
-    for clip, target, _ in metric_logger.log_every(data_loader, print_freq, header):
+    for input, target, _ in metric_logger.log_every(data_loader, print_freq, header):
         start_time = time.time()
-        clip, target = clip.to(device), target.to(device)
-        output = model(clip)
+        if isinstance(input, dict):
+            for k, v in input.items():
+                input[k] = v.to(device)
+            clip = input['pcl']
+        else:
+            input = input.to(device)
+            clip = input
+        target = target.to(device)
+        output = model(input)
         batch_size = clip.shape[0]
         # translation loss
         losses.update_loss("trans_loss", loss_weight[0]*criterions["mse"](output[:,0:3], target[:,0:3]))
@@ -88,10 +95,16 @@ def evaluate(model, losses, criterions, data_loader, device, use_6d_pose=True, u
     # else:
     body_model = SMPLXModel(bm_fname=SMPLX_MODEL_NEUTRAL_PATH, num_betas=16, num_expressions=0, device=device)
     with torch.no_grad():
-        for clip, target, _ in metric_logger.log_every(data_loader, 100, header):
-            clip = clip.to(device, non_blocking=True)
+        for input, target, _ in metric_logger.log_every(data_loader, 100, header):
+            if isinstance(input, dict):
+                for k, v in input.items():
+                    input[k] = v.to(device, non_blocking=True)
+                clip = input['pcl']
+            else:
+                input = input.to(device, non_blocking=True)
+                clip = input
             target = target.to(device, non_blocking=True)
-            output = model(clip)
+            output = model(input)
             # translation loss
             losses.update_loss("trans_loss", criterions["mse"](output[:,0:3], target[:,0:3]))
             # pose loss
@@ -180,7 +193,7 @@ def evaluate(model, losses, criterions, data_loader, device, use_6d_pose=True, u
 
 
 def main(args):
-    output_dir = os.path.join(args.output_dir, args.input_data) if args.output_dir else ''
+    output_dir = os.path.join(args.output_dir, '{}_{}'.format(args.input_data, args.feature_type)) if args.output_dir else ''
     if output_dir and not os.path.exists(output_dir):
         utils.mkdir(os.path.join(output_dir, 'pth'))
 
@@ -200,17 +213,16 @@ def main(args):
     # Data loading code
     print("Loading data")
 
-    dataset_dict = {'mmWave':MMBody, 'Fusion':MMFusion, 'Fusion_Conv':MMFusion}
-    dataset = dataset_dict[args.input_data](
+    Dataset = getattr(Datasets, args.input_data)
+    dataset = Dataset(
             driver_path=args.data_path,
             clip_frames=args.clip_len,
-            clip_step=1,
-            normal_scale=args.normal_scale,
             skip_head=args.skip_head,
             train=args.train,
+            feature_type=args.feature_type,
+            features=args.features,
             input_data=args.input_data,
-            data_device=args.data_device,
-            test_data=args.test_data
+            test_data=args.test_data,
     )
 
     train_size = int(0.9 * len(dataset))
@@ -224,7 +236,7 @@ def main(args):
 
     print("Creating model")
     Model = getattr(Models, args.model)
-    features = 0 if args.input_data == 'Depth' else 3
+    features = dataset.features
     model = Model(features=features, radius=args.radius, nsamples=args.nsamples, spatial_stride=args.spatial_stride,
                   temporal_kernel_size=args.temporal_kernel_size, temporal_stride=args.temporal_stride,
                   emb_relu=args.emb_relu,
@@ -255,7 +267,7 @@ def main(args):
     model_without_ddp = model
 
     if args.resume:
-        resume = os.path.join(args.resume, args.input_data, 'pth', 'checkpoint.pth')
+        resume = os.path.join(args.resume, '{}_{}'.format(args.input_data, args.feature_type), 'pth', 'checkpoint.pth')
         checkpoint = torch.load(resume, map_location='cpu')
         model_without_ddp.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
@@ -298,7 +310,7 @@ def main(args):
         save_path = os.path.join(output_dir, "test", args.test_data)
         gen = evaluate(model, losses, criterions, data_loader_test, device, use_6d_pose=args.use_6d_pose, visual=args.visual, use_gender=args.use_gender, input_data=args.input_data, output_path=save_path, num_frames=args.num_frames)
         plot = MoshEvaluateStreamPlot()
-        plot.show(gen, fps=30, save_path=os.path.join(save_path, 'snapshot'))
+        plot.show(gen, fps=30)
         losses.calculate_test_loss(save_path)
 
 def parse_args():
@@ -316,9 +328,9 @@ def parse_args():
     parser.add_argument('--new_gmm', action="store_true", help='new gmm')
     parser.add_argument('--output_dim', default=151, type=int, help='output dim')
     parser.add_argument('--use_6d_pose', default=1, type=int, help='use 6d pose')
+    parser.add_argument('--feature_type', default='none', type=str, help='type of features')
     parser.add_argument('--features', default=3, type=int, help='dim of features')
-    parser.add_argument('--input_data', default="mmWave", type=str, help='type of input data, mmWave, Depth or RGBD')
-    parser.add_argument('--data_device', default="arbe", type=str, help='device of input data, arbe, kinect_master or kinect_sub2')
+    parser.add_argument('--input_data', default="mmWave", type=str, help='type of input data, mmWave, Depth or mmFusion')
     parser.add_argument('--test_data', default="lab1", type=str, help='type of test data, test, rain, smoke, night, occlusion, confusion')
     # P4D
     parser.add_argument('--radius', default=0.7, type=float, help='radius for the ball query')

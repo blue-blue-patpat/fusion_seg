@@ -205,24 +205,3 @@ def rotation6d_2_rodrigues(nn_output):
 def copy2cpu(tensor):
     if isinstance(tensor, np.ndarray): return tensor
     return tensor.detach().cpu().numpy()
-
-from torchvision import models
-import cv2
-
-def feature_extract(img):
-    with torch.no_grad():
-        img = cv2.resize(img, (224, 224))
-        input = img.transpose(2, 0, 1)
-        resnet18 = models.resnet18(pretrained=True)
-        modules = list(resnet18.children())[:-2]
-        modules.append(torch.nn.Upsample(scale_factor=32, mode='bilinear', align_corners=True))
-        model = torch.nn.Sequential(*modules)
-        input = torch.tensor(input, dtype=torch.float)[None]
-        output = model(input)
-        output = output[0].numpy().transpose(1, 2, 0)
-        channel_r = np.sum(output[:,:,:170], -1)
-        channel_g = np.sum(output[:,:,170:340], -1)
-        channel_b = np.sum(output[:,:,340:], -1)
-        output = np.stack((channel_r, channel_g, channel_b), -1)
-
-    return output

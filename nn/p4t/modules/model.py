@@ -80,13 +80,13 @@ class ImageFeatureFusion(P4Transformer):
                         mlp_dim, output_dim, features)
 
         resnet = resnet18(pretrained=True)
-        self.resnet = torch.nn.Sequential(resnet, torch.nn.Linear(1000, 100))
+        self.resnet = torch.nn.Sequential(resnet, torch.nn.Linear(1000, features))
         self.features = features
         
     def forward(self, input):                                                                                                               # [B, L, N, 3]
         device = input['pcl'].get_device()
         batch_size, clip_len, num_points, _ = input['pcl'].shape
-        rgb_features = self.resnet(input['img'].view(-1, 224, 224, 3).permute(0, 3, 1, 2))
+        rgb_features = self.resnet(input['img'].reshape(-1, 224, 224, 3).permute(0, 3, 1, 2))
         rgb_features = rgb_features.reshape(batch_size, clip_len, 1, self.features).repeat(1, 1, num_points, 1)
         xyzs, features = self.tube_embedding(input['pcl'][:,:,:,:3], torch.cat((input['pcl'][:,:,:,3:], rgb_features), -1).permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
 
@@ -132,28 +132,17 @@ class FeatureMapFusion(P4Transformer):
 
         resnet = resnet18(pretrained=True)
         modules = list(resnet.children())[:-2]
-        modules.append(torch.nn.Conv2d(in_channels=512, out_channels=3, kernel_size=3, padding=1))
+        modules.append(torch.nn.Conv2d(in_channels=512, out_channels=features, kernel_size=3, padding=1))
         modules.append(torch.nn.Upsample(scale_factor=32, mode='bilinear', align_corners=True))
         self.resnet = torch.nn.Sequential(*modules)
-        self.resize_d = Resize([224, 224])
-        self.resize_u = Resize([1536, 2048])
         self.features = features
 
     def forward(self, input):                                                                                                               # [B, L, N, 3]
         device = input['pcl'].get_device()
         batch_size, clip_len, num_points, _ = input['pcl'].shape
-
-        # Project to 2d
-        intrinsic = torch.tensor(INTRINSIC[MAS], dtype=torch.float32, device=device)
-        pcl = input['pcl']/input['pcl'][:,:,:,2].unsqueeze(-1)
-        pcl_2d = (intrinsic.repeat(batch_size, clip_len, num_points, 1, 1) @ pcl.unsqueeze(-1))[:,:,:,:2]
-        pcl_2d = pcl_2d.reshape(batch_size*clip_len, num_points, 1, -1)
-        pcl_2d[:,:,:,0] = pcl_2d[:,:,:,1]/1536
-        pcl_2d[:,:,:,1] = pcl_2d[:,:,:,0]/2048
         
-        feature_map = self.resnet(self.resize_d(input['img'].reshape(-1, 1536, 2048, 3).permute(0, 3, 1, 2)))
-        feature_map = self.resize_u(feature_map)
-        rgb_features = torch.nn.functional.grid_sample(feature_map, pcl_2d, align_corners=False)
+        feature_map = self.resnet(input['img'].reshape(batch_size*clip_len, 224, 224, 3).permute(0, 3, 1, 2))
+        rgb_features = torch.nn.functional.grid_sample(feature_map, input['pcl_2d'].reshape(batch_size*clip_len, num_points, 1, 2), align_corners=False)
         rgb_features = rgb_features.reshape(batch_size, clip_len, 3, num_points).permute(0, 1, 3, 2)
         xyzs, features = self.tube_embedding(input['pcl'][:,:,:,:3], torch.cat((input['pcl'][:,:,:,3:], rgb_features), -1).permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
 

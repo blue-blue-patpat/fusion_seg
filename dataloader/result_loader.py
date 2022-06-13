@@ -2,6 +2,7 @@ import os
 import cv2
 import numpy as np
 import pandas as pd
+import pickle
 from pytorch3d.io import load_obj
 from sklearn.neighbors import KNeighborsClassifier
 from dataloader.utils import file_paths_from_dir, filename_decoder
@@ -251,39 +252,24 @@ class MinimalLoader(ResultLoader):
 
 
 class PKLLoader(ResultLoader):
-    def __init__(self, result_path, params=None, device="sub1") -> None:
+    def __init__(self, result_path, skip_head=0, skip_tail=0, enable_sources=None) -> None:
         super().__init__(result_path)
-        if params is None:
-            self.params = [
-                dict(tag="rgbd_data/{}".format(device), ext=".pkl"),
-            ]
-        else:
-            self.params = params
+        self.params = [dict(tag="pkl", ext=".pkl")]
+        self.skip_head = skip_head
+        self.skip_tail = skip_tail
         self.run()
-        self.pkls = list(self.file_dict.values())[0].loc[:, "filepath"]
 
-class PKLLoader_mosh(ResultLoader):
-    def __init__(self, result_path, params=None, device="sub1") -> None:
-        super().__init__(result_path)
-        if params is None:
-            self.params = [dict(tag="pkl", ext=".pkl"),]
-        else:
-            self.params = params
-        self.run()
-        self.pkls = list(self.file_dict.values())[0].loc[:, "filepath"]
+    def __getitem__(self, idx):
+        if idx >= len(self):
+            raise IndexError("Index key {} is out of range {}".format(idx, len(self)))
+        res = self.select_by_id(idx + self.skip_head)
+        with open(res['pkl']['filepath'], 'rb') as f:
+            frame = pickle.load(f)
+        return frame
 
+    def __len__(self):
+        return min([len(v) for v in self.file_dict.values()]) - self.skip_head - self.skip_tail
 
-class PKLLoader_test(ResultLoader):
-    def __init__(self, result_path, params=None, device="sub1") -> None:
-        super().__init__(result_path)
-        if params is None:
-            self.params = [
-                dict(tag="rgbd_data_test/{}".format(device), ext=".pkl"),
-            ]
-        else:
-            self.params = params
-        self.run()
-        self.pkls = list(self.file_dict.values())[0].loc[:, "filepath"]
 
 class ResultFileLoader():
     """
@@ -672,7 +658,7 @@ class ResultFileLoader():
                 # add offset to translation
                 mosh_params = dict(np.load(mesh_res["mosh/param"]["filepath"]))
                 # optitrack to radar coordinate
-                trans, root_orient = mosh_pose_transform(mosh_params['pose'][:3], mosh_params['pose'][3:6], mosh_params['joints'], self.trans["optitrack"])
+                trans, root_orient = mosh_pose_transform(mosh_params['pose'][:3], mosh_params['pose'][3:6], mosh_params['joints'][0], self.trans["optitrack"])
                 pose = np.hstack((trans, root_orient.reshape(-1), mosh_params['pose'][6:]))
                 mosh_params['pose'] = pose
                 mosh_params['vertices'] = mosh_params['vertices'] @ self.trans["optitrack"]["R"].T + self.trans["optitrack"]["t"]

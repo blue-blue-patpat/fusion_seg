@@ -75,3 +75,15 @@ def kinect_to_world_transform_cpp(root_path, devices:list=["master","sub1","sub2
         R, t = np.load(root_path+"/calib/kinect/{}_to_world.npz".format(dev)).values()
         trans_mat[dev] = np.vstack((np.hstack((R, t.reshape(-1,1))), [0,0,0,1]))
     return trans_mat
+
+
+def to_radar_rectified_trans_mat(root_path):
+    offset_fname = os.path.join(root_path, 'calib_offsets.txt')
+    if os.path.exists(offset_fname):
+        with open(offset_fname, 'r') as f:
+            calib_offset = eval(f.readline())
+        trans_mat = to_radar_transform_mat(root_path)
+        for k, v in calib_offset.items():
+            if k in trans_mat.keys():
+                trans_mat[k]['t'] = v
+        return trans_mat
