@@ -170,6 +170,56 @@ def arbe_loader_callback(msg, args):
 #         sub["args"]["frame_id"] += 1
 #     sub["args"]["dataframe"] = pd.DataFrame(sub['args']['arr'], columns=sub["args"]["column"])
 
+def arbe_demo_callback(msg, args):
+    """
+    ros data stream to dataframe
+
+    :param data: vrpn message
+    :param args: dict(dataframe, name, task_queue)
+    :return: None
+    """
+    st = time.time()
+    # callback may be triggered before __init__ completes. If pool is not started yet, ignore current frame
+    if args.get("pool", None) is None:
+        args["start_tm"] = time.time()
+        return
+
+    queue = args.get('queue')
+    if queue is None:
+        return
+
+    if args["info"]["data"][1] == 0:
+        args["start_tm"] = time.time()
+        print(args["start_tm"])
+        data = np.array(_msg_to_dataframe(msg))
+        args["dt_base"] = args["start_tm"] - float(data[0][-1]) / 1000
+
+    save_path = args.get('save_path', None)
+    
+    # if head is not recorded, save head to file
+    if not args.get("headline", False) and save_path is not None:
+        args["headline"] = True
+        f = open(os.path.join(save_path, "headline.txt"), "w")
+        f.write(",".join([item.name for item in msg.fields]))
+        f.close()
+    
+    # add task
+    if args.get('save_data', ''):
+        file_path = os.path.join(save_path, 'id={}_st={}_dt='.format(args["info"]["data"][1], st))
+        args["pool"].apply_async(arbe_process, (msg, file_path, args["info"]["data"], args["dt_base"]))
+    queue.put(np.array(_msg_to_dataframe(msg)))
+    # print_log("[{}] {} frames captured.".format(
+    #     args['name'], args["info"]["data"][1]), args["log_obj"])
+
+    # update pannel info
+    running_tm = time.time()-args["start_tm"]
+    m = int(np.floor(running_tm/60))
+    s = int(running_tm - m*60)
+    fps = round((args["info"]["data"][1]) / running_tm, 2)
+    args["info"]["data"][1] += 1
+    args["info"]["data"][2] = fps
+    args["info"]["data"][4] = m
+    args["info"]["data"][5] = s
 
 def arbe_loader_after_stop(sub: dict):
     """

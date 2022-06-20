@@ -7,16 +7,17 @@ import pickle
 from multiprocessing import Process
 
 from dataloader.result_loader import ResultFileLoader, PKLLoader
-from visualization.utils import o3d_pcl, o3d_plot, pcl_filter, get_rgb_feature, image_crop, pcl_project
+from visualization.utils import pcl_filter, get_rgb_feature, image_crop, pcl_project
 from nn.p4t.datasets.folder_list import *
 
 class mmWave(Dataset):
-    def __init__(self, driver_path, clip_frames=5, train=True, **kwargs):
+    def __init__(self, driver_path, train=True, **kwargs):
         self.driver_path = driver_path
         self.train = train
         # range of frame index in a clip
         self.clip_step = kwargs.get('clip_step', 1)
-        self.clip_range = clip_frames * self.clip_step
+        self.clip_frames = kwargs.get('clip_frames', 5)
+        self.clip_range = self.clip_frames * self.clip_step
         self.output_dim = kwargs.get('output_dim', 151)
         self.skip_head = kwargs.get('skip_head', 0)
         self.skip_tail = kwargs.get('skip_tail', 0)
@@ -24,7 +25,7 @@ class mmWave(Dataset):
         self.use_pkl = kwargs.get('use_pkl', True)
         self.create_pkl = kwargs.get('create_pkl', True)
         self.enable_sources = kwargs.get('enable_sources',["arbe","arbe_feature","master","kinect_color","mesh","mosh","mesh_param"])
-        self.input_data = kwargs.get('input_data', 'mmWave')
+        self.input_data = self.__class__.__name__
         self.num_points = kwargs.get('num_points', 1024)
         self.feature_type = kwargs.get('feature_type', 'arbe')
         self.features = kwargs.get('features', 3)
@@ -83,13 +84,15 @@ class mmWave(Dataset):
             pickle.dump(data, f)
         print(path, 'Done')
 
-    def pad_data(self, data):
+    def pad_data(self, data, return_choices=False):
         if data.shape[0] > self.num_points:
             r = np.random.choice(data.shape[0], size=self.num_points, replace=False)
         else:
             repeat, residue = self.num_points // data.shape[0], self.num_points % data.shape[0]
             r = np.random.choice(data.shape[0], size=residue, replace=False)
             r = np.concatenate([np.arange(data.shape[0]) for _ in range(repeat)] + [r], axis=0)
+        if return_choices:
+            return data[r, :], r
         return data[r, :]
 
     def global_to_seq_index(self, global_idx: int) -> Tuple[int, int]:
@@ -182,9 +185,9 @@ class mmWave(Dataset):
 
 
 class Depth(mmWave):
-    def __init__(self, driver_path, clip_frames=5, train=True, **kwargs):
+    def __init__(self, driver_path, train=True, **kwargs):
         enable_sources = ["arbe","master","kinect_pcl","kinect_color","mesh","mosh","mesh_param"]
-        super().__init__(driver_path, clip_frames, train, num_points=4096, enable_sources=enable_sources, **kwargs)
+        super().__init__(driver_path, train, num_points=4096, enable_sources=enable_sources, **kwargs)
 
     def init_index_map(self):
         self.index_map = [0,]
@@ -272,14 +275,13 @@ class Depth(mmWave):
 from mosh.utils import mosh_pose_transform
 import cv2
 class mmFusion(mmWave):
-    def __init__(self, driver_path, clip_frames=5, train=True, **kwargs):
+    def __init__(self, driver_path, train=True, **kwargs):
         enable_sources = ['arbe','arbe_feature','master','kinect_pcl','kinect_color','mesh','mosh','mesh_param']
         # create_pkl = False
         create_pkl = True
         if 'create_pkl' not in kwargs.keys():
             kwargs.update({'create_pkl': create_pkl})
-        kwargs.update({'use_pkl': False})
-        super().__init__(driver_path, clip_frames, train, enable_sources=enable_sources, **kwargs)
+        super().__init__(driver_path, train, enable_sources=enable_sources, **kwargs)
 
     def load_data(self, seq_loader, idx):
         if isinstance(seq_loader, list):
@@ -385,8 +387,8 @@ class mmFusion(mmWave):
 from mosh.utils import mosh_pose_transform
 import cv2
 class DepthFusion(mmFusion):
-    def __init__(self, driver_path, clip_frames=5, train=True, **kwargs):
-        super().__init__(driver_path, clip_frames, train, num_points=4096, **kwargs)
+    def __init__(self, driver_path, train=True, **kwargs):
+        super().__init__(driver_path, train, num_points=4096, **kwargs)
         
     def load_data(self, seq_loader, idx):
         if isinstance(seq_loader, list):

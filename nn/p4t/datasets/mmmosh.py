@@ -147,7 +147,7 @@ class MMMosh(Dataset):
 
 class MMMoshPKL(Dataset):
     def __init__(self, root_path, frames_per_clip=5, step_between_clips=1, num_points=1024,
-            train=True, normal_scale = 1, output_dim=151, skip_head=0, skip_tail=0):
+            train=True, normal_scale=1, output_dim=151, skip_head=0, skip_tail=0):
         super(MMMoshPKL, self).__init__()
         self.driver_path = root_path
         # range of frame index in a clip
