@@ -37,7 +37,7 @@ class mmWave(Dataset):
         seq_paths = []
         self.selected_dirs = TRAIN_DIRS if self.train else SELECTED_DIRS[self.test_data]
         for d_path in map(str, self.driver_path.split(',')):
-            seq_paths += [os.path.join(d_path, p) for p in os.listdir(d_path) if p in self.selected_dirs]
+            seq_paths += [os.path.join(d_path, p) for p in self.selected_dirs if p in os.listdir(d_path)]
 
         process_dict = {}
         self.full_data = {}
@@ -277,10 +277,13 @@ import cv2
 class mmFusion(mmWave):
     def __init__(self, driver_path, train=True, **kwargs):
         enable_sources = ['arbe','arbe_feature','master','kinect_pcl','kinect_color','mesh','mosh','mesh_param']
-        # create_pkl = False
-        create_pkl = True
+        create_pkl = False
+        # create_pkl = True
+        use_pkl = False
         if 'create_pkl' not in kwargs.keys():
             kwargs.update({'create_pkl': create_pkl})
+        if 'use_pkl' not in kwargs.keys():
+            kwargs.update({'use_pkl': use_pkl})
         super().__init__(driver_path, train, enable_sources=enable_sources, **kwargs)
 
     def load_data(self, seq_loader, idx):
@@ -318,20 +321,20 @@ class mmFusion(mmWave):
             mesh_pose[:3] -= bbox_center
             
         elif self.feature_type == 'feature_map':
+            arbe_data = self.pad_data(arbe_data)
             # transform pcl coordinate to kinect master
             trans_pcl = (arbe_data - trans_mat['t']) @ trans_mat['R']
             trans_joint = (mesh_joint - trans_mat['t']) @ trans_mat['R']
-            trans, root_orient = mosh_pose_transform(mesh_pose[:3], mesh_pose[3:6], mesh_joint[0], trans_mat)
-            mesh_pose = np.hstack((trans, root_orient.reshape(-1), mesh_pose[6:]))
+            # trans, root_orient = mosh_pose_transform(mesh_pose[:3], mesh_pose[3:6], mesh_joint[0], trans_mat)
+            # mesh_pose = np.hstack((trans, root_orient.reshape(-1), mesh_pose[6:]))
             crop_image, img_left_top, img_right_bottom = image_crop(trans_joint, image)
             img_center = (img_right_bottom - img_left_top)/2
-            trans_pcl = self.pad_data(trans_pcl)
             pcl_2d = pcl_project(trans_pcl)
             pcl_2d = (pcl_2d -  img_left_top - img_center)/img_center
             image = cv2.resize(crop_image/255, (224, 224))
 
-            bbox_center = ((trans_joint.max(axis=0) + trans_joint.min(axis=0))/2)[:3]
-            arbe_data = trans_pcl - bbox_center
+            bbox_center = ((mesh_joint.max(axis=0) + mesh_joint.min(axis=0))/2)[:3]
+            arbe_data = arbe_data - bbox_center
             mesh_pose[:3] -= bbox_center
             data.update({'pcl_2d': pcl_2d})
 
