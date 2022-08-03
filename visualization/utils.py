@@ -467,7 +467,7 @@ class O3DStreamPlot():
         self.view.update_renderer()
 
     def show(self, gen: Generator = None, fps: float=30, save_path: str = ''):
-        print("[O3DStreamPlot] rotate: W(left)/A(up)/S(down)/D(right); resize: L(-)/H(+); pause/resume: space; speed: 1(1x)/2(2x)/4(4x)")
+        # print("[O3DStreamPlot] rotate: W(left)/A(up)/S(down)/D(right); resize: L(-)/H(+); pause/resume: space; speed: 1(1x)/2(2x)/4(4x)")
         
         if gen is None:
             gen = self.generator()

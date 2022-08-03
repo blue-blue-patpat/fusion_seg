@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import pandas as pd
 import pickle
-from pytorch3d.io import load_obj
+import open3d as o3d
 from sklearn.neighbors import KNeighborsClassifier
 from dataloader.utils import file_paths_from_dir, filename_decoder
 from sync.offsets import Offsets, CalibOffsets
@@ -634,7 +634,7 @@ class ResultFileLoader():
                     mesh_param=None,
                 ))
         if "mesh_obj" in self.sources:
-            verts, faces, _ = load_obj(mesh_res["minimal/obj"]["filepath"])
+            verts, faces, _ = o3d.io.read_triangle_mesh(mesh_res["minimal/obj"]["filepath"])
             self.results.update(dict(
                 mesh_obj=(verts, faces[0]),
             ))
@@ -676,7 +676,7 @@ class ResultFileLoader():
                     mesh_param=None,
                 ))
         if "mesh_obj" in self.sources:
-            verts, faces, _ = load_obj(mesh_res["mosh/obj"]["filepath"])
+            verts, faces, _ = o3d.io.read_triangle_mesh(mesh_res["mosh/obj"]["filepath"])
             verts = np.array(verts) @ self.trans["optitrack"]["R"].T + self.trans["optitrack"]["t"]
             self.results.update(dict(
                 mesh_obj=(verts, np.array(faces[0])),

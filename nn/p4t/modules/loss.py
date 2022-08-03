@@ -5,55 +5,6 @@ import cv2
 import os
 import json
 
-from nn.p4t import tools
-
-class Loss():
-    def __init__(self, criterion, weight) -> None:
-        super(Loss).__init__()
-        self.criterion = criterion
-        self.weight = weight
-        self.train_loss = []
-        self.eval_loss = []
-        
-    def _update_loss(self, pred, label, train):
-        if train:
-            self.train_loss.append(self.weight * self.criterion(pred, label))
-        else:
-            self.eval_loss.append(self.weight * self.criterion(pred, label))
-
-class TransLoss(Loss):
-    def __init__(self, criterion, weight, *args) -> None:
-        super(Loss).__init__(criterion, weight)
-
-    def update_loss(self, output, target, train):
-        self._update_loss(output[:,3:-11], target[:,3:-11], train)
-
-class PoseLoss(Loss):
-    def __init__(self, criterion, weight, *args) -> None:
-        super(Loss).__init__(criterion, weight)
-
-    def update_loss(self, output, target, train):
-        output_mat = tools.rotation6d_2_rot_mat(output[:,3:-11])
-        target_mat = tools.rodrigues_2_rot_mat(target[:,3:-11])
-        self._update_loss(output_mat, target_mat, train)
-
-class ShapeLoss(Loss):
-    def __init__(self, criterion, weight, *args) -> None:
-        super(Loss).__init__(criterion, weight)
-
-    def update_loss(self, output, target, train):
-        self._update_loss(output[:,-11:-1], target[:,-11:-1], train)
-
-class VerticesLoss(Loss):
-    def __init__(self, criterion, weight, use_gender) -> None:
-        super(Loss).__init__(criterion, weight)
-        self.use_gender = use_gender
-
-    # def update_loss(self, output, target, train):
-    #     output_mat = tools.rotation6d_2_rot_mat(output[:,3:-11])
-    #     target_mat = tools.rodrigues_2_rot_mat(target[:,3:-11])
-    #     v_loss, j_loss = self.criterion[1](torch.cat((output[:,:3], output_mat, output[:,-11:]), -1), torch.cat((target[:,:3], target_mat, target[:,-11:]), -1), self.use_gender)
-    #     self._update_loss(output[:,-11:-1], target[:,-11:-1], train)
         
 class LossManager():
     def __init__(self) -> None:

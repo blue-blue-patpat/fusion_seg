@@ -1,7 +1,6 @@
 import torch
 import torch.nn.functional as F
 from torch.nn.modules.loss import _Loss
-import os
 from human_body_prior.body_model.body_model import BodyModel
 from human_body_prior.body_model.lbs import lbs
 from mosh.config import SMPLX_MODEL_NEUTRAL_PATH, SMPLX_MODEL_FEMALE_PATH, SMPLX_MODEL_MALE_PATH
