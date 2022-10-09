@@ -7,10 +7,11 @@ import json
 
         
 class LossManager():
-    def __init__(self) -> None:
+    def __init__(self, ding_bot=None) -> None:
         super(LossManager).__init__()
         self.loss_dict = {}
         self.batch_loss = []
+        self.ding_bot = ding_bot
 
     def update_loss(self, name, loss):
         if name not in self.loss_dict:
@@ -26,7 +27,7 @@ class LossManager():
         self.batch_loss.append(total_loss)
         return total_loss
 
-    def calculate_epoch_loss(self, output_path, epoch, ding_bot=None):
+    def calculate_epoch_loss(self, output_path, epoch):
         fig = plt.figure()
         loss_json = os.path.join(output_path, "loss.json")
         if not os.path.isdir(output_path):
@@ -49,9 +50,9 @@ class LossManager():
         img = cv2.cvtColor(np.asarray(fig.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
         plt.close()
         cv2.imwrite(os.path.join(output_path, 'loss.png'), img)
-        if ding_bot:
-            ding_bot.add_md("train_mmbody", "【IMG】 \n ![img]({}) \n 【LOSS】\n epoch={}, loss={}".format(ding_bot.img2b64(img), epoch, total_loss[-1]))
-            ding_bot.enable()
+        if self.ding_bot:
+            self.ding_bot.add_md("train_mmbody", "【IMG】 \n ![img]({}) \n 【LOSS】\n epoch={}, loss={}".format(self.ding_bot.img2b64(img), epoch, total_loss[-1]))
+            self.ding_bot.enable()
         
         self.loss_dict = {}
         self.batch_loss = []

@@ -50,8 +50,9 @@ class CalibOffsets(dict):
         super().__init__(*args, **kwargs)
 
     def to_file(self, file_path: str):
+        
         with open(os.path.join(file_path, "calib_offsets.txt"), "w") as f:
-            f.write(self.__repr__())
+            f.write(self.__repr__().replace('\n', ' '))
 
     @staticmethod
     def from_file(file_path: str):

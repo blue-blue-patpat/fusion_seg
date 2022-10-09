@@ -203,7 +203,7 @@ def run_modify_offset(kwargs):
         calib_offsets = dict([arg.split('=') for arg in input("Set calib offset value in 'key1=[x,y,z]#key2=[x,y,z]' format:").split("#") if '=' in arg])
         for k, v in calib_offsets.items():
             if k in plt.file_loader.trans.keys():
-                plt.file_loader.calib_offsets[k] = [float(i) for i in eval(v)]
+                plt.file_loader.calib_offsets[k]['t'] = [float(i) for i in eval(v)]
         plt.file_loader.rectify_calibration()
 
         cmd = input("Continue[c]\tWrite File and Continue[w]\tWrite and Quit[wq]\tQuit[q]\n")

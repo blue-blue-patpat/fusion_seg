@@ -1,5 +1,5 @@
 import time
-from visualization.utils import O3DStreamPlot, o3d_coord, o3d_mesh, o3d_pcl, o3d_plot, o3d_skeleton, pcl_filter
+from visualization.utils import O3DStreamPlot, o3d_coord, o3d_mesh, o3d_pcl, o3d_plot, o3d_lines, pcl_filter
 import numpy as np
 import open3d as o3d
 from dataloader.result_loader import KinectResultLoader, ArbeResultLoader, OptitrackResultLoader, ResultFileLoader
@@ -39,7 +39,7 @@ class KinectArbeStreamPlot(O3DStreamPlot):
 
     def init_updater(self):
         self.plot_funcs = dict(
-            kinect_skeleton=o3d_skeleton,
+            kinect_skeleton=o3d_lines,
             kinect_pcl=o3d_pcl,
             arbe_pcls=o3d_pcl,
         )
@@ -257,7 +257,7 @@ class OptitrackArbeStreamPlot(O3DStreamPlot):
 
     def init_updater(self):
         self.plot_funcs = dict(
-            opti_marker=o3d_skeleton,
+            opti_marker=o3d_lines,
             # opti_bone=o3d_pcl,
             arbe_pcls=o3d_pcl)
 
@@ -334,8 +334,8 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
     def init_updater(self):
         self.plot_funcs = dict(
             mesh=o3d_mesh,
-            optitrack=o3d_skeleton,
-            kinect_skeleton=o3d_skeleton,
+            optitrack=o3d_lines,
+            kinect_skeleton=o3d_lines,
             kinect_pcl=o3d_pcl,
             arbe=o3d_pcl)
 
@@ -423,8 +423,8 @@ class NNPredLabelStreamPlot(O3DStreamPlot):
     def init_updater(self):
         self.plot_funcs = dict(
             arbe_pcl=o3d_pcl,
-            pred=o3d_skeleton,
-            label=o3d_skeleton)
+            pred=o3d_lines,
+            label=o3d_lines)
 
     def init_show(self):
         super().init_show()

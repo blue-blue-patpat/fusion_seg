@@ -2,11 +2,11 @@ import time
 from typing import Generator, Tuple
 import numpy as np
 import cv2
-from pytorch3d.io.obj_io import load_obj
+import open3d as o3d
 from vctoolkit import Timer
 
 from dataloader.result_loader import ResultFileLoader
-from visualization.utils import O3DStreamPlot, o3d_coord, o3d_mesh, o3d_pcl, o3d_plot, o3d_skeleton, o3d_smpl_mesh, pcl_filter
+from visualization.utils import O3DStreamPlot, o3d_coord, o3d_mesh, o3d_pcl, o3d_plot, o3d_lines, o3d_smpl_mesh, pcl_filter
 
 
 class MinimalStreamPlot(O3DStreamPlot):
@@ -19,7 +19,7 @@ class MinimalStreamPlot(O3DStreamPlot):
             pcl=o3d_pcl,
             kpts=o3d_pcl,
             opti=o3d_pcl,
-            skel=o3d_skeleton,
+            skel=o3d_lines,
         )
 
     def init_show(self):
@@ -39,8 +39,8 @@ class MinimalInputStreamPlot(O3DStreamPlot):
 
     def init_updater(self):
         self.plot_funcs = dict(
-            opti_skeleton=o3d_skeleton,
-            kinect_skeleton=o3d_skeleton,
+            opti_skeleton=o3d_lines,
+            kinect_skeleton=o3d_lines,
             pcl=o3d_pcl,
         )
 
@@ -199,10 +199,8 @@ class MinimalResultStreamPlot(O3DStreamPlot):
         for i in range(len(self.file_loader)):
             frame, info = self.file_loader[i]
             vertices = frame["mesh_param"]["vertices"]
-            faces = None
             if init_faces:
-                _v, faces, _t = load_obj(self.file_loader.mesh_loader.file_dict["minimal/obj"].iloc[0]["filepath"])
-                faces = faces[0]
+                mesh = o3d.io.read_triangle_mesh(self.file_loader.mesh_loader.file_dict["minimal/obj"].iloc[0]["filepath"])
                 init_faces = False
             print(1/self.timer.tic())
             
@@ -210,7 +208,7 @@ class MinimalResultStreamPlot(O3DStreamPlot):
                 self.img=frame["master_color"]
             
             yield dict(
-                mesh=dict(mesh=(vertices, faces)),
+                mesh=dict(mesh=mesh),
                 # kpts=dict(skeleton=frame["optitrack"], lines=marker_lines, color=[1,0,0]),
                 pcl=dict(pcl=pcl_filter(vertices, frame["master_pcl"])),
             )
@@ -340,7 +338,7 @@ class MoshEvaluateStreamPlot(O3DStreamPlot):
 
             save_path = MoshEvaluateStreamPlot.save_path
 
-            o3d.io.write_triangle_mesh(os.path.join(save_path, "radar_pcl{}.ply".format(self.idx)), MoshEvaluateStreamPlot.updater_dict["radar_pcl"].update_item)
+            o3d.io.write_triangle_mesh(os.path.join(save_path, "radar_pcl{}.ply".format(self.idx)), MoshEvaluateStreamPlot.updater_dict["radar_mesh"].update_item)
             o3d.io.write_triangle_mesh(os.path.join(save_path, "pred_smpl{}.ply".format(self.idx)), MoshEvaluateStreamPlot.updater_dict["pred_smpl"].update_item)
             o3d.io.write_triangle_mesh(os.path.join(save_path, "label_smpl{}.ply".format(self.idx)), MoshEvaluateStreamPlot.updater_dict["label_smpl"].update_item)
             self.idx += 1
@@ -356,10 +354,10 @@ class MoshEvaluateStreamPlot(O3DStreamPlot):
 
     def init_show(self):
         super().init_show()
-        self.ctr.set_up(np.array([[0],[0],[1]]))
-        self.ctr.set_front(np.array([[0],[-1],[0]]))
-        self.ctr.set_lookat(np.array([0,0,0]))
-        self.ctr.set_zoom(0.72)
+        self.ctr.set_up(np.array([[0], [-1], [0]]))
+        self.ctr.set_front(np.array([[0], [0], [-1]]))
+        self.ctr.set_lookat(np.array([0, 0, 0]))
+        self.ctr.set_zoom(1)
 
 
 def pcl2sphere(pcl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:

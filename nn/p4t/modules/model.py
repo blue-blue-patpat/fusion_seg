@@ -132,6 +132,7 @@ class FeatureMapFusion(P4Transformer):
 
         resnet = resnet18(pretrained=True)
         modules = list(resnet.children())[:-2]
+        # modules.append(nn.Conv2d(512, features, (1, 1)))
         self.resnet = torch.nn.Sequential(*modules)
         self.features = features
 
@@ -141,8 +142,8 @@ class FeatureMapFusion(P4Transformer):
         
         feature_map = self.resnet(input['img'].reshape(batch_size*clip_len, 224, 224, 3).permute(0, 3, 1, 2))
         rgb_features = torch.nn.functional.grid_sample(feature_map, input['pcl_2d'][:,:,:,(1,0)].reshape(batch_size*clip_len, num_points, 1, 2), align_corners=False)
-        rgb_features = rgb_features.reshape(batch_size, clip_len, self.features, num_points).permute(0, 1, 3, 2)
-        xyzs, features = self.tube_embedding(input['pcl'][:,:,:,:3], torch.cat((input['pcl'][:,:,:,3:], rgb_features), -1).permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
+        rgb_features = rgb_features.reshape(batch_size, clip_len, self.features, num_points)
+        xyzs, features = self.tube_embedding(input['pcl'][:,:,:,:3], rgb_features)                                             # [B, L, n, 3], [B, L, C, n] 
 
         xyzts = []
         xyzs = torch.split(tensor=xyzs, split_size_or_sections=1, dim=1)

@@ -75,7 +75,7 @@ LR_DECAY_STEPS = [int(x) for x in ARGS.lr_decay_steps.split(',')]
 LR_DECAY_RATES = [float(x) for x in ARGS.lr_decay_rates.split(',')]
 assert(len(LR_DECAY_STEPS)==len(LR_DECAY_RATES))
 OUTPUT_DIR = ARGS.output_dir
-LOG_DIR = os.path.join(OUTPUT_DIR, 'log')
+LOG_DIR = os.path.join(OUTPUT_DIR, 'log') #连接两个或更多的路径名组件
 DUMP_DIR = os.path.join(OUTPUT_DIR, 'dump')
 CHECKPOINT_PATH = os.path.join(OUTPUT_DIR, 'checkpoint.tar')
 
@@ -88,7 +88,7 @@ if os.path.exists(LOG_DIR) and ARGS.overwrite:
         exit()
     elif c == 'y' or c == 'Y':
         print('Overwrite the files in the log and dump folers...')
-        os.system('rm -r %s %s'%(LOG_DIR, DUMP_DIR))
+        os.system('rm -r %s %s'%(LOG_DIR, DUMP_DIR)) #在子shell中执行命令
 
 if not os.path.exists(LOG_DIR):
     os.mkdir(LOG_DIR)
@@ -97,13 +97,13 @@ LOG_FOUT = open(os.path.join(LOG_DIR, 'log_train.txt'), 'a')
 LOG_FOUT.write(str(ARGS)+'\n')
 def log_string(out_str):
     LOG_FOUT.write(out_str+'\n')
-    LOG_FOUT.flush()
+    LOG_FOUT.flush() # 清空缓冲区
     print(out_str)
 if not os.path.exists(DUMP_DIR): os.mkdir(DUMP_DIR)
 
 # Init datasets and dataloaders 
 def my_worker_init_fn(worker_id):
-    np.random.seed(np.random.get_state()[1][0] + worker_id)
+    np.random.seed(np.random.get_state()[1][0] + worker_id) #防止不同的工人出现随机值相同的情况
 
 # Create Dataset and Dataloader
 if ARGS.dataset == 'mmDetection':
@@ -121,14 +121,14 @@ else:
 
 train_size = int(0.9 * len(DATASET))
 eval_size = len(DATASET) - train_size
-dataset_train, dataset_eval = torch.utils.data.random_split(DATASET, [train_size, eval_size])
+dataset_train, dataset_eval = torch.utils.data.random_split(DATASET, [train_size, eval_size]) #随机划分数据集
 
 if ARGS.train:
     TRAIN_DATALOADER = DataLoader(dataset_train, batch_size=BATCH_SIZE,
         shuffle=True, num_workers=30, worker_init_fn=my_worker_init_fn)
     EVAL_DATALOADER = DataLoader(dataset_eval, batch_size=BATCH_SIZE,
         shuffle=True, num_workers=30, worker_init_fn=my_worker_init_fn)
-    print(len(TRAIN_DATALOADER), len(EVAL_DATALOADER))
+    print("##", len(TRAIN_DATALOADER), len(EVAL_DATALOADER))
 else:
     EVAL_DATALOADER = DataLoader(DATASET, batch_size=BATCH_SIZE,
         shuffle=False, num_workers=30, worker_init_fn=my_worker_init_fn)
@@ -136,7 +136,7 @@ else:
 # Init the model and optimzier
 MODEL = importlib.import_module(ARGS.model) # import network module
 # torch.cuda.set_device(ARGS.device)
-device = torch.device('cuda')
+device = torch.device('cuda') #分配到哪块GPU/CPU上
 
 Detector = MODEL.VoteNet
 
@@ -154,17 +154,17 @@ net = Detector(num_class=DATASET_CONFIG.num_class,
 #     # dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
 #     net = nn.DataParallel(net)
 
-net.to(device)
+net.to(device) #指定GPU/CPU
 criterion = MODEL.get_loss
 
 # Load the Adam optimizer
-optimizer = optim.Adam(net.parameters(), lr=BASE_LEARNING_RATE, weight_decay=ARGS.weight_decay)
+optimizer = optim.Adam(net.parameters(), lr=BASE_LEARNING_RATE, weight_decay=ARGS.weight_decay) #参数输入并优化
 
 # Load checkpoint if there is any
 it = -1 # for the initialize value of `LambdaLR` and `BNMomentumScheduler`
 start_epoch = 0
 if CHECKPOINT_PATH is not None and os.path.isfile(CHECKPOINT_PATH):
-    checkpoint = torch.load(CHECKPOINT_PATH)
+    checkpoint = torch.load(CHECKPOINT_PATH) # 加载用torch.save()保存的对象
     net.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     start_epoch = checkpoint['epoch']
@@ -174,8 +174,8 @@ if CHECKPOINT_PATH is not None and os.path.isfile(CHECKPOINT_PATH):
 # note: pytorch's BN momentum (default 0.1)= 1 - tensorflow's BN momentum
 BN_MOMENTUM_INIT = 0.5
 BN_MOMENTUM_MAX = 0.001
-bn_lbmd = lambda it: max(BN_MOMENTUM_INIT * BN_DECAY_RATE**(int(it / BN_DECAY_STEP)), BN_MOMENTUM_MAX)
-bnm_scheduler = BNMomentumScheduler(net, bn_lambda=bn_lbmd, last_epoch=start_epoch-1)
+bn_lbmd = lambda it: max(BN_MOMENTUM_INIT * BN_DECAY_RATE**(int(it / BN_DECAY_STEP)), BN_MOMENTUM_MAX) # ?
+bnm_scheduler = BNMomentumScheduler(net, bn_lambda=bn_lbmd, last_epoch=start_epoch-1) # ?
 
 def get_current_lr(epoch):
     lr = BASE_LEARNING_RATE
@@ -253,7 +253,7 @@ def evaluate_one_epoch():
         # Forward pass
         inputs = {'point_clouds': batch_data_label['point_clouds']}
         with torch.no_grad():
-            end_points = net(inputs)
+            end_points = net(inputs)  #聚类
 
         # Compute loss
         for key in batch_data_label:

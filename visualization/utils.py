@@ -3,7 +3,6 @@ from typing import Callable, Dict, Generator, Iterable, Union, overload
 import numba as nb
 import numpy as np
 import open3d as o3d
-from pytorch3d.structures import Meshes
 import torch
 
 
@@ -85,7 +84,7 @@ def o3d_box(upper_bounds: np.ndarray = None, lower_bounds: np.ndarray = None, co
     return _box
 
 
-def o3d_skeleton(skeleton: np.ndarray = None, lines: np.ndarray = None,
+def o3d_lines(skeleton: np.ndarray = None, lines: np.ndarray = None,
                  color: list = [1,0,0], colors: list = None,
                  last_update = None):
     _lines = last_update
@@ -102,25 +101,25 @@ def o3d_skeleton(skeleton: np.ndarray = None, lines: np.ndarray = None,
     return _lines
 
 
-@overload
-def o3d_mesh(mesh: Meshes, color: list, last_update: None): ...
+# @overload
+# def o3d_mesh(mesh: Meshes, color: list, last_update: None): ...
 
 
 @overload
 def o3d_mesh(mesh: Iterable, color: list, last_update: None): ...
 
 
-def o3d_mesh(mesh: Union[Meshes, Iterable] = None, color: list = None,
+def o3d_mesh(mesh: Union[Iterable, o3d.geometry.TriangleMesh] = None, color: list = None,
              last_update = None):
     _mesh = last_update
     if _mesh is None:
         _mesh = o3d.geometry.TriangleMesh()
 
     if mesh is not None:
-        if isinstance(mesh, Meshes):
-            _mesh.vertices = o3d.utility.Vector3dVector(mesh.verts_packed().cpu())
-            _mesh.triangles = o3d.utility.Vector3iVector(mesh.faces_packed().cpu())
-        elif isinstance(mesh, o3d.geometry.TriangleMesh):
+        # if isinstance(mesh, Meshes):
+        #     _mesh.vertices = o3d.utility.Vector3dVector(mesh.verts_packed().cpu())
+        #     _mesh.triangles = o3d.utility.Vector3iVector(mesh.faces_packed().cpu())
+        if isinstance(mesh, o3d.geometry.TriangleMesh):
             _mesh.vertices = mesh.vertices
             _mesh.triangles = mesh.triangles
         else:
@@ -424,7 +423,7 @@ class O3DStreamPlot():
         self.init_key_cbk()
 
     def init_updater(self):
-        self.plot_funcs = dict(exampel_pcl=o3d_pcl, example_skeleton=o3d_skeleton, example_mesh=o3d_mesh)
+        self.plot_funcs = dict(exampel_pcl=o3d_pcl, example_skeleton=o3d_lines, example_mesh=o3d_mesh)
         raise RuntimeError("'O3DStreamPlot.init_updater' method should be overriden")
 
     def init_plot(self):

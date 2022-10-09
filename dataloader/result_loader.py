@@ -271,6 +271,35 @@ class PKLLoader(ResultLoader):
         return min([len(v) for v in self.file_dict.values()]) - self.skip_head - self.skip_tail
 
 
+class SequenceLoader(object):
+    def __init__(self, seq_path:str, skip_head=0, skip_tail=0, enabled_sources=None) -> None:
+        self.seq_path = seq_path
+        self.skip_head = skip_head
+        self.skip_tail = skip_tail
+        if enabled_sources is None:
+            self.sources = ["radar", "image", "mesh"]
+        else:
+            self.sources = enabled_sources
+        # load transformation matrix
+        with open(os.path.join(seq_path, 'calib.txt')) as f:
+            self.calib = eval(f.readline())
+
+    def __len__(self):
+        return len(os.listdir(os.path.join(self.seq_path, 'radar'))) - self.skip_head - self.skip_tail
+
+    def __getitem__(self, idx:int):
+        result = {}
+        if 'radar' in self.sources:
+            result['radar'] = np.load(os.path.join(self.seq_path, 'radar', 'frame_{}.npy'.format(idx + self.skip_head)))
+        if 'image' in self.sources:
+            result['image'] = cv2.imread(os.path.join(self.seq_path, 'image', 'frame_{}.png'.format(idx + self.skip_head)))
+        if 'depth' in self.sources:
+            result['depth'] = cv2.imread(os.path.join(self.seq_path, 'depth', 'frame_{}.png'.format(idx + self.skip_head)))
+        if 'mesh' in self.sources:
+            result['mesh'] = np.load(os.path.join(self.seq_path, 'mesh', 'frame_{}.npz'.format(idx + self.skip_head)))
+        return result
+
+
 class ResultFileLoader():
     """
     Load files from sources
@@ -346,15 +375,15 @@ class ResultFileLoader():
             # Init empty offsets
             self.sync_offsets = Offsets(dict(zip(self.sources, [0]*len(self.sources))), base=self.sources[0])
 
+        # rectify calib
         if CalibOffsets.verify_file(root_path):
             # Init from file
             self.calib_offsets = CalibOffsets.from_file(root_path)
         else:
             self.calib_offsets = CalibOffsets()
             for k, v in self.trans.items():
-                self.calib_offsets.update({k:list(v['t'])})
+                self.calib_offsets.update({k:{'R':v['R'].tolist(), 't':v['t'].tolist()}})
         
-        # rectify calib
         self.rectify_calibration()
             
         # triggered by source reindex
@@ -513,7 +542,7 @@ class ResultFileLoader():
     def rectify_calibration(self):
         for k, v in self.calib_offsets.items():
             if k in self.trans.keys():
-                self.trans[k]['t'] = v
+                self.trans[k] = {'R':np.array(v['R']), 't':np.array(v['t'])}
     
     def select_radar_item_by_id(self, r_loader: ArbeResultLoader, idx: int) -> dict:
         if "reindex" in self.sources:
@@ -596,6 +625,11 @@ class ResultFileLoader():
             self.results.update({
                 "{}_color".format(k_loader.device): cv2.imread(res["kinect/{}/color".format(k_loader.device)]["filepath"]),
             })
+            
+        if "kinect_depth" in self.sources:
+            self.results.update({
+                "{}_depth".format(k_loader.device): cv2.imread(res["kinect/{}/depth".format(k_loader.device)]["filepath"]),
+            })
 
     def select_trans_optitrack_item_by_t(self, o_loader: OptitrackResultLoader, t: float) -> None:
         """
@@ -634,9 +668,10 @@ class ResultFileLoader():
                     mesh_param=None,
                 ))
         if "mesh_obj" in self.sources:
-            verts, faces, _ = o3d.io.read_triangle_mesh(mesh_res["minimal/obj"]["filepath"])
+            mesh = o3d.io.read_triangle_mesh(mesh_res["minimal/obj"]["filepath"])
+            verts, faces = np.asarray(mesh.vertices), np.asarray(mesh.triangles)
             self.results.update(dict(
-                mesh_obj=(verts, faces[0]),
+                mesh_obj=(verts, faces),
             ))
             self.info.update(dict(
                 mesh_obj=mesh_res["minimal/obj"]
@@ -676,10 +711,11 @@ class ResultFileLoader():
                     mesh_param=None,
                 ))
         if "mesh_obj" in self.sources:
-            verts, faces, _ = o3d.io.read_triangle_mesh(mesh_res["mosh/obj"]["filepath"])
-            verts = np.array(verts) @ self.trans["optitrack"]["R"].T + self.trans["optitrack"]["t"]
+            mesh = o3d.io.read_triangle_mesh(mesh_res["mosh/obj"]["filepath"])
+            verts, faces = np.asarray(mesh.vertices), np.asarray(mesh.triangles)
+            verts = verts @ self.trans["optitrack"]["R"].T + self.trans["optitrack"]["t"]
             self.results.update(dict(
-                mesh_obj=(verts, np.array(faces[0])),
+                mesh_obj=(verts, faces),
             ))
             self.info.update(dict(
                 mesh_obj=mesh_res["mosh/obj"]

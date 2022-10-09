@@ -16,7 +16,7 @@ from nn.p4t.modules.geodesic_loss import GeodesicLoss
 from nn.p4t.scheduler import WarmupMultiStepLR
 import nn.p4t.datasets.mm_dataset as Datasets
 from nn.SMPL.mosh_loss import MoshLoss, SMPLXModel
-import nn.p4t.modules.model as Models
+import nn.DeepFusion.modules.deepfusion as Models
 from message.dingtalk import TimerBot
 from visualization.mesh_plot import MoshEvaluateStreamPlot
 from nn.p4t.modules.loss import LossManager
@@ -31,17 +31,17 @@ def train_one_epoch(args, model, losses, criterions, loss_weight, optimizer, lr_
 
     header = 'Epoch: [{}]'.format(epoch)
 
-    for input, target, _ in metric_logger.log_every(data_loader, args.print_freq, header):
+    for input, target in metric_logger.log_every(data_loader, args.print_freq, header):
         start_time = time.time()
         if isinstance(input, dict):
             for k, v in input.items():
-                input[k] = v.to(device)
+                input[k] = v.to(device, dtype=torch.float32)
             clip = input['pcl']
         else:
-            input = input.to(device)
+            input = input.to(device, dtype=torch.float32)
             clip = input
-        target = target.to(device)
-        output = model(input)
+        target = target.to(device, dtype=torch.float32)
+        output = model(input, True)
         batch_size = clip.shape[0]
         # translation loss
         losses.update_loss("trans_loss", loss_weight[0]*criterions["mse"](output[:,0:3], target[:,0:3]))
@@ -87,21 +87,17 @@ def evaluate(args, model, losses, criterions, data_loader, device, save_path='')
     colors = dict(mmWave=[179, 230, 213],Depth=[208, 163, 230],RGBD=[229, 195, 161],RGB=[159, 175, 216])
     frames = 0
 
-    # if use_gender:
-    #     body_model_male = BodyModel(bm_fname=SMPLX_MODEL_MALE_PATH, num_betas=16, num_expressions=0)
-    #     body_model_female = BodyModel(bm_fname=SMPLX_MODEL_FEMALE_PATH, num_betas=16, num_expressions=0)
-    # else:
     body_model = SMPLXModel(bm_fname=SMPLX_MODEL_NEUTRAL_PATH, num_betas=16, num_expressions=0, device=device)
     with torch.no_grad():
-        for input, target, _ in metric_logger.log_every(data_loader, 100, header):
+        for input, target in metric_logger.log_every(data_loader, 100, header):
             if isinstance(input, dict):
                 for k, v in input.items():
-                    input[k] = v.to(device, non_blocking=True)
+                    input[k] = v.to(device, non_blocking=True, dtype=torch.float32)
                 clip = input['pcl']
             else:
-                input = input.to(device, non_blocking=True)
+                input = input.to(device, non_blocking=True, dtype=torch.float32)
                 clip = input
-            target = target.to(device, non_blocking=True)
+            target = target.to(device, non_blocking=True, dtype=torch.float32)
             output = model(input)
             # translation loss
             losses.update_loss("trans_loss", criterions["mse"](output[:,0:3], target[:,0:3]))
@@ -142,19 +138,21 @@ def evaluate(args, model, losses, criterions, data_loader, device, save_path='')
                 pred_mesh = body_model(output[:,:3], output[:,3:-16], output[:,-16:])
                 label_mesh = body_model(target[:,:3], target[:,3:-16], target[:,-16:])
                 for b, batch in enumerate(clip):
-                    data_frame = batch[-1][:,:3]
+                    data_frame = batch[:,:3]
                     # shape_error = criterions["mse"](output[b,-16], target[b,-16])
                     yield dict(
-                        radar_pcl = dict(
-                            pcl = data_frame,
-                            # mesh = pcl2sphere(data_frame),
-                            color = [0,0.8,0] if args.input_data == 'mmWave' else np.asarray([255, 181, 74]) / 255,
+                        # radar_pcl = dict(
+                            # pcl = data_frame,
+                        radar_mesh = dict(
+                            mesh = pcl2sphere(data_frame),
+                            # color = [0,0.8,0] if args.input_data == 'mmWave' else np.asarray([255, 181, 74]) / 255,
+                            color = [0,0.8,0],
                         ),
-                        pred_smpl = dict(
-                            mesh = [c2c(pred_mesh['verts'][b]), c2c(pred_mesh['faces'])],
-                            # color = np.asarray(colors[input_data]) /255
-                            color = np.asarray([179, 230, 213]) /255
-                        ),
+                        # pred_smpl = dict(
+                        #     mesh = [c2c(pred_mesh['verts'][b]), c2c(pred_mesh['faces'])],
+                        #     # color = np.asarray(colors[input_data]) /255
+                        #     color = np.asarray([208, 163, 230]) /255,
+                        # ),
                         label_smpl = dict(
                             mesh = [c2c(label_mesh['verts'][b]), c2c(label_mesh['faces'])],
                             color = np.asarray([235, 189, 191]) / 255,
@@ -211,11 +209,11 @@ def main(args):
     device = torch.device('cuda')
     
     seq_idxes = eval(args.seq_idxes) if args.seq_idxes else range(20)
+
     # Data loading code
     Dataset = getattr(Datasets, args.input_data)
     dataset = Dataset(
             data_path=args.data_path,
-            clip_frames=args.clip_len,
             skip_head=args.skip_head,
             train=args.train,
             feature_type=args.feature_type,
@@ -238,11 +236,9 @@ def main(args):
     print("Creating model")
     Model = getattr(Models, args.model)
     features = dataset.features
-    model = Model(features=features, radius=args.radius, nsamples=args.nsamples, spatial_stride=args.spatial_stride,
-                  temporal_kernel_size=args.temporal_kernel_size, temporal_stride=args.temporal_stride,
-                  emb_relu=args.emb_relu,
+    model = Model(npoint=args.npoint, radius=args.radius, nsample=args.nsample,
                   dim=args.dim, depth=args.depth, heads=args.heads, dim_head=args.dim_head,
-                  mlp_dim=args.mlp_dim, output_dim=args.output_dim)
+                  mlp_dim=args.mlp_dim, output_dim=args.output_dim, features=features)
 
     # if torch.cuda.device_count() > 1:
     #     model = nn.DataParallel(model)
@@ -311,18 +307,21 @@ def main(args):
         save_path = os.path.join(output_dir, "test", args.test_data)
         gen = evaluate(args, model, losses, criterions, data_loader_test, device, save_path)
         plot = MoshEvaluateStreamPlot()
-        plot.show(gen, fps=30)
+        if args.save_snapshot:
+            snapshot_path = os.path.join(args.output_dir, 'snapshot', args.test_data)
+            plot.show(gen, fps=30, save_path=snapshot_path)
+        else:
+            plot.show(gen, fps=30)
 
 def parse_args():
     import argparse
-    parser = argparse.ArgumentParser(description='P4Transformer Model Training')
+    parser = argparse.ArgumentParser(description='DeepFusion Model Training')
 
-    parser.add_argument('--data_path', default='/home/nesc525/drivers/1,/home/nesc525/drivers/2,/home/nesc525/drivers/3', type=str, help='dataset')
+    parser.add_argument('--data_path', default='/home/nesc525/drivers/6/dataset', type=str, help='dataset')
     parser.add_argument("--seq_idxes", type=str, default='') 
     parser.add_argument('--seed', default=35, type=int, help='random seed')
-    parser.add_argument('--model', default='P4Transformer', type=str, help='model')
+    parser.add_argument('--model', default='DeepFusion', type=str, help='model')
     # input
-    parser.add_argument('--clip_len', default=5, type=int, help='number of frames per clip')
     parser.add_argument('--num_points', default=1024, type=int, help='number of points per frame')
     parser.add_argument('--normal_scale', default=1, type=int, help='normal scale of labels')
     parser.add_argument('--skip_head', default=0, type=int, help='number of skip frames')
@@ -335,10 +334,8 @@ def parse_args():
     parser.add_argument('--test_data', default="lab1", type=str, help='type of test data, test, rain, smoke, night, occlusion, confusion')
     # P4D
     parser.add_argument('--radius', default=0.7, type=float, help='radius for the ball query')
-    parser.add_argument('--nsamples', default=32, type=int, help='number of neighbors for the ball query')
-    parser.add_argument('--spatial_stride', default=32, type=int, help='spatial subsampling rate')
-    parser.add_argument('--temporal_kernel_size', default=3, type=int, help='temporal kernel size')
-    parser.add_argument('--temporal_stride', default=1, type=int, help='temporal stride')
+    parser.add_argument('--nsample', default=32, type=int, help='number of neighbors for the ball query')
+    parser.add_argument('--npoint', default=49, type=int, help='number of points for FPS')
     # embedding
     parser.add_argument('--emb_relu', default=False, action='store_true')
     # transformer
@@ -349,8 +346,8 @@ def parse_args():
     parser.add_argument('--mlp_dim', default=2048, type=int, help='transformer mlp dim')
     # training
     parser.add_argument('-b', '--batch_size', default=32, type=int)
-    parser.add_argument('--epochs', default=350, type=int, metavar='N', help='number of total epochs to run')
-    parser.add_argument('-j', '--workers', default=4, type=int, metavar='N', help='number of data loading workers (default: 16)')
+    parser.add_argument('--epochs', default=50, type=int, metavar='N', help='number of total epochs to run')
+    parser.add_argument('-j', '--workers', default=10, type=int, metavar='N', help='number of data loading workers (default: 16)')
     parser.add_argument('--lr', default=0.001, type=float, help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')
     parser.add_argument('--wd', '--weight_decay', default=1e-4, type=float, metavar='W', help='weight decay (default: 1e-4)', dest='weight_decay')
@@ -371,6 +368,7 @@ def parse_args():
     parser.add_argument('--visual', dest="visual", action="store_true", help='visual')
     parser.add_argument('--create_pkl', dest="create_pkl", action="store_true", help='create pkl data')
     parser.add_argument('--use_pkl', dest="use_pkl", action="store_true", help='use pkl data')
+    parser.add_argument('--save_snapshot', dest="save_snapshot", action="store_true", help='save snapshot')
 
     args = parser.parse_args()
 
