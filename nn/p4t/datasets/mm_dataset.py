@@ -318,7 +318,7 @@ class mmFusion(mmWave):
         data = {}
         if self.feature_type == 'image_feature':
             trans_joint = (mesh_joint - trans_mat['t']) @ trans_mat['R']
-            crop_image = image_crop(trans_joint, image)[0]
+            crop_image = crop_image(trans_joint, image)[0]
             image = cv2.resize(crop_image/255, (224, 224))
 
             bbox_center = ((mesh_joint.max(axis=0) + mesh_joint.min(axis=0))/2)[:3]
@@ -332,7 +332,7 @@ class mmFusion(mmWave):
             trans_joint = (mesh_joint - trans_mat['t']) @ trans_mat['R']
             # trans, root_orient = mosh_pose_transform(mesh_pose[:3], mesh_pose[3:6], mesh_joint[0], trans_mat)
             # mesh_pose = np.hstack((trans, root_orient.reshape(-1), mesh_pose[6:]))
-            crop_image, img_left_top, img_right_bottom = image_crop(trans_joint, image)
+            crop_image, img_left_top, img_right_bottom = crop_image(trans_joint, image)
             img_center = (img_right_bottom - img_left_top)/2
             pcl_2d = pcl_project(trans_pcl)
             pcl_2d = (pcl_2d -  img_left_top - img_center)/img_center
@@ -422,7 +422,7 @@ class DepthFusion(mmFusion):
                 
         if self.feature_type == 'image_feature':
             trans_joint = (mesh_joint - trans_mat['t']) @ trans_mat['R']
-            crop_image = image_crop(trans_joint, image)[0]
+            crop_image = crop_image(trans_joint, image)[0]
             image = cv2.resize(crop_image/255, (224, 224))
 
             bbox_center = ((mesh_joint.max(axis=0) + mesh_joint.min(axis=0))/2)[:3]
@@ -435,7 +435,7 @@ class DepthFusion(mmFusion):
             trans_joint = (mesh_joint - trans_mat['t']) @ trans_mat['R']
             trans, root_orient = mosh_pose_transform(mesh_pose[:3], mesh_pose[3:6], mesh_joint[0], trans_mat)
             mesh_pose = np.hstack((trans, root_orient.reshape(-1), mesh_pose[6:]))
-            crop_image = image_crop(trans_joint, image)[0]
+            crop_image = crop_image(trans_joint, image)[0]
             image = cv2.resize(crop_image/255, (224, 224))
 
             bbox_center = ((trans_joint.max(axis=0) + trans_joint.min(axis=0))/2)[:3]

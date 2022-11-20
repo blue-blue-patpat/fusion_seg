@@ -4,6 +4,7 @@ import numba as nb
 import numpy as np
 import open3d as o3d
 import torch
+from kinect.config import *
 
 
 def o3d_plot(o3d_items: list, title="", show_coord=True, **kwargs):
@@ -283,30 +284,46 @@ def get_image_feature(img):
 
     return output.numpy()
 
-def image_crop(skeleton, image, playback=None, visual=False):
-    skel_max = skeleton.max(axis=0) + 0.2
-    skel_min = skeleton.min(axis=0) - 0.2
+def image_crop(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, visual:bool=False, margin:float=0.2, square:bool=False, cam=MAS):
+    """
+    Crop the person area of image
+    """
+    # transform the joints to camera coordinate
+    if trans_mat is not None:
+        joints = (joints - trans_mat['t']) @ trans_mat['R']
+    joint_max = joints.max(axis=0) + margin
+    joint_min = joints.min(axis=0) - margin
+    # get 3d bounding box from joints
     box_3d = [
-    [skel_min[0], skel_min[1], skel_min[2]],
-    [skel_min[0], skel_min[1], skel_max[2]],
-    [skel_min[0], skel_max[1], skel_max[2]],
-    [skel_min[0], skel_max[1], skel_min[2]],
-    [skel_max[0], skel_max[1], skel_max[2]],
-    [skel_max[0], skel_min[1], skel_max[2]],
-    [skel_max[0], skel_max[1], skel_min[2]],
-    [skel_max[0], skel_min[1], skel_min[2]],
+        [joint_min[0], joint_min[1], joint_min[2]],
+        [joint_min[0], joint_min[1], joint_max[2]],
+        [joint_min[0], joint_max[1], joint_max[2]],
+        [joint_min[0], joint_max[1], joint_min[2]],
+        [joint_max[0], joint_max[1], joint_max[2]],
+        [joint_max[0], joint_min[1], joint_max[2]],
+        [joint_max[0], joint_max[1], joint_min[2]],
+        [joint_max[0], joint_min[1], joint_min[2]],
     ]
     box_2d = []
-
+    # project 3d bounding box to 2d image plane
     for p in box_3d:
-        if playback is not None:
-            box_2d.append(playback.calibration.convert_3d_to_2d(p, CalibrationType.COLOR))
-        else:
-            box_2d.append((INTRINSIC[MAS] @ p/p[2])[:2])
+        box_2d.append((INTRINSIC[cam] @ p/p[2])[:2])
     box_2d = np.floor(box_2d).astype(int)
-    box_2d[:,[0,1]] = box_2d[:,[1,0]]
+    box_2d[:, [0, 1]] = box_2d[:, [1, 0]]
     box_min = box_2d.min(0)
     box_max = box_2d.max(0)
+    if square:
+        size = box_max - box_min
+        diff = abs(size[0] - size[1])//2
+        if size[0] > size[1]:
+            box_max[1] += diff
+            box_min[1] -= diff
+        elif size[0] < size[1]:
+            box_max[0] += diff
+            box_min[0] -= diff
+    box_max = np.where(box_max<image.shape[:2], box_max, image.shape[:2])
+    box_min = np.where(box_min>0, box_min, 0)
+    # crop image
     crop_img = image[box_min[0]:box_max[0], box_min[1]:box_max[1]]
 
     if visual:
@@ -318,7 +335,6 @@ def image_crop(skeleton, image, playback=None, visual=False):
     
     return crop_img, box_min, box_max
 
-from kinect.config import *
 def pcl_project(pcl, playback=None):
     pcl_2d = []
     for p in pcl:
