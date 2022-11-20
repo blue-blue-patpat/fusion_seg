@@ -146,10 +146,7 @@ class DeepFusion2(nn.Module):
         if is_train:
             inputs = args.inputs.copy()
             # increase the probability of single input
-            if np.random.rand() < args.single_input_ratio:
-                input_mask_indices = gen_random_indices(max_random_num=len(inputs), size=4)
-            else:
-                input_mask_indices = gen_random_indices(max_random_num=len(inputs))
+            input_mask_indices = gen_random_indices(max_random_num=len(inputs))
             # input mask
             for i in input_mask_indices:
                 data_dict[inputs[i]] = torch.Tensor([[]])
@@ -180,6 +177,7 @@ class DeepFusion2(nn.Module):
                 
         local_feats = torch.cat(local_feats, dim=1)
         transformer_output = self.transformer(local_feats)
-        output = self.mlp_head(transformer_output)
+        output = torch.max(input=transformer_output, dim=1, keepdim=False, out=None)[0]
+        output = self.mlp_head(output)
         
         return output

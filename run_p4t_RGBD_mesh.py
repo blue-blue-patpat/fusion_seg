@@ -20,7 +20,7 @@ from nn.p4t import tools
 from nn.p4t import utils
 from nn.p4t.modules.geodesic_loss import GeodesicLoss
 from nn.p4t.scheduler import WarmupMultiStepLR
-from nn.p4t.datasets.depth_mesh import DepthMesh3D2,DepthMesh3D
+from nn.datasets.depth_mesh import DepthMesh3D2,DepthMesh3D
 from nn.SMPL.smpl_layer import SMPLLoss
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot

@@ -8,7 +8,7 @@ import pickle
 
 from dataloader.result_loader import ResultFileLoader, PKLLoader
 from visualization.utils import pcl_filter
-from nn.p4t.datasets.folder_list import *
+from nn.datasets.folder_list import *
 
 class MMMosh(Dataset):
     def __init__(self, driver_path, frames_per_clip=5, step_between_clips=1, num_points=1024,

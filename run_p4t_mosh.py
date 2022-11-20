@@ -14,7 +14,7 @@ from nn.p4t.tools import rotation6d_2_rot_mat, rodrigues_2_rot_mat
 from nn.p4t import utils
 from nn.p4t.modules.geodesic_loss import GeodesicLoss
 from nn.p4t.scheduler import WarmupMultiStepLR
-import nn.p4t.datasets.mm_dataset as Datasets
+import nn.datasets.mm_dataset as Datasets
 from nn.SMPL.mosh_loss import MoshLoss, SMPLXModel
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot

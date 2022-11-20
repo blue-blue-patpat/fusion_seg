@@ -3,7 +3,7 @@ import time
 import numpy as np
 import pickle
 from multiprocessing import Pool, Process
-from nn.p4t.datasets.folder_list import *
+from nn.datasets.folder_list import *
 from dataloader.result_loader import ResultFileLoader, PKLLoader
 
 def write_pkl(pkl_path, seq_loader):

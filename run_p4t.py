@@ -13,7 +13,7 @@ import cv2
 
 from nn.p4t import utils
 from nn.p4t.scheduler import WarmupMultiStepLR
-from nn.p4t.datasets.mmbody import MMJoint3D
+from nn.datasets.mmbody import MMJoint3D
 import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
 from visualization.o3d_plot import NNPredLabelStreamPlot
