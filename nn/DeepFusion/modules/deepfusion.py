@@ -85,19 +85,16 @@ class DeepFusion(nn.Module):
         return output
 
 class DeepFusion2(nn.Module):
-    def __init__(self, npoint, radius, nsample, dim, depth, heads, dim_head, mlp_dim, output_dim):
+    def __init__(self, npoint, radius, nsample, dim, depth, heads, dim_head, mlp_dim, output_dim, features=3,):
         super().__init__()
-        self.radar_backbone = PointnetSAModule(npoint=npoint, radius=radius, nsample=nsample, mlp=[3,128,128,dim], use_xyz=True)
+        self.radar_backbone = PointnetSAModule(npoint=npoint, radius=radius, nsample=nsample, mlp=[features,128,128,dim], use_xyz=True)
         modules = list(resnet18(pretrained=True).children())[:-2]
         modules.append(nn.Conv2d(512, dim, (1, 1)))
         self.image_backbone = torch.nn.Sequential(*modules)
-        self.depth_backbone = PointnetSAModule(npoint=npoint, radius=radius, nsample=nsample, mlp=[3,128,128,dim], use_xyz=True)
+        self.depth_backbone = PointnetSAModule(npoint=npoint, radius=radius, nsample=nsample, mlp=[features,128,128,dim], use_xyz=True)
         self.transformer = FusionTransformer(dim, depth, heads, dim_head, mlp_dim)
-        self.radar_feat_num_dim = torch.nn.Linear(49, 1)
-        self.image_feat_dim = torch.nn.Linear(1024, 2051)
-        self.depth_feat_num_dim = torch.nn.Linear(49, 1)
-        self.point_embedding = torch.nn.Linear(3, 2051)
-        self.local_embedding = torch.nn.Embedding(5, 2051)
+        self.point_embedding = torch.nn.Linear(3, dim)
+        self.local_embedding = torch.nn.Embedding(5, dim)
         self.mlp_head = nn.Sequential(
             nn.LayerNorm(dim),
             nn.Linear(dim, mlp_dim),
@@ -107,16 +104,13 @@ class DeepFusion2(nn.Module):
         
     def process_image(self, images, pos_emb):
         # extract grid features and global image features using a CNN backbone
-        image_feat, grid_feat = self.image_backbone(images)
+        grid_feat = self.image_backbone(images)
         # process grid features
         grid_feat = torch.flatten(grid_feat, start_dim=2)
         grid_feat = grid_feat.transpose(1,2)
-        grid_feat = self.image_feat_dim(grid_feat)
         # add embeddings
         embeddings = torch.full((images.shape[0], 1), pos_emb, dtype=torch.long, device=images.device)
-        global_pos_emb = self.global_embedding(embeddings)
         local_pos_emb = self.local_embedding(embeddings)
-        image_feat = image_feat.view(images.shape[0],1,2048) + global_pos_emb
         grid_feat += local_pos_emb
         
         return grid_feat
@@ -125,25 +119,20 @@ class DeepFusion2(nn.Module):
         # extract cluster features and global point features using a PointNet backbone
         if points.shape[1] == 1024:
             xyz, cluster_feat = self.radar_backbone(xyz=points[:,:,:3].contiguous(),features=points[:,:,3:].transpose(1,2).contiguous())
-            point_feat = self.radar_feat_num_dim(cluster_feat).squeeze()        
         else:
             xyz, cluster_feat = self.depth_backbone(xyz=points[:,:,:3].contiguous(),features=points[:,:,3:].transpose(1,2).contiguous())
-            point_feat = self.depth_feat_num_dim(cluster_feat).squeeze()
-        cluster_feat = torch.cat([xyz, cluster_feat.transpose(1,2).contiguous()], dim=2)
         # add embeddings
         xyz_embedding = self.point_embedding(xyz)
-        cluster_feat += xyz_embedding
+        cluster_feat = cluster_feat.transpose(1,2).contiguous() + xyz_embedding
         embeddings = torch.full((points.shape[0], 1), pos_emb, dtype=torch.long, device=points.device)
-        global_pos_emb = self.global_embedding(embeddings)
         local_pos_emb = self.local_embedding(embeddings)
-        point_feat = point_feat.view(points.shape[0],1,2048) + global_pos_emb
         cluster_feat += local_pos_emb
         
         return cluster_feat
     
     def forward(self, args, data_dict, is_train=False):
-        batch_size = data_dict['joints_3d'].shape[0]
         if is_train:
+            batch_size = data_dict['radar'].shape[0]
             inputs = args.inputs.copy()
             # increase the probability of single input
             input_mask_indices = gen_random_indices(max_random_num=len(inputs))
@@ -155,7 +144,7 @@ class DeepFusion2(nn.Module):
             if {'master_image','sub_image'} & set(inputs) and {'radar','master_depth','sub_depth'} & set(inputs):
                 image_mask = np.ones((batch_size, 1, 1, 1))
                 # generate mask indices of batch
-                image_indices = gen_random_indices(batch_size, random_ratio=args.image_mask_ratio)
+                image_indices = gen_random_indices(batch_size, random_ratio=0.3)
                 image_mask[image_indices] = 0.0
                 image_mask = torch.from_numpy(image_mask).float().to(args.device)
                 image_mask = image_mask.expand(-1, 3, 224, 224)
@@ -165,7 +154,6 @@ class DeepFusion2(nn.Module):
                     data_dict['sub_image'] *= image_mask
         
         local_feats = []
-        
         # extract global and local features
         for i, input in enumerate(['radar','master_image','master_depth','sub_image','sub_depth']):
             if data_dict[input].shape[1]:

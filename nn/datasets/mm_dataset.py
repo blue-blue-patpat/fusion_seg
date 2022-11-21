@@ -10,7 +10,7 @@ import cv2
 
 from mosh.utils import mosh_pose_transform
 from dataloader.result_loader import ResultFileLoader, SequenceLoader
-from visualization.utils import pcl_filter, get_rgb_feature, image_crop, pcl_project
+from visualization.utils import filter_pcl, get_rgb_feature, crop_image, project_pcl
 from nn.datasets.folder_list import *
 from torchvision import transforms
 
@@ -137,16 +137,16 @@ class mmWave(Dataset):
 
         if self.feature_type == 'arbe':
             # filter radar_pcl with bounding box
-            arbe_data = pcl_filter(mesh_joint, np.hstack((arbe_pcl, arbe_feature)), 0.2)
+            arbe_data = filter_pcl(mesh_joint, np.hstack((arbe_pcl, arbe_feature)), 0.2)
         
         elif self.feature_type == 'rgb':
-            arbe_data = pcl_filter(mesh_joint, arbe_pcl, 0.2)
+            arbe_data = filter_pcl(mesh_joint, arbe_pcl, 0.2)
             # transform radar pcl coordinate to kinect master
             trans_pcl = (arbe_data - trans_mat['t']) @ trans_mat['R']
             arbe_data = get_rgb_feature(trans_pcl, rgb_data, visual=False)
 
         elif self.feature_type == 'arbe_and_rgb':
-            arbe_data = pcl_filter(mesh_joint, np.hstack((arbe_pcl, arbe_feature)), 0.2)
+            arbe_data = filter_pcl(mesh_joint, np.hstack((arbe_pcl, arbe_feature)), 0.2)
             trans_pcl = (arbe_data[:, :3] - trans_mat['t']) @ trans_mat['R']
             rgb_feature = get_rgb_feature(trans_pcl, rgb_data, visual=False)
             arbe_data = np.hstack((arbe_data, rgb_feature[:, 3:]))
@@ -263,7 +263,7 @@ class Depth(mmWave):
         mesh_joint = frame['mesh_param']['joints']
 
         # filter radar_pcl with bounding box
-        kinect_data = pcl_filter(mesh_joint, np.hstack((kinect_pcl, kinect_color)), 0.2, 0.21)
+        kinect_data = filter_pcl(mesh_joint, np.hstack((kinect_pcl, kinect_color)), 0.2, 0.21)
 
         # remove bad frame
         if kinect_data.shape[0] == 0:
@@ -309,7 +309,7 @@ class mmFusion(mmWave):
         trans_mat = seq_loader.trans['kinect_master']
 
         # filter radar_pcl with bounding box
-        arbe_data = pcl_filter(mesh_joint, np.hstack((arbe_pcl, arbe_feature)), 0.2)
+        arbe_data = filter_pcl(mesh_joint, np.hstack((arbe_pcl, arbe_feature)), 0.2)
 
         if arbe_data.shape[0] == 0:
             # remove bad frame
@@ -334,7 +334,7 @@ class mmFusion(mmWave):
             # mesh_pose = np.hstack((trans, root_orient.reshape(-1), mesh_pose[6:]))
             crop_image, img_left_top, img_right_bottom = crop_image(trans_joint, image)
             img_center = (img_right_bottom - img_left_top)/2
-            pcl_2d = pcl_project(trans_pcl)
+            pcl_2d = project_pcl(trans_pcl)
             pcl_2d = (pcl_2d -  img_left_top - img_center)/img_center
             image = cv2.resize(crop_image/255, (224, 224))
 
@@ -414,7 +414,7 @@ class DepthFusion(mmFusion):
         trans_mat = seq_loader.trans['kinect_master']
         
         # filter radar_pcl with bounding box
-        kinect_data = pcl_filter(mesh_joint, kinect_pcl, 0.2, 0.21)
+        kinect_data = filter_pcl(mesh_joint, kinect_pcl, 0.2, 0.21)
 
         # remove bad frame
         if kinect_data.shape[0] == 0:
@@ -514,19 +514,19 @@ class DeepFusion(mmFusion):
         mesh_pose = np.hstack((trans, root_orient.reshape(-1), mesh_pose[6:]))
 
         # process image
-        img = image_crop(trans_joints, img)[0]
+        img = crop_image(trans_joints, img)[0]
         img = cv2.resize(img, [self.img_res, self.img_res], interpolation=cv2.INTER_LINEAR)
         img = np.transpose(img.astype('float32'),(2,0,1))/255.0
         img = torch.from_numpy(img).float()
         transformed_img = self.normalize_img(img)
 
         # process pcl
-        filterd_pcl = pcl_filter(joints, radar_pcl)
+        filterd_pcl = filter_pcl(joints, radar_pcl)
         trans_pcl = (filterd_pcl[:, :3] - trans_mat['t']) @ trans_mat['R']
         radar_feat = filterd_pcl[:, 3:] / np.array([5e-38, 5., 150.])
         # padding pcl
         padding_pcl = self.pad_data(np.hstack((trans_pcl, radar_feat)))
-        pcl_2d = pcl_project(padding_pcl[:, :3])
+        pcl_2d = project_pcl(padding_pcl[:, :3])
         # normalization
         center = ((trans_joints.max(axis=0) + trans_joints.min(axis=0))/2)[:3]
         padding_pcl[:, :3] -= center
@@ -603,7 +603,7 @@ class mmBody(mmWave):
         mesh_shape = mesh['shape']
 
         # process pcl
-        filterd_pcl = pcl_filter(joints, radar_pcl)
+        filterd_pcl = filter_pcl(joints, radar_pcl)
         filterd_pcl[:, 3:] /= np.array([5e-38, 5., 150.])
         # padding pcl
         padding_pcl = self.pad_data(filterd_pcl)
@@ -616,3 +616,4 @@ class mmBody(mmWave):
         label = np.concatenate((mesh_pose, mesh_shape), dtype=np.float32, axis=0)
 
         return padding_pcl, label
+    

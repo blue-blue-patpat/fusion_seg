@@ -1,5 +1,5 @@
 import time
-from visualization.utils import O3DStreamPlot, o3d_coord, o3d_mesh, o3d_pcl, o3d_plot, o3d_lines, pcl_filter
+from visualization.utils import O3DStreamPlot, o3d_coord, o3d_mesh, o3d_pcl, o3d_plot, o3d_lines, filter_pcl
 import numpy as np
 import open3d as o3d
 from dataloader.result_loader import KinectResultLoader, ArbeResultLoader, OptitrackResultLoader, ResultFileLoader
@@ -68,7 +68,7 @@ class KinectArbeStreamPlot(O3DStreamPlot):
             skeleton_pcl = kinect_skeleton @ kinect_trans_mat["kinect_"+device]["R"].T + kinect_trans_mat["kinect_"+device]["t"]
 
             # filter pcl with naive bounding box
-            arbe_pcl = pcl_filter(skeleton_pcl, arbe_arr[:,:3], 0.5)
+            arbe_pcl = filter_pcl(skeleton_pcl, arbe_arr[:,:3], 0.5)
 
             # init lines
             lines = KINECT_SKELETON_LINES
@@ -290,7 +290,7 @@ class OptitrackArbeStreamPlot(O3DStreamPlot):
             # opti_bones = bones_pcl @ R_opti_T + t_opti
 
             # filter pcl with naive bounding box
-            arbe_pcl = pcl_filter(opti_markers, arbe_arr[:,:3], 0.5)
+            arbe_pcl = filter_pcl(opti_markers, arbe_arr[:,:3], 0.5)
 
             # init lines
             lines = marker_lines
@@ -356,7 +356,7 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
             arbe_pcl = {}
             if "arbe" in self.enabled_sources:
                 arbe_pcl = dict(
-                    pcl = pcl_filter(frame["optitrack"], frame["arbe"], 0.2),
+                    pcl = filter_pcl(frame["optitrack"], frame["arbe"], 0.2),
                     color = [0,1,0]
                 )
                 # else:
@@ -379,7 +379,7 @@ class KinectArbeOptitrackStreamPlot(O3DStreamPlot):
             if "kinect_pcl" in self.enabled_sources:
                 kin_pcl = frame["{}_pcl".format(self.kinect_device)]
                 # r = np.random.choice(kin_pcl.shape[0], size=10000, replace=False)
-                pcl = pcl_filter(frame["optitrack"], kin_pcl, 0.2)
+                pcl = filter_pcl(frame["optitrack"], kin_pcl, 0.2)
                 kinect_pcl = dict(
                     pcl = pcl,
                     color = [0,0,1]

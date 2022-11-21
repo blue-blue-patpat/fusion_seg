@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 import pickle
 
 from dataloader.result_loader import ResultFileLoader, PKLLoader
-from visualization.utils import pcl_filter
+from visualization.utils import filter_pcl
 from nn.datasets.folder_list import *
 
 class MMMosh(Dataset):
@@ -96,7 +96,7 @@ class MMMosh(Dataset):
         # gender = 1 if frame["information"].get("gender", "male") == "male" else 0
 
         # filter radar_pcl with optitrack bounding box
-        arbe_data = pcl_filter(opti_pcl, np.hstack((arbe_pcl, arbe_feature)), 0.2)
+        arbe_data = filter_pcl(opti_pcl, np.hstack((arbe_pcl, arbe_feature)), 0.2)
 
         if arbe_data.shape[0] == 0:
             # remove bad frame
@@ -215,7 +215,7 @@ class MMMoshPKL(Dataset):
         # mesh_vtx = frame["mesh_param"]["vertices"]
         mesh_jnt = frame["mesh_param"]["joints"]
 
-        arbe_data = pcl_filter(opti_pcl, np.hstack((arbe_pcl, arbe_feature)), 0.2)
+        arbe_data = filter_pcl(opti_pcl, np.hstack((arbe_pcl, arbe_feature)), 0.2)
         if arbe_data.shape[0] == 0:
             # remove bad frame
             return None, None

@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 import pickle
 
 from dataloader.result_loader import ResultFileLoader, PKLLoader
-from visualization.utils import pcl_filter
+from visualization.utils import filter_pcl
 
 
 class MMMesh3D(Dataset):
@@ -103,7 +103,7 @@ class MMMesh3D(Dataset):
         gender = 1 if frame["information"].get("gender", "male") == "male" else 0
 
         # filter radar_pcl with optitrack bounding box
-        arbe_data = pcl_filter(mesh_vtx, np.hstack((arbe_pcl, arbe_feature)), 0.2)
+        arbe_data = filter_pcl(mesh_vtx, np.hstack((arbe_pcl, arbe_feature)), 0.2)
 
         if arbe_data.shape[0] < 50:
             # remove bad frame

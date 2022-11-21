@@ -4,7 +4,7 @@ import random
 from torch.utils.data import Dataset
 
 from dataloader.result_loader import ResultFileLoader
-from visualization.utils import pcl_filter
+from visualization.utils import filter_pcl
 
 class MMJoint3D(Dataset):
     def __init__(self, root_path, frames_per_clip=5, step_between_clips=1, num_points=1024,
@@ -70,7 +70,7 @@ class MMJoint3D(Dataset):
         mesh_jnt = frame["mesh_param"]["keypoints"][:-5]
 
         # filter arbe_pcl with optitrack bounding box
-        arbe_data = pcl_filter(mesh_jnt, np.hstack((arbe_pcl, arbe_feature)), 0.2)
+        arbe_data = filter_pcl(mesh_jnt, np.hstack((arbe_pcl, arbe_feature)), 0.2)
 
         if arbe_data.shape[0] < 50:
             # remove bad frame
@@ -174,7 +174,7 @@ class MMBody3D(Dataset):
         label = frame["optitrack"]
         center = (label.max(axis=0) + label.min(axis=0))/2
         # filter arbe_pcl with optitrack bounding box
-        arbe_data = pcl_filter(label, arbe_data, 0.2)
+        arbe_data = filter_pcl(label, arbe_data, 0.2)
         if arbe_data.shape[0] < 50:
             # remove bad frame
             arbe_data = None

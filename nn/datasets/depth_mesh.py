@@ -7,7 +7,7 @@ import pickle
 from torch.utils.data import Dataset
 
 from dataloader.result_loader import PKLLoader_test, ResultFileLoader, PKLLoader
-from visualization.utils import pcl_filter, pcl_filter_nb, pcl_filter_nb_noground
+from visualization.utils import filter_pcl, pcl_filter_nb, pcl_filter_nb_noground
 
 class DepthMesh3D(Dataset):
     def __init__(self, root_path, frames_per_clip=5, step_between_clips=1, num_points=4096,
@@ -96,7 +96,7 @@ class DepthMesh3D(Dataset):
         # kinect_data = kinect_data[kinect_pcl.any(1)]
         # filter arbe_pcl with optitrack bounding box
         # print(mesh_vtx)
-        kinect_data = pcl_filter(mesh_vtx, kinect_data, 0.2, 0.21)
+        kinect_data = filter_pcl(mesh_vtx, kinect_data, 0.2, 0.21)
         if kinect_data.shape[0] == 0:
             # remove bad frame
             return None, None, None

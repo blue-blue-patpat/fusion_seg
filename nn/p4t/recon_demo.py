@@ -6,7 +6,7 @@ import numpy as np
 
 from nn.p4t.modules.model import P4Transformer
 from nn.votenet.utils.pc_util import random_sampling
-from visualization.utils import pcl_filter
+from visualization.utils import filter_pcl
 from nn.SMPL.mosh_loss import SMPLXModel
 from mosh.config import SMPLX_MODEL_NEUTRAL_PATH
 

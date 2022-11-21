@@ -184,7 +184,7 @@ def o3d_smpl_mesh(params: Union[np.ndarray, np.lib.npyio.NpzFile, dict] = None, 
     return o3d_mesh(mesh, color, last_update=_mesh)
 
 
-def pcl_filter(pcl_box, pcl_target, bound=0.2, offset=0):
+def filter_pcl(pcl_box, pcl_target, bound=0.2, offset=0):
     """
     Filter out the pcls of pcl_b that is not in the bounding_box of pcl_a
     """
@@ -284,7 +284,7 @@ def get_image_feature(img):
 
     return output.numpy()
 
-def image_crop(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, visual:bool=False, margin:float=0.2, square:bool=False, cam=MAS):
+def crop_image(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, visual:bool=False, margin:float=0.2, square:bool=False, cam=MAS):
     """
     Crop the person area of image
     """
@@ -335,7 +335,7 @@ def image_crop(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, visual:
     
     return crop_img, box_min, box_max
 
-def pcl_project(pcl, playback=None):
+def project_pcl(pcl, playback=None):
     pcl_2d = []
     for p in pcl:
         if playback is not None:
@@ -354,7 +354,7 @@ def get_rgb_feature(pcl, image, mkv_fname=None, visual=False):
         playback.open()
     else:
         playback = None
-    pcl_2d = pcl_project(pcl, playback)
+    pcl_2d = project_pcl(pcl, playback)
     pcl_2d = np.floor(pcl_2d).astype(int)
 
     pcl_color = image[pcl_2d[:,0], pcl_2d[:,1]]
@@ -375,7 +375,7 @@ def get_pcl_feature(pcl, image, skeleton, feature_type, mkv_fname=None, visual=F
         playback.open()
     else:
         playback = None
-    pcl_2d = pcl_project(pcl, playback)
+    pcl_2d = project_pcl(pcl, playback)
     pcl_2d = np.floor(pcl_2d).astype(int)
 
     if feature_type == 'rgb':
@@ -383,14 +383,14 @@ def get_pcl_feature(pcl, image, skeleton, feature_type, mkv_fname=None, visual=F
         pcl_with_feature = np.hstack((pcl, pcl_color/255))
     
     elif feature_type == 'feature_map':
-        crop_img, box_min, _ = image_crop(skeleton, image, playback, visual)
+        crop_img, box_min, _ = crop_image(skeleton, image, playback, visual)
         feature_map = get_feature_map(crop_img/255)
         feature_map = cv2.resize(feature_map, crop_img.shape[1::-1])
         feature = feature_map[pcl_2d[:,0]-box_min[0], pcl_2d[:,1]-box_min[1]]
         pcl_with_feature = np.hstack((pcl, feature))
     
     else:
-        crop_img, box_min, _ = image_crop(skeleton, image, playback, visual)
+        crop_img, box_min, _ = crop_image(skeleton, image, playback, visual)
         feature = get_image_feature(crop_img/255)
         pcl_with_feature = np.hstack((pcl, np.repeat(feature, pcl.shape[0], axis=0)))
 

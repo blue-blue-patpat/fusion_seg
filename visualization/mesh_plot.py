@@ -6,7 +6,7 @@ import open3d as o3d
 from vctoolkit import Timer
 
 from dataloader.result_loader import ResultFileLoader
-from visualization.utils import O3DStreamPlot, o3d_coord, o3d_mesh, o3d_pcl, o3d_plot, o3d_lines, o3d_smpl_mesh, pcl_filter
+from visualization.utils import O3DStreamPlot, o3d_coord, o3d_mesh, o3d_pcl, o3d_plot, o3d_lines, o3d_smpl_mesh, filter_pcl
 
 
 class MinimalStreamPlot(O3DStreamPlot):
@@ -210,7 +210,7 @@ class MinimalResultStreamPlot(O3DStreamPlot):
             yield dict(
                 mesh=dict(mesh=mesh),
                 # kpts=dict(skeleton=frame["optitrack"], lines=marker_lines, color=[1,0,0]),
-                pcl=dict(pcl=pcl_filter(vertices, frame["master_pcl"])),
+                pcl=dict(pcl=filter_pcl(vertices, frame["master_pcl"])),
             )
 
 
@@ -282,7 +282,7 @@ class MeshPclStreamPlot(O3DStreamPlot):
             yield dict(
                 mesh=dict(mesh=(smpl_model.core.verts, smpl_model.core.faces)),
                 # kpts=dict(skeleton=frame["optitrack"], lines=marker_lines, color=[1,0,0]),
-                pcl=dict(mesh=pcl2sphere(pcl_filter(smpl_model.core.keypoints, frame["arbe"])), color=[0.2,1,0.2]),
+                pcl=dict(mesh=pcl2sphere(filter_pcl(smpl_model.core.keypoints, frame["arbe"])), color=[0.2,1,0.2]),
             )
 
 

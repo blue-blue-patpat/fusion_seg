@@ -4,7 +4,7 @@ import random
 from torch.utils.data import Dataset
 
 from dataloader.result_loader import ResultFileLoader
-from visualization.utils import pcl_filter
+from visualization.utils import filter_pcl
 
 class MMJoint3D(Dataset):
     def __init__(self, root_path, frames_per_clip=5, step_between_clips=1, num_points=1024,
@@ -68,7 +68,7 @@ class MMJoint3D(Dataset):
         kinect_data = np.hstack((kinect_pcl, kinect_color))
         mesh_jnt = frame["mesh_param"]["keypoints"][:-5]
         kinect_data = kinect_data[~(kinect_pcl==0).all(1)]
-        kinect_data = pcl_filter(mesh_jnt, kinect_data, 0.2)  
+        kinect_data = filter_pcl(mesh_jnt, kinect_data, 0.2)  
         # filter arbe_pcl with optitrack bounding box
 
 
