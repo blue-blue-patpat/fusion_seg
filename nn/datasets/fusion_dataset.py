@@ -43,18 +43,20 @@ class FusionDataset():
                 return seq_idx, frame_idx
         raise IndexError
     
-    def process_image(self, image, joints=None, need_crop=False):
+    def process_image(self, image, joints=None, trans_mat=None, need_crop=False):
         if need_crop:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             # crop person area using joints
-            image = crop_image(joints, image, square=True)
+            image, box_min, box_max = crop_image(joints, image, trans_mat, square=True, return_box=need_crop)
             image = cv2.resize(image, [self.img_res, self.img_res], interpolation=cv2.INTER_LINEAR)
         image = np.transpose(image.astype('float32'), (2,0,1))/255.0
         image = torch.from_numpy(image).float()
         transformed_img = self.normalize_img(image)
+        if need_crop:
+            return transformed_img, box_min, box_max
         return transformed_img
     
-    def process_pcl(self, pcl, joints, trans_mat, padding_points=1024, mask=False):
+    def process_pcl(self, pcl, joints, padding_points=1024, mask=False):
         # filter person pcl using joints
         pcl = filter_pcl(joints, pcl)
         if not pcl.shape[0]:
@@ -63,9 +65,6 @@ class FusionDataset():
             # mask points
             indices = np.random.choice(pcl.shape[0], 100)
             pcl = pcl[indices]
-        if trans_mat is not None:
-            trans_pcl = (pcl[:,:3] - trans_mat['t']) @ trans_mat['R']
-            pcl = np.hstack((trans_pcl, pcl[:,3:]))
         # normalize pcl
         pcl[:,:3] -= joints[0]
         # padding pcl
@@ -81,33 +80,39 @@ class FusionDataset():
         mesh = dict(frame['mesh'])
         pose = mesh['pose']
         betas = mesh['shape']
-        gender = 'None'
         joints = mesh['joints'][:22]
-            
+        pose[:3] -= joints[0]
+        
+        # process image
+        mas_img = torch.Tensor([])
+        bbox = {}
         # process image
         mas_img = torch.Tensor([])
         trans_mat_mas = seq_loader.calib['kinect_master']
         if 'master_image' in self.args.inputs:
-            joints_mas = (joints - trans_mat_mas['t']) @ trans_mat_mas['R']
-            mas_img = self.process_image(frame['master_image'], joints_mas)
+            if self.args.read_orig_img:
+                mas_img, box_min, box_max = self.process_image(frame['master_image'], joints, trans_mat_mas, True)
+                bbox.update({'master_image':np.hstack((box_min, box_max))})
+            else:
+                mas_img = self.process_image(frame['master_image'], joints, trans_mat_mas)
+                bbox.update({'master_image':frame['master_bbox'].reshape(-1)})
 
         sub_img = torch.Tensor([])
         trans_mat_sub = seq_loader.calib['kinect_sub']
         if 'sub_image' in self.args.inputs:
-            joints_sub = (joints - trans_mat_sub['t']) @ trans_mat_sub['R']
-            sub_img = self.process_image(frame['sub_image'], joints_sub)
-                
-        # transform mesh param and joints to the kinect coordinate if need
-        trans_pose = pose
-        trans_pose[:3] -= joints[0]
-        trans_mat_to_cam = None
-                
+            if self.args.read_orig_img:
+                sub_img, box_min, box_max = self.process_image(frame['sub_image'], joints, trans_mat_sub, True)
+                bbox.update({'sub_image':np.hstack((box_min, box_max))})
+            else:
+                sub_img = self.process_image(frame['sub_image'], joints, trans_mat_sub)
+                bbox.update({'sub_image':frame['sub_bbox'].reshape(-1)})
+               
         # process radar pcl
         radar_pcl = torch.Tensor([])
         if 'radar' in self.args.inputs:
             radar_pcl = frame['radar']
             radar_pcl[:,3:] /= np.array([5e-38, 5., 150.])
-            radar_pcl = self.process_pcl(radar_pcl, joints, trans_mat_to_cam, padding_points=1024)
+            radar_pcl = self.process_pcl(radar_pcl, joints, padding_points=1024)
             
         # process depth pcl
         if self.args.train:
@@ -117,13 +122,22 @@ class FusionDataset():
             mask = False
         mas_depth = torch.Tensor([])
         if 'master_depth' in self.args.inputs:
-            mas_depth = frame['master_depth']
-            mas_depth = self.process_pcl(mas_depth, joints, trans_mat_to_cam, padding_points=4096, mask=mask)
+            mas_depth = self.process_pcl(frame['master_depth'], joints, padding_points=4096, mask=mask)
         
         sub_depth = torch.Tensor([])
         if 'sub_depth' in self.args.inputs:
-            sub_depth = frame['sub_depth']
-            sub_depth = self.process_pcl(sub_depth, joints, trans_mat_to_cam, padding_points=4096, mask=mask)
+            sub_depth = self.process_pcl(frame['sub_depth'], joints, padding_points=4096, mask=mask)
+             
+        # transform matrix
+        trans_mat_mas = torch.tensor(trans_mat_2_tensor(trans_mat_mas)).float()
+        trans_mat_sub = torch.tensor(trans_mat_2_tensor(trans_mat_sub)).float()
+        trans_mat = {
+            'radar': torch.tensor([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]).float(),
+            'master_image': trans_mat_mas,
+            'master_depth': trans_mat_mas,
+            'sub_image': trans_mat_sub,
+            'sub_depth': trans_mat_sub,
+        }
         
         # return result
         result = {}
@@ -132,10 +146,13 @@ class FusionDataset():
         result['master_depth'] = mas_depth
         result['sub_image'] = sub_img
         result['sub_depth'] = sub_depth
+        result['trans_mat'] = trans_mat
+        result['bbox'] = bbox
+        result['root_pelvis'] = joints[0].astype(np.float32)
 
-        label = np.concatenate((trans_pose, betas), dtype=np.float32, axis=0)
+        label = np.concatenate((pose, betas), dtype=np.float32, axis=0)
         label = torch.from_numpy(label).float()
-                
+        
         return result, label
 
     def __len__(self):

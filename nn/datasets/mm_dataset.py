@@ -10,7 +10,7 @@ import cv2
 
 from mosh.utils import mosh_pose_transform
 from dataloader.result_loader import ResultFileLoader, SequenceLoader
-from visualization.utils import filter_pcl, get_rgb_feature, crop_image, project_pcl
+from nn.datasets.utils import filter_pcl, get_rgb_feature, crop_image, project_pcl
 from nn.datasets.folder_list import *
 from torchvision import transforms
 

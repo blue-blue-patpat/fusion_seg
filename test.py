@@ -79,7 +79,7 @@ if __name__ == "__main__":
     import os
     # extract_skeleton(root_path, "master")
     # from dataloader.result_loader import OptitrackCSVLoader
-    root_path = "/home/nesc525/drivers/2"
+    root_path = "/home/nesc525/drivers/3"
     # csv_file = OptitrackCSVLoader(root_path)
     # if len(csv_file):
     #     parse_opti_csv(csv_file.file_dict["optitrack"].loc[0,"filepath"])
@@ -101,20 +101,29 @@ if __name__ == "__main__":
     # arr = np.load("/home/nesc525/chen/3DSVC/__test__/default/arbe/id=92_st=1632382661.6592233_dt=1632382661.6915216.npy")
     # print(max(arr[:,8]))
 
-    from run_postprocess import postprocess
-    for p in os.listdir(root_path):
-        if p[-1] == 'T':
-            postprocess(os.path.join(root_path, p))
+    # from run_postprocess import postprocess
+    # for p in os.listdir(root_path):
+    #     if p[-1] == 'A':
+    #         postprocess(os.path.join(root_path, p))
 
-    # from nn.p4t.datasets.mmbody import MMBody3D
-    # import pickle
-    # import numpy as np
-    # trans_dict = np.load("/home/nesc525/drivers/2/2021-10-20_14-06-35/calib/optitrack/optitrack_to_radar.npz")
-    # print(trans_dict["t"])
-    # R = trans_dict["R"]
-    # t = np.asarray([-0.10785812,  3.34839662, -1.00739306])
-    # np.savez("/home/nesc525/drivers/2/2021-10-20_14-06-35/calib/optitrack/optitrack_to_radar.npz", R=R, t=t)
+    from nn.p4t.datasets.mmbody import MMBody3D
+    import pickle
+    import numpy as np
+    p = "/home/nesc525/drivers/1/2021-10-23_21-13-05_N/calib"
+    p_o = p + "/optitrack/optitrack_to_radar.npz"
+    trans_dict = np.load(p_o)
+    print(trans_dict["t"])
+    R = trans_dict["R"]
+    t = np.asarray([-0.20738628  ,2.96957179, -1.15383591])
+    np.savez(p_o, R=R, t=t)
 
+    p_k = p + "/kinect/master_to_world.npz"
+    trans_dict = np.load(p_k)
+    print(trans_dict["t"])
+    R = trans_dict["R"]
+    t = np.asarray([-0.00723176, -0.67711437,  4.76285076])
+    np.savez(p_k, R=R, t=t)
+    import numpy as np
     # dataset_all = MMBody3D(
     #         root_path=root_path,
     #         frames_per_clip=1,
@@ -187,3 +196,161 @@ if __name__ == "__main__":
     # plt.legend(loc="lower right")
     # plt.show()
     
+    import torch
+    device=torch.device('cpu')
+    blank_atom=torch.tensor([[1,0,0],[0,1,0],[0,0,1]], dtype=torch.float32, requires_grad=False, device=device)
+    q=torch.rand((7, 13, 9, 3, 3), dtype=torch.float32, device='cpu')
+    batch_size=q.size()[0]
+    length_size=q.size()[1]
+    q=q.view(batch_size*length_size, 9, 3, 3)
+    q_blank=blank_atom.repeat(batch_size*length_size, 1, 1, 1)
+    pose=torch.cat((q_blank,
+                    q[:,1:3,:,:],
+                    q_blank,
+                    q[:,3:5,:,:],
+                    q_blank.repeat(1,10,1,1),
+                    q[:,5:9,:,:],
+                    q_blank.repeat(1,4,1,1)), 1)
+    rotmat=q[:,0,:,:]
+
+    import torch
+    import torch.nn as nn
+    def rot_mat_2_euler(R):
+        batch = R.size()[0]
+        sy = torch.sqrt(R[:,0,0]*R[:,0,0]+R[:,1,0]*R[:,1,0])
+        singular= sy<1e-6
+        singular=singular.float()
+            
+        x=torch.atan2(R[:,2,1], R[:,2,2])
+        y=torch.atan2(-R[:,2,0], sy)
+        z=torch.atan2(R[:,1,0],R[:,0,0])
+        
+        xs=torch.atan2(-R[:,1,2], R[:,1,1])
+        ys=torch.atan2(-R[:,2,0], sy)
+        zs=R[:,1,0]*0
+            
+        out_euler=torch.autograd.Variable(torch.zeros(batch,3).cuda())
+        out_euler[:,0]=x*(1-singular)+xs*singular
+        out_euler[:,1]=y*(1-singular)+ys*singular
+        out_euler[:,2]=z*(1-singular)+zs*singular
+        
+        return out_euler
+
+    def euler_2_rot_mat(euler):
+
+        batch=euler.shape[0]
+            
+        c1=torch.cos(euler[:,0]).view(batch,1)#batch*1 
+        s1=torch.sin(euler[:,0]).view(batch,1)#batch*1 
+        c2=torch.cos(euler[:,2]).view(batch,1)#batch*1 
+        s2=torch.sin(euler[:,2]).view(batch,1)#batch*1 
+        c3=torch.cos(euler[:,1]).view(batch,1)#batch*1 
+        s3=torch.sin(euler[:,1]).view(batch,1)#batch*1 
+            
+        row1=torch.cat((c2*c3,          -s2,    c2*s3         ), 1).view(-1,1,3) #batch*1*3
+        row2=torch.cat((c1*s2*c3+s1*s3, c1*c2,  c1*s2*s3-s1*c3), 1).view(-1,1,3) #batch*1*3
+        row3=torch.cat((s1*s2*c3-c1*s3, s1*c2,  s1*s2*s3+c1*c3), 1).view(-1,1,3) #batch*1*3
+            
+        matrix = torch.cat((row1, row2, row3), 1) #batch*3*3
+        
+        return matrix
+
+    def rotation6d_2_euler(nn_output):
+        batch_size = nn_output.size()[0]
+        num_joints = 9
+        blank_atom=torch.tensor([[1,0,0],[0,1,0],[0,0,1]], dtype=torch.float32, requires_grad=False, device=torch.device('cuda:0'))
+        q_blank=blank_atom.repeat(batch_size, 1, 1, 1)
+        pose = nn_output[:,3:num_joints*6+3].reshape(batch_size*num_joints, 6).contiguous()
+        tmp_x = nn.functional.normalize(pose[:,:3], dim = -1)
+        tmp_z = nn.functional.normalize(torch.cross(tmp_x, pose[:,3:], dim = -1), dim = -1)
+        tmp_y = torch.cross(tmp_z, tmp_x, dim = -1)
+
+        tmp_x = tmp_x.view(batch_size,num_joints, 3, 1)
+        tmp_y = tmp_y.view(batch_size,num_joints, 3, 1)
+        tmp_z = tmp_z.view(batch_size,num_joints, 3, 1)
+        pose = torch.cat((tmp_x, tmp_y, tmp_z), -1)
+        R=torch.cat((q_blank,
+                    pose[:,1:3,:,:],
+                    q_blank,
+                    pose[:,3:5,:,:],
+                    q_blank.repeat(1,10,1,1),
+                    pose[:,5:9,:,:],
+                    q_blank.repeat(1,4,1,1)), 1).view(batch_size*24,3,3)
+        rotmat=pose[:,0,:,:]
+
+    R = torch.rand(1, 3, 3, device='cuda:0')
+
+    euler = torch.tensor([[1.,1,1],[2,1,1]], device='cuda:0')
+    output = torch.rand(2,72, device='cuda:0')
+    euler = rotation6d_2_euler(output)
+
+    # euler = rot_mat_2_euler(R)
+    mat = euler_2_rot_mat(euler)
+    euler2 = rot_mat_2_euler(mat)
+    print(euler == euler2)
+    print(mat == R)
+
+    
+"""
+vis_smpl
+"""
+# from visualization.utils import o3d_smpl_mesh, o3d_plot
+# import pandas as pd
+# import numpy as np
+
+
+# # amass_pose_df = pd.read_csv("./ignoredata/visualize_files/test_pose.csv", index_col=0)
+# test_pose = np.hstack((np.zeros(3), np.load('/home/nesc525/drivers/5/AMASS/CMU/16/16_35_poses.npz')["poses"][0,:21*3], np.zeros(6)))
+
+# pose_df = pd.read_csv("./ignoredata/visualize_files/mm_pose.csv", index_col=0)
+
+# # test_pose = np.hstack((np.zeros(6), np.asarray(amass_pose_df.iloc[0])[:-1]))
+# mm_pose = np.hstack((np.zeros(6), np.asarray(pose_df.iloc[0])[:-1]))
+
+# o3d_plot([o3d_smpl_mesh(test_pose, [0,1,0]), ])
+
+
+"""
+smpl_test
+"""
+
+# from torch import tensor
+# from minimal.config import SMPL_MODEL_1_0_PATH, SMPL_MODLE_RAW_1_0_MALE_PATH, SMPL_MODLE_RAW_1_0_NEUTRAL_PATH
+# from nn.SMPL.smpl_layer import SMPLModel
+# from minimal.models_torch import KinematicModel, KinematicPCAWrapper
+# import torch
+# import numpy as np
+# from visualization.utils import o3d_plot, o3d_mesh
+
+
+# param = np.load("/home/nesc525/drivers/1/2021-10-16_17-23-57_N/minimal/param/id=1085_skid=1321_masid=1132_rid=1085_type=fine.npz")
+# pose = torch.from_numpy(param["pose"]).to(torch.float64)
+# shape = torch.from_numpy(param["shape"]).to(torch.float64)
+
+# smpl = SMPLModel()
+# smpl_m = SMPLModel(model_path=SMPL_MODLE_RAW_1_0_MALE_PATH)
+# smpl_n = SMPLModel(model_path=SMPL_MODLE_RAW_1_0_NEUTRAL_PATH)
+
+# _smpl = KinematicPCAWrapper(KinematicModel(torch.device("cpu")).init_from_file(SMPL_MODEL_1_0_PATH, compute_mesh=False))
+
+# v, j = smpl(shape, pose[3:], -pose[:3])
+# v_m, j = smpl_m(shape, pose[3:], -pose[:3])
+# v_n, j = smpl_n(shape, pose[3:], -pose[:3])
+
+# _smpl.run(torch.cat((pose, shape),-1))
+
+# f = _smpl.core.faces
+
+# o3d_plot([o3d_mesh([v+torch.tensor([1,0,0]), f], [1,0.3,0.3]), o3d_mesh([v_m-torch.tensor([1,0,0]), f], [0.3,0.3,1]), o3d_mesh([v_n, f])])
+
+
+# # from run_postprocess import postprocess
+# # import os
+
+
+# # path = "/home/nesc525/drivers/3"
+# # dir_list = dir_list = os.listdir(path)
+
+# # for dir in dir_list:
+# #     if "2021" in dir:
+# #         postprocess(os.path.join(path, dir))

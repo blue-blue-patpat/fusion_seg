@@ -17,7 +17,7 @@ from nn.p4t.modules.geodesic_loss import GeodesicLoss
 from nn.p4t.scheduler import WarmupMultiStepLR
 from nn.datasets.fusion_dataset import FusionDataset
 from nn.SMPL.mosh_loss import MoshLoss, SMPLXModel
-import nn.DeepFusion.modules.deepfusion as Models
+import nn.fusion_model.modules.deepfusion as Models
 from message.dingtalk import TimerBot
 from visualization.mesh_plot import MoshEvaluateStreamPlot
 from nn.p4t.modules.loss import LossManager
@@ -40,7 +40,7 @@ def train_one_epoch(args, model, losses, criterions, loss_weight, optimizer, lr_
         else:
             input = input.to(device, dtype=torch.float32)
         target = target.to(device, dtype=torch.float32)
-        output = model(args, input, True)
+        output = model(input, True)
         batch_size = target.shape[0]
         # translation loss
         losses.update_loss("trans_loss", loss_weight[0]*criterions["mse"](output[:,0:3], target[:,0:3]))
@@ -95,7 +95,7 @@ def evaluate(args, model, losses, criterions, data_loader, device, save_path='')
             else:
                 data_dict = data_dict.to(device, non_blocking=True, dtype=torch.float32)
             target = target.to(device, non_blocking=True, dtype=torch.float32)
-            output = model(args, data_dict)
+            output = model(data_dict)
             # translation loss
             losses.update_loss("trans_loss", criterions["mse"](output[:,0:3], target[:,0:3]))
             # pose loss
@@ -216,7 +216,7 @@ def evaluate(args, model, losses, criterions, data_loader, device, save_path='')
 
 def main(args):
     output_dir = args.output_dir
-    if output_dir and not os.path.exists(output_dir):
+    if output_dir and not os.path.exists(os.path.join(output_dir, 'pth')):
         utils.mkdir(os.path.join(output_dir, 'pth'))
 
     print(args)
@@ -248,9 +248,7 @@ def main(args):
 
     print("Creating model")
     Model = getattr(Models, args.model)
-    model = Model(npoint=args.npoint, radius=args.radius, nsample=args.nsample,
-                  dim=args.dim, depth=args.depth, heads=args.heads, dim_head=args.dim_head,
-                  mlp_dim=args.mlp_dim, output_dim=args.output_dim, features=args.features)
+    model = Model(args)
 
     # if torch.cuda.device_count() > 1:
     #     model = nn.DataParallel(model)
@@ -381,6 +379,7 @@ def parse_args():
     parser.add_argument('--create_pkl', dest="create_pkl", action="store_true", help='create pkl data')
     parser.add_argument('--use_pkl', dest="use_pkl", action="store_true", help='use pkl data')
     parser.add_argument('--save_snapshot', dest="save_snapshot", action="store_true", help='save snapshot')
+    parser.add_argument('--read_orig_img', action="store_true")
 
     args = parser.parse_args()
 

@@ -3,9 +3,9 @@ import torch.nn as nn
 from torchvision.models import resnet18
 import numpy as np
 
-from nn.DeepFusion.modules.transformer import Transformer as FusionTransformer
-from nn.DeepFusion.modules.pointnet2.pointnet2_modules import PointnetSAModule
-from nn.DeepFusion.utils import gen_random_indices
+from nn.fusion_model.modules.transformer import Transformer as FusionTransformer
+from nn.fusion_model.modules.pointnet2.pointnet2_modules import PointnetSAModule
+from nn.datasets.utils import gen_random_indices
 
 
 class DeepFusion(nn.Module):
@@ -85,21 +85,22 @@ class DeepFusion(nn.Module):
         return output
 
 class DeepFusion2(nn.Module):
-    def __init__(self, npoint, radius, nsample, dim, depth, heads, dim_head, mlp_dim, output_dim, features=3,):
+    def __init__(self, args):
         super().__init__()
-        self.radar_backbone = PointnetSAModule(npoint=npoint, radius=radius, nsample=nsample, mlp=[features,128,128,dim], use_xyz=True)
+        self.args = args
+        self.radar_backbone = PointnetSAModule(npoint=args.npoint, radius=args.radius, nsample=args.nsample, mlp=[args.features,128,128,args.dim], use_xyz=True)
         modules = list(resnet18(pretrained=True).children())[:-2]
-        modules.append(nn.Conv2d(512, dim, (1, 1)))
+        modules.append(nn.Conv2d(512, args.dim, (1, 1)))
         self.image_backbone = torch.nn.Sequential(*modules)
-        self.depth_backbone = PointnetSAModule(npoint=npoint, radius=radius, nsample=nsample, mlp=[features,128,128,dim], use_xyz=True)
-        self.transformer = FusionTransformer(dim, depth, heads, dim_head, mlp_dim)
-        self.point_embedding = torch.nn.Linear(3, dim)
-        self.local_embedding = torch.nn.Embedding(5, dim)
+        self.depth_backbone = PointnetSAModule(npoint=args.npoint, radius=args.radius, nsample=args.nsample, mlp=[args.features,128,128,args.dim], use_xyz=True)
+        self.transformer = FusionTransformer(args.dim, args.depth, args.heads, args.dim_head, args.mlp_dim)
+        self.point_embedding = torch.nn.Linear(3, args.dim)
+        self.local_embedding = torch.nn.Embedding(5, args.dim)
         self.mlp_head = nn.Sequential(
-            nn.LayerNorm(dim),
-            nn.Linear(dim, mlp_dim),
+            nn.LayerNorm(args.dim),
+            nn.Linear(args.dim, args.mlp_dim),
             nn.GELU(),
-            nn.Linear(mlp_dim, output_dim),
+            nn.Linear(args.mlp_dim, args.output_dim),
         )
         
     def process_image(self, images, pos_emb):
@@ -130,10 +131,10 @@ class DeepFusion2(nn.Module):
         
         return cluster_feat
     
-    def forward(self, args, data_dict, is_train=False):
+    def forward(self, data_dict, is_train=False):
         if is_train:
             batch_size = data_dict['radar'].shape[0]
-            inputs = args.inputs.copy()
+            inputs = self.args.inputs.copy()
             # increase the probability of single input
             input_mask_indices = gen_random_indices(max_random_num=len(inputs))
             # input mask
@@ -146,7 +147,7 @@ class DeepFusion2(nn.Module):
                 # generate mask indices of batch
                 image_indices = gen_random_indices(batch_size, random_ratio=0.3)
                 image_mask[image_indices] = 0.0
-                image_mask = torch.from_numpy(image_mask).float().to(args.device)
+                image_mask = torch.from_numpy(image_mask).float().to(self.args.device)
                 image_mask = image_mask.expand(-1, 3, 224, 224)
                 if 'master_image' in inputs:
                     data_dict['master_image'] *= image_mask

@@ -3,6 +3,8 @@ import os
 import torch
 import numpy as np
 
+from nn.p4t.tools import copy2cpu
+
 INTRINSIC = {
     'master': np.asarray([
         [969.48345947265625,    0,                  1024.9678955078125],
@@ -47,22 +49,56 @@ class SequenceLoader(object):
         if 'sub_depth' in self.resource:
             result['sub_depth'] = np.load(os.path.join(
                 self.seq_path, 'depth_pcl', 'sub', 'frame_{}.npy'.format(idx+self.skip_head)))
+        if 'bounding_box' in self.resource:
+            result['master_bbox'] = np.load(os.path.join(
+                self.seq_path, 'bounding_box', 'master', 'frame_{}.npy'.format(idx+self.skip_head)))
+            result['sub_bbox'] = np.load(os.path.join(
+                self.seq_path, 'bounding_box', 'sub', 'frame_{}.npy'.format(idx+self.skip_head)))
         result['mesh'] = np.load(os.path.join(
             self.seq_path, 'mesh', 'frame_{}.npz'.format(idx+self.skip_head)))
             
         return result
 
+def trans_mat_2_tensor(trans_mat):
+    trans_mat_array = np.hstack((trans_mat['R'], np.array([trans_mat['t']]).T))
+    trans_mat_array = np.vstack((trans_mat_array, [0,0,0,1]))
+    return trans_mat_array
 
-def project_pcl(pcl, trans_mat=None, cam='master'):
+def trans_mat_2_dict(trans_mat):
+    trans_mat = copy2cpu(trans_mat)
+    trans_mat_dict = {
+        'R': trans_mat[:3, :3],
+        't': trans_mat[:3, 3]
+    }
+    return trans_mat_dict
+
+def project_pcl(pcl, trans_mat=None, cam='master', image_size=np.array([1536,2048])):
+    """
+    Project pcl to the image plane
+    """
     if trans_mat is not None:
         pcl = (pcl - trans_mat['t']) @ trans_mat['R']
-    pcl_2d = []
-    for p in pcl:
-        point_2d = (INTRINSIC[cam] @ p/p[2])[:2]
-        pcl_2d.append(point_2d)
-    pcl_2d = np.asarray(pcl_2d)
+    pcl_2d = ((pcl/pcl[:,2:3]) @ INTRINSIC[cam].T)[:,:2]
+    pcl_2d = np.floor(pcl_2d).astype(int)
     pcl_2d[:, [0, 1]] = pcl_2d[:, [1, 0]]
+    # filter out the points exceeding the image size
+    pcl_2d = np.where(pcl_2d<image_size-1, pcl_2d, image_size-1)
+    pcl_2d = np.where(pcl_2d>0, pcl_2d, 0)
+    return pcl_2d
 
+
+def project_pcl_torch(pcl, trans_mat=None, cam='master', image_size=torch.tensor([1536,2048])):
+    """
+    Project pcl to the image plane
+    """
+    if trans_mat is not None:
+        pcl = (pcl - trans_mat[:,None,:3,3]) @ trans_mat[:,:3,:3]
+    pcl_2d = ((pcl/pcl[:,:,2:3]) @ torch.from_numpy(INTRINSIC[cam]).T.float().cuda())[:,:,:2]
+    pcl_2d = torch.floor(pcl_2d).long()
+    pcl_2d[:,:,[0,1]] = pcl_2d[:,:,[1,0]]
+    image_size = image_size.cuda()
+    pcl_2d = torch.where(pcl_2d<image_size-1, pcl_2d, image_size-1)
+    pcl_2d = torch.where(pcl_2d>0, pcl_2d, 0)
     return pcl_2d
 
 
@@ -85,6 +121,9 @@ def filter_pcl(bounding_pcl: np.ndarray, target_pcl: np.ndarray, bound: float = 
 
 
 def pad_pcl(pcl, num_points, return_choices=False):
+    """
+    Pad pcl to the same number of points
+    """
     if pcl.shape[0] > num_points:
         r = np.random.choice(pcl.shape[0], size=num_points, replace=False)
     else:
@@ -96,7 +135,9 @@ def pad_pcl(pcl, num_points, return_choices=False):
     return pcl[r, :]
 
 
-def crop_image(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, visual:bool=False, margin:float=0.2, square:bool=False, cam='master'):
+def crop_image(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, 
+               visual:bool=False, margin:float=0.2, square:bool=False, 
+               cam:str='master', return_box:bool=False):
     """
     Crop the person area of image
     """
@@ -106,7 +147,7 @@ def crop_image(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, visual:
     joint_max = joints.max(axis=0) + margin
     joint_min = joints.min(axis=0) - margin
     # get 3d bounding box from joints
-    box_3d = [
+    box_3d = np.array([
         [joint_min[0], joint_min[1], joint_min[2]],
         [joint_min[0], joint_min[1], joint_max[2]],
         [joint_min[0], joint_max[1], joint_max[2]],
@@ -115,7 +156,7 @@ def crop_image(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, visual:
         [joint_max[0], joint_min[1], joint_max[2]],
         [joint_max[0], joint_max[1], joint_min[2]],
         [joint_max[0], joint_min[1], joint_min[2]],
-    ]
+    ])
     box_2d = []
     # project 3d bounding box to 2d image plane
     for p in box_3d:
@@ -144,13 +185,14 @@ def crop_image(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, visual:
         cv2.rectangle(image, box_min[::-1], box_max[::-1], (0, 0, 255), 2)
         cv2.imshow('img', image)
         cv2.waitKey(0)
-
+    
+    if return_box:
+        return crop_img, box_min, box_max
     return crop_img
 
 
 def get_rgb_value(pcl, image, visual=False, ret_image=False):
     pcl_2d = project_pcl(pcl)
-    pcl_2d = np.floor(pcl_2d).astype(int)
 
     pcl_color = image[pcl_2d[:, 0], pcl_2d[:, 1]]
     pcl_with_feature = np.hstack((pcl, pcl_color/255))
@@ -164,6 +206,20 @@ def get_rgb_value(pcl, image, visual=False, ret_image=False):
 
     return pcl_with_feature
 
+def get_rgb_feature(pcl, image, visual=False):
+    pcl_2d = project_pcl(pcl)
+
+    pcl_color = image[pcl_2d[:,0], pcl_2d[:,1]]
+    pcl_with_feature = np.hstack((pcl, pcl_color/255))
+    
+    if visual:
+        image[pcl_2d[:,0],pcl_2d[:,1]] = [0, 255, 0]
+        cv2.namedWindow('img', 0)
+        cv2.resizeWindow("img", 640, 480)
+        cv2.imshow('img', image)
+        cv2.waitKey(0)
+
+    return pcl_with_feature
 def convert_square_image(image):
     """
      convert to square with slice

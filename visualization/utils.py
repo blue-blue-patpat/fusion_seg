@@ -284,7 +284,9 @@ def get_image_feature(img):
 
     return output.numpy()
 
-def crop_image(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, visual:bool=False, margin:float=0.2, square:bool=False, cam=MAS):
+def crop_image(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, 
+               visual:bool=False, margin:float=0.2, square:bool=False, 
+               cam:str=MAS, return_box:bool=True):
     """
     Crop the person area of image
     """
@@ -294,7 +296,7 @@ def crop_image(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, visual:
     joint_max = joints.max(axis=0) + margin
     joint_min = joints.min(axis=0) - margin
     # get 3d bounding box from joints
-    box_3d = [
+    box_3d = np.array([
         [joint_min[0], joint_min[1], joint_min[2]],
         [joint_min[0], joint_min[1], joint_max[2]],
         [joint_min[0], joint_max[1], joint_max[2]],
@@ -303,7 +305,7 @@ def crop_image(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, visual:
         [joint_max[0], joint_min[1], joint_max[2]],
         [joint_max[0], joint_max[1], joint_min[2]],
         [joint_max[0], joint_min[1], joint_min[2]],
-    ]
+    ])
     box_2d = []
     # project 3d bounding box to 2d image plane
     for p in box_3d:
@@ -322,7 +324,7 @@ def crop_image(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, visual:
             box_max[0] += diff
             box_min[0] -= diff
     box_max = np.where(box_max<image.shape[:2], box_max, image.shape[:2])
-    box_min = np.where(box_min>0, box_min, 0)
+    box_min = np.where(box_min>0, box_min, 0)        
     # crop image
     crop_img = image[box_min[0]:box_max[0], box_min[1]:box_max[1]]
 
@@ -333,9 +335,11 @@ def crop_image(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, visual:
         cv2.imshow('img', image)
         cv2.waitKey(0)
     
-    return crop_img, box_min, box_max
+    if return_box:
+        return crop_img, box_min, box_max
+    return crop_img
 
-def project_pcl(pcl, playback=None):
+def project_pcl(pcl, playback=None, image_size=np.array([1536,2048])):
     pcl_2d = []
     for p in pcl:
         if playback is not None:
@@ -343,8 +347,11 @@ def project_pcl(pcl, playback=None):
         else:
             point_2d = (INTRINSIC[MAS] @ p/p[2])[:2]
         pcl_2d.append(point_2d)
-    pcl_2d = np.asarray(pcl_2d)
-    pcl_2d[:,[0,1]] = pcl_2d[:,[1,0]]
+    pcl_2d = np.floor(pcl_2d).astype(int)
+    pcl_2d[:, [0, 1]] = pcl_2d[:, [1, 0]]
+    # filter out the points exceeding the image size
+    pcl_2d = np.where(pcl_2d<image_size-1, pcl_2d, image_size-1)
+    pcl_2d = np.where(pcl_2d>0, pcl_2d, 0)
     
     return pcl_2d
 
@@ -355,7 +362,6 @@ def get_rgb_feature(pcl, image, mkv_fname=None, visual=False):
     else:
         playback = None
     pcl_2d = project_pcl(pcl, playback)
-    pcl_2d = np.floor(pcl_2d).astype(int)
 
     pcl_color = image[pcl_2d[:,0], pcl_2d[:,1]]
     pcl_with_feature = np.hstack((pcl, pcl_color/255))
@@ -376,7 +382,6 @@ def get_pcl_feature(pcl, image, skeleton, feature_type, mkv_fname=None, visual=F
     else:
         playback = None
     pcl_2d = project_pcl(pcl, playback)
-    pcl_2d = np.floor(pcl_2d).astype(int)
 
     if feature_type == 'rgb':
         pcl_color = image[pcl_2d[:,0], pcl_2d[:,1]]

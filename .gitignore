@@ -10,6 +10,7 @@ nn/p4t/modules/src
 kinect/pyk4a
 nn/plstm
 nn/paconv
-test*.py
-test.ipynb
+test*
 make_VIBE_data
+nn/votenet
+*pointnet2

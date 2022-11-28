@@ -4,7 +4,8 @@ import cv2
 import numpy as np
 import zipfile
 from dataloader.result_loader import ResultFileLoader
-from visualization.utils import crop_image, filter_pcl, o3d_plot, o3d_pcl, o3d_mesh
+from visualization.utils import o3d_plot, o3d_pcl, o3d_mesh
+from nn.datasets.utils import crop_image, filter_pcl
 
 def zip_files(source_path: str, target_path: str):
     zip = zipfile.ZipFile(target_path, "w", zipfile.ZIP_DEFLATED)
@@ -32,6 +33,10 @@ def make_dirs(save_path: str):
         os.makedirs(os.path.join(save_path, 'depth_pcl', 'sub'))
     if not os.path.exists(os.path.join(save_path, 'mesh')):
         os.makedirs(os.path.join(save_path, 'mesh'))
+    if not os.path.exists(os.path.join(save_path, 'bouding_box', 'master')):
+        os.makedirs(os.path.join(save_path, 'bouding_box', 'master'))
+    if not os.path.exists(os.path.join(save_path, 'bouding_box', 'sub')):
+        os.makedirs(os.path.join(save_path, 'bouding_box', 'sub'))
 
 def save_data(save_path: str, seq_loader: ResultFileLoader):
     print(time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time())))
@@ -55,7 +60,8 @@ def save_data(save_path: str, seq_loader: ResultFileLoader):
         arbe_data = np.hstack((arbe_pcl, arbe_feature))
         
         master_img = frame['master_color']
-        crop_img = crop_image(mesh_joint, master_img, trans_mat=trans_mat['kinect_master'], square=True)[0]
+        crop_img, mas_box_min, mas_box_max = crop_image(mesh_joint, master_img, trans_mat=trans_mat['kinect_master'], square=True, return_box=True)
+        master_bbox = np.array([mas_box_min, mas_box_max])
         master_pcl = frame['master_pcl']
         master_color = master_img.reshape(len(master_pcl), 3) / [255, 255, 255]
         master_pcl = filter_pcl(mesh_joint, np.hstack((master_pcl, master_color)), 0.2, 0.21)
@@ -63,14 +69,15 @@ def save_data(save_path: str, seq_loader: ResultFileLoader):
         master_depth_img = frame['master_depth']
         
         sub2_img = frame['sub2_color']
-        crop_img = crop_image(mesh_joint, sub2_img, trans_mat=trans_mat['kinect_sub'], margin=0.2, square=True, cam="000176712112")[0]
+        crop_img, sub_box_min, sub_box_max = crop_image(mesh_joint, sub2_img, trans_mat=trans_mat['kinect_sub'], square=True, cam="sub", return_box=True)
+        sub2_bbox = np.array([sub_box_min, sub_box_max])
         sub2_pcl = frame['sub2_pcl']
         sub2_color = sub2_img.reshape(len(sub2_pcl), 3) / [255, 255, 255]
         sub2_pcl = filter_pcl(mesh_joint, np.hstack((sub2_pcl, sub2_color)), 0.2, 0.21)
         sub2_img = cv2.resize(crop_img, (224, 224))
         sub2_depth_img = frame['sub2_depth']
         
-        o3d_plot([o3d_pcl(sub2_pcl[:,:3]-mesh_joint[0], color=[0,0,1]), o3d_pcl(mesh_joint-mesh_joint[0], color=[0,1,0])])
+        # o3d_plot([o3d_pcl(master_pcl[:,:3]-mesh_joint[0], color=[0,0,1]), o3d_pcl(mesh_joint-mesh_joint[0], color=[0,1,0])])
         
         np.save(os.path.join(save_path, 'radar', 'frame_{}'.format(idx)), arbe_data)
         cv2.imwrite(os.path.join(save_path, 'image', 'master', 'frame_{}.png'.format(idx)), master_img)
@@ -80,6 +87,8 @@ def save_data(save_path: str, seq_loader: ResultFileLoader):
         np.save(os.path.join(save_path, 'depth_pcl', 'sub', 'frame_{}'.format(idx)), sub2_pcl)
         cv2.imwrite(os.path.join(save_path, 'depth', 'sub', 'frame_{}.png'.format(idx)), sub2_depth_img)
         np.savez(os.path.join(save_path, 'mesh', 'frame_{}'.format(idx)), **mesh)
+        np.save(os.path.join(save_path, 'bouding_box', 'master', 'frame_{}'.format(idx)), master_bbox)
+        np.save(os.path.join(save_path, 'bouding_box', 'sub', 'frame_{}'.format(idx)), sub2_bbox)
         
     print(time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time())))
 
@@ -125,27 +134,27 @@ def main():
 
     enable_sources = ["arbe","arbe_feature",'master','sub2',"kinect_color","kinect_depth","kinect_pcl","mesh","mosh","mesh_param"]
     
-    # for i, seq_path in enumerate(train_paths):
-    #     # if i < 10 or i > 14:
-    #     #     continue
-    #     print(time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time())))
-    #     seq_loader = ResultFileLoader(seq_path, 0, 0, enable_sources)
-    #     print("seq_path", seq_path)
-    #     save_path = os.path.join('/home/nesc525/drivers/6/dataset/train', 'sequence_{}'.format(i))
-    #     make_dirs(save_path)
-    #     save_data(save_path, seq_loader)
-
-    for k, v in test_paths.items():
-        if k != 'lab1':
+    for i, seq_path in enumerate(train_paths):
+        if i != 4:
             continue
-        for i, seq_path in enumerate(v):
-            # if i == 0:
-            #     continue
-            print(time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time())))
-            seq_loader = ResultFileLoader(seq_path, 0, 0, enable_sources)
-            save_path = os.path.join('/home/nesc525/drivers/6/dataset/test', '{}'.format(k), 'sequence_{}'.format(i))
-            make_dirs(save_path)
-            save_data(save_path, seq_loader)
+        print(time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time())))
+        seq_loader = ResultFileLoader(seq_path, 0, 0, enable_sources)
+        print("seq_path", seq_path)
+        save_path = os.path.join('/home/nesc525/drivers/6/dataset/train', 'sequence_{}'.format(i))
+        make_dirs(save_path)
+        save_data(save_path, seq_loader)
+
+    # for k, v in test_paths.items():
+    #     # if k != 'lab2':
+    #     #     continue
+    #     for i, seq_path in enumerate(v):
+    #         # if i == 1:
+    #         #     continue
+    #         print(time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time())))
+    #         seq_loader = ResultFileLoader(seq_path, 0, 0, enable_sources)
+    #         save_path = os.path.join('/home/nesc525/drivers/6/dataset/test', '{}'.format(k), 'sequence_{}'.format(i))
+    #         make_dirs(save_path)
+    #         save_data(save_path, seq_loader)
 
 if __name__ == "__main__":
     main()

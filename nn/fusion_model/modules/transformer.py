@@ -24,7 +24,7 @@ class PreNorm(nn.Module):
             return self.fn(self.norm(x), **kwargs)
 
 class FeedForward(nn.Module):
-    def __init__(self, dim, hidden_dim, dropout = 0.):
+    def __init__(self, dim, hidden_dim, dropout = 0., fn=None):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(dim, hidden_dim),
@@ -33,7 +33,10 @@ class FeedForward(nn.Module):
             nn.Linear(hidden_dim, dim),
             nn.Dropout(dropout)
         )
-    def forward(self, x):
+        self.fn = fn
+    def forward(self, x, **kwargs):
+        if self.fn is not None:
+            return self.fn(self.net(x), **kwargs)
         return self.net(x)
 
 class Attention(nn.Module):
@@ -86,8 +89,26 @@ class Transformer(nn.Module):
                 Residual(PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head, dropout = dropout))),
                 Residual(PreNorm(dim, FeedForward(dim, mlp_dim, dropout = dropout)))
             ]))
+            
     def forward(self, x, y=None):
         for attn, ff in self.layers:
             attn_out = attn(x, y)
             output = ff(attn_out)
+        return output
+
+class Transformer2(nn.Module):
+    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0.):
+        super().__init__()
+        self.layers = nn.ModuleList([])
+        for _ in range(depth):
+            self.layers.append(
+                Residual(PreNorm(dim, 
+                    FeedForward(dim, mlp_dim, dropout=dropout, 
+                        fn=Residual(PreNorm(dim, 
+                            Attention(dim, heads = heads, dim_head = dim_head, dropout = dropout))))))
+            )
+            
+    def forward(self, x, y=None):
+        for layer in self.layers:
+            output = layer(x, y)
         return output

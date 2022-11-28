@@ -9,7 +9,7 @@ from queue import Queue
 from nn.p4t.recon_demo import ReconstructionDemo
 from visualization.mesh_plot import MoshEvaluateStreamPlot
 from nn.p4t.tools import copy2cpu as c2c
-from visualization.utils import pcl_filter
+from visualization.utils import filter_pcl
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -201,7 +201,7 @@ def run():
                         arbe_pcl = arbe_data[:, [1,2,3,4,8,9]]
                         dete_results = dete_model.run_detection(arbe_pcl, root_path, ARGS.save_data)
                         if dete_results is not None:
-                            person_pcl = pcl_filter(dete_results, arbe_pcl, 0)
+                            person_pcl = filter_pcl(dete_results, arbe_pcl, 0)
                             bbox_center = ((dete_results.max(axis=0) + dete_results.min(axis=0))/2)[:3]
                             pred_mesh = recon_model.run_reconstruction(person_pcl, bbox_center, root_path)
                         else:
