@@ -17,14 +17,13 @@ from nn.p4t.modules.geodesic_loss import GeodesicLoss
 from nn.p4t.scheduler import WarmupMultiStepLR
 from nn.datasets.fusion_dataset import FusionDataset
 from nn.SMPL.mosh_loss import MoshLoss, SMPLXModel
-import nn.fusion_model.modules.tokenfusion as Models
+import nn.fusion_model.modules.deepfusion as Models
 from message.dingtalk import TimerBot
-from visualization.mesh_plot import MoshEvaluateStreamPlot
+from visualization.mesh_plot import MoshEvaluateStreamPlot, pcl2box
 from nn.p4t.modules.loss import LossManager
-from visualization.mesh_plot import pcl2sphere
 
 
-def train_one_epoch(args, model, losses, criterions, loss_weight, optimizer, lr_scheduler, data_loader, epoch):
+def train_one_epoch(args, model, losses, criterions, loss_weight, optimizer, lr_scheduler, data_loader, device, epoch):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value}'))
@@ -39,10 +38,9 @@ def train_one_epoch(args, model, losses, criterions, loss_weight, optimizer, lr_
                 if isinstance(v, torch.Tensor):
                     input[k] = v.to(args.device, dtype=torch.float32)
         else:
-            input = input.to(args.device, dtype=torch.float32)
-        target = target.to(args.device, dtype=torch.float32)
-        pred_dict = model(input, True)
-        output = pred_dict['smplx_param']
+            input = input.to(device, dtype=torch.float32)
+        target = target.to(device, dtype=torch.float32)
+        output = model(input, True)
         batch_size = target.shape[0]
         # translation loss
         losses.update_loss("trans_loss", loss_weight[0]*criterions["mse"](output[:,0:3], target[:,0:3]))
@@ -65,8 +63,6 @@ def train_one_epoch(args, model, losses, criterions, loss_weight, optimizer, lr_
         # gender loss
         if args.use_gender:
             losses.update_loss("gender_loss", loss_weight[5]*criterions["entropy"](output[:,-1], target[:,-1]))
-        score_loss = torch.sum(torch.abs(pred_dict.get('pred_score', torch.zeros(1).cuda())))
-        losses.update_loss("score_loss", 1e-3*score_loss)
 
         loss = losses.calculate_total_loss()
         optimizer.zero_grad()
@@ -80,7 +76,7 @@ def train_one_epoch(args, model, losses, criterions, loss_weight, optimizer, lr_
         lr_scheduler.step()
         sys.stdout.flush()
 
-def evaluate(args, model, losses, criterions, data_loader, save_path=''):
+def evaluate(args, model, losses, criterions, data_loader, device, save_path=''):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
@@ -90,18 +86,17 @@ def evaluate(args, model, losses, criterions, data_loader, save_path=''):
     colors = dict(mmWave=[179, 230, 213],Depth=[208, 163, 230],RGBD=[229, 195, 161],RGB=[159, 175, 216])
     frames = 0
 
-    body_model = SMPLXModel(bm_fname=SMPLX_MODEL_NEUTRAL_PATH, num_betas=16, num_expressions=0, device=args.device)
+    body_model = SMPLXModel(bm_fname=SMPLX_MODEL_NEUTRAL_PATH, num_betas=16, num_expressions=0, device=device)
     with torch.no_grad():
         for data_dict, target in metric_logger.log_every(data_loader, 100, header):
             if isinstance(data_dict, dict):
                 for k, v in data_dict.items():
                     if isinstance(v, torch.Tensor):
-                        data_dict[k] = v.to(args.device, non_blocking=True, dtype=torch.float32)
+                        data_dict[k] = v.to(device, non_blocking=True, dtype=torch.float32)
             else:
-                data_dict = data_dict.to(args.device, non_blocking=True, dtype=torch.float32)
-            target = target.to(args.device, non_blocking=True, dtype=torch.float32)
-            pred_dict = model(data_dict)
-            output = pred_dict['smplx_param']
+                data_dict = data_dict.to(device, non_blocking=True, dtype=torch.float32)
+            target = target.to(device, non_blocking=True, dtype=torch.float32)
+            output = model(data_dict)
             # translation loss
             losses.update_loss("trans_loss", criterions["mse"](output[:,0:3], target[:,0:3]))
             # pose loss
@@ -141,29 +136,30 @@ def evaluate(args, model, losses, criterions, data_loader, save_path=''):
                 label_mesh = body_model(target[:,:3], target[:,3:-16], target[:,-16:])
                 for i in range(len(target)):
                     yield dict(
-                        # radar_pcl = dict(
-                            # pcl = data_frame,
-                        radar_mesh = dict(
-                            mesh = pcl2sphere(data_dict['radar'][i][:,:3]) if data_dict['radar'].shape[1] else None,
+                        radar_pcl = dict(
+                            # mesh = pcl2box(data_dict['radar'][i][:,:3]) if data_dict['radar'].shape[1] else None,
+                            pcl = c2c(data_dict['radar'][i][:,:3]) if data_dict['radar'].shape[1] else None,
                             color = [0,0.8,0],
                         ),
-                        master_mesh = dict(
-                            mesh = pcl2sphere(data_dict['master_depth'][i][:,:3]) if data_dict['master_depth'].shape[1] else None,
-                            color = [0.8,0,0],
+                        master_pcl = dict(
+                            # mesh = pcl2box(data_dict['master_depth'][i][:,:3]) if data_dict['master_depth'].shape[1] else None,
+                            pcl = c2c(data_dict['master_depth'][i][:,:3]) if data_dict['master_depth'].shape[1] else None,
+                            color = np.asarray([59, 170, 235]) /255,
                         ),
-                        sub_mesh = dict(
-                            mesh = pcl2sphere(data_dict['sub_depth'][i][:,:3]) if data_dict['sub_depth'].shape[1] else None,
-                            color = [0,0,0.8],
+                        sub_pcl = dict(
+                            # mesh = pcl2box(data_dict['sub_depth'][i][:,:3]) if data_dict['sub_depth'].shape[1] else None,
+                            pcl = c2c(data_dict['sub_depth'][i][:,:3]) if data_dict['sub_depth'].shape[1] else None,
+                            color = np.asarray([245, 157, 86]) /255,
                         ),
                         pred_smpl = dict(
                             mesh = [c2c(pred_mesh['verts'][i]), c2c(pred_mesh['faces'])],
                             # color = np.asarray(colors[input_data]) /255
                             color = np.asarray([208, 163, 230]) /255,
                         ),
-                        label_smpl = dict(
-                            mesh = [c2c(label_mesh['verts'][i]), c2c(label_mesh['faces'])],
-                            color = np.asarray([235, 189, 191]) / 255,
-                        )
+                        # label_smpl = dict(
+                        #     mesh = [c2c(label_mesh['verts'][i]), c2c(label_mesh['faces'])],
+                        #     color = np.asarray([235, 189, 191]) / 255,
+                        # )
                     )
                     frames += 1
                     if frames > args.num_frames:
@@ -236,10 +232,9 @@ def main(args):
     torch.backends.cudnn.benchmark = False
     
     torch.cuda.set_device(args.device)
-    args.device = torch.device('cuda')
+    device = torch.device('cuda')
     
     args.inputs = ['radar','master_image','master_depth','sub_image','sub_depth'] if args.train else args.inputs.replace(' ','').split(',')
-    args.data_path = '/home/nesc525/drivers/0/dataset' if args.read_orig_img else '/home/nesc525/drivers/6/dataset'
 
     # Data loading code
     dataset = FusionDataset(args)
@@ -259,13 +254,13 @@ def main(args):
 
     # if torch.cuda.device_count() > 1:
     #     model = nn.DataParallel(model)
-    model.to(args.device)
+    model.to(device)
     
     bot =TimerBot()
     losses = LossManager(bot)
 
     mse_criterion = nn.MSELoss()
-    smpl_criterion = MoshLoss(device=args.device, scale=args.normal_scale)
+    smpl_criterion = MoshLoss(device=device, scale=args.normal_scale)
     rot_mat_criterion = GeodesicLoss()
     entropy_criterion = nn.BCEWithLogitsLoss()
     criterions = dict(mse=mse_criterion, smpl=smpl_criterion, rot_mat=rot_mat_criterion, entropy=entropy_criterion)
@@ -296,9 +291,9 @@ def main(args):
         loss_weight = list(map(float, args.loss_weight.split(",")))
 
         for epoch in range(args.start_epoch, args.epochs):
-            train_one_epoch(args, model, losses, criterions, loss_weight, optimizer, lr_scheduler, data_loader_train, epoch)
+            train_one_epoch(args, model, losses, criterions, loss_weight, optimizer, lr_scheduler, data_loader_train, device, epoch)
             losses.calculate_epoch_loss(os.path.join(output_dir,"loss/train"), epoch)
-            list(evaluate(args, model, losses, criterions, data_loader_eval))
+            list(evaluate(args, model, losses, criterions, data_loader_eval, device))
             losses.calculate_epoch_loss(os.path.join(output_dir,"loss/eval"), epoch)
 
             if output_dir:
@@ -322,7 +317,7 @@ def main(args):
         data_loader_test = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
         print("Start testing")
         save_path = os.path.join(output_dir, "error", args.test_scene)
-        gen = evaluate(args, model, losses, criterions, data_loader_test, save_path)
+        gen = evaluate(args, model, losses, criterions, data_loader_test, device, save_path)
         plot = MoshEvaluateStreamPlot()
         if args.save_snapshot:
             snapshot_path = os.path.join(args.output_dir, 'snapshot', args.test_scene)
@@ -337,7 +332,7 @@ def parse_args():
     parser.add_argument('--seed', default=35, type=int, help='random seed')
     parser.add_argument('--model', default='DeepFusion', type=str, help='model')
     # input
-    parser.add_argument('--data_path', default='/home/nesc525/drivers/6/dataset', type=str, help='dataset')
+    parser.add_argument('--data_path', default='/home/nesc525/drivers/7/mmBody', type=str, help='dataset')
     parser.add_argument("--seq_idxes", type=str, default='') 
     parser.add_argument('--num_points', default=1024, type=int, help='number of points per frame')
     parser.add_argument('--normal_scale', default=1, type=int, help='normal scale of labels')
