@@ -195,9 +195,9 @@ def rot_mat_2_rodrigues(R):
     rvecs = torch.stack((rx, ry, rz), -1)
     return rvecs.reshape(batch_size, -1)
 
-def rotation6d_2_rodrigues(nn_output):
-    batch_size = nn_output.shape[0]
-    R = rotation6d_2_rot_mat(nn_output)
+def rotation6d_2_rodrigues(rotation6d):
+    batch_size = rotation6d.shape[0]
+    R = rotation6d_2_rot_mat(rotation6d)
     rvecs = rot_mat_2_rodrigues(R).view(batch_size, -1)
     
     return rvecs

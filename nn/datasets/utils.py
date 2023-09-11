@@ -20,7 +20,7 @@ INTRINSIC = {
 
 class SequenceLoader(object):
     def __init__(self, seq_path: str, skip_head: int = 0, skip_tail: int = 0, 
-                 resource=['radar','master_image','master_image','sub_image','sub_depth'], **kwargs) -> None:
+                 resource=['radar','master_image','master_image','sub_image','sub_depth']) -> None:
         self.seq_path = seq_path
         self.skip_head = skip_head
         self.skip_tail = skip_tail
@@ -40,20 +40,19 @@ class SequenceLoader(object):
         if 'master_image' in self.resource:
             result['master_image'] = cv2.imread(os.path.join(
                 self.seq_path, 'image', 'master', 'frame_{}.png'.format(idx+self.skip_head)))
+            result['master_bbox'] = np.load(os.path.join(
+                self.seq_path, 'bounding_box', 'master', 'frame_{}.npy'.format(idx+self.skip_head)))
         if 'sub_image' in self.resource:
             result['sub_image'] = cv2.imread(os.path.join(
                 self.seq_path, 'image', 'sub', 'frame_{}.png'.format(idx+self.skip_head)))
+            result['sub_bbox'] = np.load(os.path.join(
+                self.seq_path, 'bounding_box', 'sub', 'frame_{}.npy'.format(idx+self.skip_head)))
         if 'master_depth' in self.resource:
             result['master_depth'] = np.load(os.path.join(
                 self.seq_path, 'depth_pcl', 'master', 'frame_{}.npy'.format(idx+self.skip_head)))
         if 'sub_depth' in self.resource:
             result['sub_depth'] = np.load(os.path.join(
                 self.seq_path, 'depth_pcl', 'sub', 'frame_{}.npy'.format(idx+self.skip_head)))
-        if 'bounding_box' in self.resource:
-            result['master_bbox'] = np.load(os.path.join(
-                self.seq_path, 'bounding_box', 'master', 'frame_{}.npy'.format(idx+self.skip_head)))
-            result['sub_bbox'] = np.load(os.path.join(
-                self.seq_path, 'bounding_box', 'sub', 'frame_{}.npy'.format(idx+self.skip_head)))
         result['mesh'] = np.load(os.path.join(
             self.seq_path, 'mesh', 'frame_{}.npz'.format(idx+self.skip_head)))
             
@@ -72,13 +71,14 @@ def trans_mat_2_dict(trans_mat):
     }
     return trans_mat_dict
 
-def project_pcl(pcl, trans_mat=None, cam='master', image_size=np.array([1536,2048])):
+def project_pcl(pcl, trans_mat=None, intrinsic=None, image_size=np.array([1536,2048])):
     """
     Project pcl to the image plane
     """
     if trans_mat is not None:
         pcl = (pcl - trans_mat['t']) @ trans_mat['R']
-    pcl_2d = ((pcl/pcl[:,2:3]) @ INTRINSIC[cam].T)[:,:2]
+    intrinsic = np.array(intrinsic) if intrinsic is not None else INTRINSIC['master']
+    pcl_2d = ((pcl/pcl[:,2:3]) @ intrinsic.T)[:,:2]
     pcl_2d = np.floor(pcl_2d).astype(int)
     pcl_2d[:, [0, 1]] = pcl_2d[:, [1, 0]]
     # filter out the points exceeding the image size
@@ -87,13 +87,14 @@ def project_pcl(pcl, trans_mat=None, cam='master', image_size=np.array([1536,204
     return pcl_2d
 
 
-def project_pcl_torch(pcl, trans_mat=None, cam='master', image_size=torch.tensor([1536,2048])):
+def project_pcl_torch(pcl, trans_mat=None, intrinsic=None, image_size=torch.tensor([1536,2048])):
     """
     Project pcl to the image plane
     """
     if trans_mat is not None:
         pcl = (pcl - trans_mat[:,None,:3,3]) @ trans_mat[:,:3,:3]
-    pcl_2d = ((pcl/pcl[:,:,2:3]) @ torch.from_numpy(INTRINSIC[cam]).T.float().cuda())[:,:,:2]
+    intrinsic = intrinsic if intrinsic is not None else INTRINSIC['master']
+    pcl_2d = ((pcl/pcl[:,:,2:3]) @ torch.tensor(intrinsic).T.float().cuda())[:,:,:2]
     pcl_2d = torch.floor(pcl_2d).long()
     pcl_2d[:,:,[0,1]] = pcl_2d[:,:,[1,0]]
     image_size = image_size.cuda()
@@ -135,15 +136,15 @@ def pad_pcl(pcl, num_points, return_choices=False):
     return pcl[r, :]
 
 
-def crop_image(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, 
-               visual:bool=False, margin:float=0.2, square:bool=False, 
-               cam:str='master', return_box:bool=False):
+def crop_image(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None, visual:bool=False, 
+               margin:float=0.2, square:bool=False, intrinsic=None, return_box:bool=False):
     """
     Crop the person area of image
     """
     # transform the joints to camera coordinate
     if trans_mat is not None:
         joints = (joints - trans_mat['t']) @ trans_mat['R']
+    intrinsic = intrinsic if intrinsic is not None else INTRINSIC['master']
     joint_max = joints.max(axis=0) + margin
     joint_min = joints.min(axis=0) - margin
     # get 3d bounding box from joints
@@ -159,10 +160,7 @@ def crop_image(joints:np.ndarray, image:np.ndarray, trans_mat:dict=None,
     ])
     box_2d = []
     # project 3d bounding box to 2d image plane
-    for p in box_3d:
-        box_2d.append((INTRINSIC[cam] @ p/p[2])[:2])
-    box_2d = np.floor(box_2d).astype(int)
-    box_2d[:, [0, 1]] = box_2d[:, [1, 0]]
+    box_2d = project_pcl(box_3d, intrinsic=intrinsic)
     box_min = box_2d.min(0)
     box_max = box_2d.max(0)
     if square:

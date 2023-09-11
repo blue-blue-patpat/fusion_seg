@@ -345,7 +345,8 @@ class ResultFileLoader():
 
         # Init file sources
         if enabled_sources is None:
-            self.sources = ["arbe", "master", "sub1", "sub2", "kinect_skeleton", "optitrack", "mesh"]
+            self.sources = ["arbe","arbe_feature",'master','sub2',"kinect_color",
+                            "kinect_depth","kinect_pcl","mesh","mosh","mesh_param"]
         else:
             self.sources = enabled_sources
 

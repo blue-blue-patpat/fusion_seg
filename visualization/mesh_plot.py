@@ -282,7 +282,7 @@ class MeshPclStreamPlot(O3DStreamPlot):
             yield dict(
                 mesh=dict(mesh=(smpl_model.core.verts, smpl_model.core.faces)),
                 # kpts=dict(skeleton=frame["optitrack"], lines=marker_lines, color=[1,0,0]),
-                pcl=dict(mesh=pcl2sphere(filter_pcl(smpl_model.core.keypoints, frame["arbe"])), color=[0.2,1,0.2]),
+                pcl=dict(mesh=pcl2box(filter_pcl(smpl_model.core.keypoints, frame["arbe"])), color=[0.2,1,0.2]),
             )
 
 
@@ -348,19 +348,28 @@ class MoshEvaluateStreamPlot(O3DStreamPlot):
         self.plot_funcs = dict(
             radar_pcl=o3d_pcl,
             radar_mesh=o3d_mesh,
+            master_pcl=o3d_pcl,
+            master_mesh=o3d_mesh,
+            sub_pcl=o3d_pcl,
+            sub_mesh=o3d_mesh,
             pred_smpl=o3d_mesh,
             label_smpl=o3d_mesh,
+            vert_pcl=o3d_pcl,
+            vert_lines=o3d_lines,
+            grid_box=o3d_mesh,
+            cluster_sphere=o3d_mesh,
+            feat_lines=o3d_lines,
         )
 
     def init_show(self):
         super().init_show()
-        self.ctr.set_up(np.array([[0], [-1], [0]]))
-        self.ctr.set_front(np.array([[0], [0], [-1]]))
+        self.ctr.set_up(np.array([[0], [0], [1]]))
+        self.ctr.set_front(np.array([[0], [-1], [0]]))
         self.ctr.set_lookat(np.array([0, 0, 0]))
         self.ctr.set_zoom(1)
 
 
-def pcl2sphere(pcl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def pcl2box(pcl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     verts = []
     faces = []
     r = 0.0075

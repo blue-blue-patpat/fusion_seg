@@ -20,7 +20,6 @@ import nn.p4t.modules.model as Models
 from message.dingtalk import TimerBot
 from visualization.mesh_plot import MoshEvaluateStreamPlot
 from nn.p4t.modules.loss import LossManager
-from visualization.mesh_plot import pcl2sphere
 
 
 def train_one_epoch(args, model, losses, criterions, loss_weight, optimizer, lr_scheduler, data_loader, device, epoch):

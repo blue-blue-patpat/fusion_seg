@@ -86,8 +86,6 @@ class FusionDataset():
         # process image
         mas_img = torch.Tensor([])
         bbox = {}
-        # process image
-        mas_img = torch.Tensor([])
         trans_mat_mas = seq_loader.calib['kinect_master']
         if 'master_image' in self.args.inputs:
             if self.args.read_orig_img:
@@ -148,7 +146,7 @@ class FusionDataset():
         result['sub_depth'] = sub_depth
         result['trans_mat'] = trans_mat
         result['bbox'] = bbox
-        result['root_pelvis'] = joints[0].astype(np.float32)
+        result['root_pelvis'] = torch.from_numpy(joints[0]).float()
 
         label = np.concatenate((pose, betas), dtype=np.float32, axis=0)
         label = torch.from_numpy(label).float()

@@ -27,7 +27,7 @@ from message.dingtalk import TimerBot
 from visualization.mesh_plot import MeshEvaluateStreamPlot
 from visualization.utils import o3d_mesh, o3d_pcl, o3d_plot, o3d_smpl_mesh
 from nn.p4t.modules.loss import LossManager
-from visualization.mesh_plot import pcl2sphere
+from visualization.mesh_plot import pcl2box
 
 torch.cuda.set_device(0)
 device = torch.device('cuda')
@@ -163,7 +163,7 @@ def evaluate(model, losses, criterions, loss_weight, data_loader, device, output
                     # restore to origin size, except gender
                     yield dict(
                         radar_pcl = dict(
-                            mesh = pcl2sphere(arbe_frame),
+                            mesh = pcl2box(arbe_frame),
                             color = np.asarray([255, 181, 74]) / 255,
                         ),
                         pred_smpl = dict(

@@ -8,7 +8,7 @@ from nn.fusion_model.modules.pointnet2.pointnet2_modules import PointnetSAModule
 
 from nn.fusion_model.modules.transformer import Transformer2 as FusionTransformer
 from nn.fusion_model.utils import FFN, PredictorLG
-from nn.datasets.utils import gen_random_indices, project_pcl_torch
+from nn.datasets.utils import gen_random_indices, project_pcl_torch, INTRINSIC
 
 class TokenFusion(torch.nn.Module):
     '''
@@ -38,11 +38,14 @@ class TokenFusion(torch.nn.Module):
         )
     
     def get_img_patch_idx(self, xyz, trans_mat, cam, bbox):
-        proj_uv = project_pcl_torch(xyz, trans_mat, cam=cam)
+        proj_uv = project_pcl_torch(xyz, trans_mat, intrinsic=INTRINSIC[cam])
         bbox_size = bbox[:,2:] - bbox[:,:2]
         trans_uv = (proj_uv - bbox[:,None,:2])*224/bbox_size[:,None]
-        img_patch_idx = trans_uv[:,:,0] // 32 * 7 + trans_uv[:,:,1] // 32
-        return img_patch_idx.long().unsqueeze(-1).expand(-1,-1,self.args.dim)
+        pos_idx = (trans_uv // 32).long()
+        pos_idx = torch.where(pos_idx < 6, pos_idx, 6)
+        pos_idx = torch.where(pos_idx > 0, pos_idx, 0)
+        patch_idx = pos_idx[:,:,0] * 7 + pos_idx[:,:,1]
+        return patch_idx.unsqueeze(-1).expand(-1,-1,self.args.dim)
     
     def process_image(self, images, pos_emb):
         # extract grid features and global image features using a CNN backbone
@@ -78,19 +81,45 @@ class TokenFusion(torch.nn.Module):
         # image and point mask
         if is_train:
             batch_size = data_dict['radar'].shape[0]
-            image_mask = np.ones((batch_size, 1, 1, 1))
-            # generate mask indices of batch
-            image_indices = gen_random_indices(batch_size, random_ratio=0.3)
-            image_mask[image_indices] = 0.0
-            image_mask = torch.from_numpy(image_mask).float().to(self.args.device)
-            image_mask = image_mask.expand(-1, 3, 224, 224)
-            data_dict['master_image'] *= image_mask
-            data_dict['sub_image'] *= image_mask
+            inputs = self.args.inputs.copy()
+            # increase the probability of single input
+            input_mask_indices = gen_random_indices(max_random_num=len(inputs))
+            # input mask
+            for i in input_mask_indices:
+                data_dict[inputs[i]] = torch.zeros_like(data_dict[inputs[i]])
+                inputs[i] = ''
+            # conduct image mask if image and point modalities are both active
+            if {'master_image','sub_image'} & set(inputs) and {'radar','master_depth','sub_depth'} & set(inputs):
+                image_mask = np.ones((batch_size, 1, 1, 1))
+                # generate mask indices of batch
+                image_indices = gen_random_indices(batch_size, random_ratio=0.3)
+                image_mask[image_indices] = 0.0
+                image_mask = torch.from_numpy(image_mask).float().to(self.args.device)
+                image_mask = image_mask.expand(-1, 3, 224, 224)
+                if 'master_image' in inputs:
+                    data_dict['master_image'] *= image_mask
+                if 'sub_image' in inputs:
+                    data_dict['sub_image'] *= image_mask
+                    
+                # generate point mask indices of batch
+                point_mask = np.ones((batch_size, 1, 1))
+                point_indices = gen_random_indices(batch_size, random_ratio=0.3)
+                point_mask[point_indices] = 0.0
+                point_mask = torch.from_numpy(point_mask).float().to(self.args.device)
+                point_mask = point_mask.expand(-1, 4096, 6)
+                if 'master_depth' in inputs:
+                    data_dict['master_depth'] *= point_mask
+                if 'sub_depthe' in inputs:
+                    data_dict['sub_depthe'] *= point_mask
+        else:
+            mask_inputs = set(self.args.inputs) - set(self.args.enabled_inputs)
+            for input in mask_inputs:
+                data_dict[input] = torch.zeros_like(data_dict[input])
         
         image_feats = []
         point_feats = []
         proj_patch_idx = []
-        # extract global and local features
+        # extract local features
         for i, input in enumerate(['radar','master_image','master_depth','sub_image','sub_depth']):
             if data_dict[input].shape[1]:
                 if i == 1 or i == 3:
@@ -98,10 +127,10 @@ class TokenFusion(torch.nn.Module):
                 else:
                     point_feat, xyz = self.process_point(data_dict[input], pos_emb=i)
                     point_feats.append(point_feat)
-                    mas_patch_idx = self.get_img_patch_idx(xyz+data_dict['root_pelvis'][:,None,:], 
+                    mas_patch_idx = self.get_img_patch_idx(xyz+data_dict['root_pelvis'][:,None,:].cuda(), 
                                                            data_dict['trans_mat']['master_image'].cuda(), 
                                                            'master', data_dict['bbox']['master_image'].cuda())
-                    sub_patch_idx = self.get_img_patch_idx(xyz+data_dict['root_pelvis'][:,None,:], 
+                    sub_patch_idx = self.get_img_patch_idx(xyz+data_dict['root_pelvis'][:,None,:].cuda(), 
                                                            data_dict['trans_mat']['sub_image'].cuda(), 
                                                            'sub', data_dict['bbox']['sub_image'].cuda())
                     proj_patch_idx.append([mas_patch_idx, sub_patch_idx])

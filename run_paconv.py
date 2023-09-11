@@ -228,8 +228,8 @@ def test(args, io):
 
     model = nn.DataParallel(model)
     #需要修改模型位置
-    model.load_state_dict(torch.load("/home/nesc525/chen/3DSVC/ignoredata/paconv/checkpoints/20211010-wF6-0.150891/best_model.t7"))
-    #model.load_state_dict(torch.load("/home/nesc525/chen/3DSVC/nn/paconv/20210919-11:13/best_model.t7"))
+    model.load_state_dict(torch.load("/home/nesc525/drivers/0/chen/3DSVC/ignoredata/paconv/checkpoints/20211010-wF6-0.150891/best_model.t7"))
+    #model.load_state_dict(torch.load("/home/nesc525/drivers/0/chen/3DSVC/nn/paconv/20210919-11:13/best_model.t7"))
     model = model.eval()
     count = 0.0
     test_true = []
@@ -285,7 +285,7 @@ def test2(args, io):
     dataset_test = MMBody3D(root_path='/media/nesc525/perple2',frames_per_clip=5,step_between_clips=1,num_points=args.num_points,train=False)
     test_loader2 = DataLoader(dataset_test,num_workers=args.workers, batch_size=1, shuffle=True, drop_last=True)
     criterion = nn.MSELoss()
-    f = open('/home/nesc525/chen/3DSVC/ignoredata/paconv/test_result/test_RMSE.txt' ,'w')
+    f = open('/home/nesc525/drivers/0/chen/3DSVC/ignoredata/paconv/test_result/test_RMSE.txt' ,'w')
     print(len(dataset_test))
     device = torch.device("cuda" if args.cuda else "cpu")
 
@@ -303,8 +303,8 @@ def test2(args, io):
 
     model = nn.DataParallel(model)
     #需要修改模型位置
-    model.load_state_dict(torch.load("/home/nesc525/chen/3DSVC/ignoredata/paconv/checkpoints/20211010-wF6/best_model.t7"))
-    #model.load_state_dict(torch.load("/home/nesc525/chen/3DSVC/nn/paconv/20210919-11:13/best_model.t7"))
+    model.load_state_dict(torch.load("/home/nesc525/drivers/0/chen/3DSVC/ignoredata/paconv/checkpoints/20211010-wF6/best_model.t7"))
+    #model.load_state_dict(torch.load("/home/nesc525/drivers/0/chen/3DSVC/nn/paconv/20210919-11:13/best_model.t7"))
     model = model.eval()
     count = 0.0
     test_true = []
