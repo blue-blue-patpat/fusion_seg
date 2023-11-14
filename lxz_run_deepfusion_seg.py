@@ -222,10 +222,6 @@ def parse_args():
     parser.add_argument("--feature_type", default="none", type=str, help="type of features")
     parser.add_argument("--features", default=3, type=int, help="dim of features")
     parser.add_argument("--inputs", type=str, default="lidar,image", help="input data")
-    # P4D
-    parser.add_argument("--radius", default=0.7, type=float, help="radius for the ball query")
-    parser.add_argument("--nsample", default=32, type=int, help="number of neighbors for the ball query")
-    parser.add_argument("--npoint", default=49, type=int, help="number of points for FPS")
     # embedding
     parser.add_argument("--emb_relu", default=False, action="store_true")
     # transformer
