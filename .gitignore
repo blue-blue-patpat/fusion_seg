@@ -16,3 +16,4 @@ make_VIBE_data
 nn/votenet
 *pointnet2
 output
+*.pth
