@@ -12,13 +12,13 @@ class DeepFusionSeg(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
-        self.pc_backbone = PointnetSAModule(
-            npoint=args.npoint,
-            radius=args.radius,
-            nsample=args.nsample,
-            mlp=[0, 128, 128, args.dim],
-            use_xyz=True,
-        )
+        # self.pc_backbone = PointnetSAModule(
+        #     npoint=args.npoint,
+        #     radius=args.radius,
+        #     nsample=args.nsample,
+        #     mlp=[0, 128, 128, args.dim],
+        #     use_xyz=True,
+        # )
         self.sa_module1 = PointnetSAModule(npoint=256, radius=0.3, nsample=32, mlp=[0, 32, 32, 128], use_xyz=True)
         self.sa_module2 = PointnetSAModule(npoint=128, radius=0.5, nsample=32, mlp=[128, 128, 128, 256], use_xyz=True)
         self.sa_module3 = PointnetSAModule(npoint=64, radius=0.7, nsample=32, mlp=[256, 256, 256, 1024], use_xyz=True)
@@ -56,16 +56,16 @@ class DeepFusionSeg(nn.Module):
         grid_feat += local_pos_emb
         return grid_feat
 
-    def process_point(self, points, pos_emb):
-        xyz, cluster_feat = self.pc_backbone(xyz=points[:, :, :3].contiguous())
-        # add embeddings
-        xyz_embedding = self.point_embedding(xyz)
-        cluster_feat = cluster_feat.transpose(1, 2).contiguous() + xyz_embedding
-        embeddings = torch.full((points.shape[0], 1), pos_emb, dtype=torch.long, device=points.device)
-        local_pos_emb = self.local_embedding(embeddings)
-        cluster_feat += local_pos_emb
+    # def process_point(self, points, pos_emb):
+    #     xyz, cluster_feat = self.pc_backbone(xyz=points[:, :, :3].contiguous())
+    #     # add embeddings
+    #     xyz_embedding = self.point_embedding(xyz)
+    #     cluster_feat = cluster_feat.transpose(1, 2).contiguous() + xyz_embedding
+    #     embeddings = torch.full((points.shape[0], 1), pos_emb, dtype=torch.long, device=points.device)
+    #     local_pos_emb = self.local_embedding(embeddings)
+    #     cluster_feat += local_pos_emb
 
-        return cluster_feat
+    #     return cluster_feat
 
     def resize(self, input, size=None, scale_factor=None, mode="nearest", align_corners=None, warning=True):
         if warning:
