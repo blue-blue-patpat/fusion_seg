@@ -12,13 +12,7 @@ class DeepFusionSeg(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
-        # self.pc_backbone = PointnetSAModule(
-        #     npoint=args.npoint,
-        #     radius=args.radius,
-        #     nsample=args.nsample,
-        #     mlp=[0, 128, 128, args.dim],
-        #     use_xyz=True,
-        # )
+    
         self.sa_module1 = PointnetSAModule(npoint=256, radius=0.3, nsample=32, mlp=[0, 32, 32, 128], use_xyz=True)
         self.sa_module2 = PointnetSAModule(npoint=128, radius=0.5, nsample=32, mlp=[128, 128, 128, 256], use_xyz=True)
         self.sa_module3 = PointnetSAModule(npoint=64, radius=0.7, nsample=32, mlp=[256, 256, 256, 1024], use_xyz=True)
@@ -104,22 +98,6 @@ class DeepFusionSeg(nn.Module):
         point_local_pos_emb = self.local_embedding(pos_feature)
         point_local_feat += point_local_pos_emb
         local_feats.append(point_local_feat)
-
-        # for input in self.args.inputs:
-        #     if data_dict[input].shape[1]:
-        #         if input in self.args.input_dict["image"]:
-        #             local_feat = self.process_image(data_dict[input], pos_emb=0)
-        #         else:
-        #             # l0_xyz, l0_points = data_dict[input], None
-        #             # l1_xyz, l1_points = self.sa_module1(l0_xyz, l0_points)
-        #             # l2_xyz, l2_points = self.sa_module2(l1_xyz, l1_points)
-        #             # l3_xyz, l3_points = self.sa_module3(l2_xyz, l2_points)
-        #             # point_feature = l3_points.transpose(1,2).contiguous()
-        #             # pos_feature = torch.full((data_dict[input].shape[0], 1), 1, dtype=torch.long, device=data_dict[input].device)
-        #             # local_pos_emb = self.local_embedding(pos_feature)
-        #             # point_feature += local_pos_emb
-        #             local_feat = self.process_point(data_dict[input], pos_emb=1)
-        #         local_feats.append(local_feat)
 
         local_feats = torch.cat(local_feats, dim=1)
         transformer_output = self.transformer(local_feats)

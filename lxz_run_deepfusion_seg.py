@@ -149,14 +149,14 @@ def evaluate(args, model, losses, criterion, data_loader, device, save_path=''):
     #             'occlusion': ['M1', 'N1', 'M2', 'N2'],
     #         }
     #         sheet_locs = sheet_loc_dict[args.test_scene]
-    #         excel_path = os.path.join(args.output_dir, 'error', 'error.xlsx')
-    #         if not os.path.exists(excel_path):
-    #             work_book = Workbook()
-    #             work_sheet = work_book.active
-    #             work_sheet.title = "Sheet1"
-    #         else:
-    #             work_book = load_workbook(filename=excel_path)
-    #             work_sheet = work_book['Sheet1']
+            excel_path = os.path.join(args.output_dir, 'error', 'error.xlsx')
+            if not os.path.exists(excel_path):
+                work_book = Workbook()
+                work_sheet = work_book.active
+                work_sheet.title = "Sheet1"
+            else:
+                work_book = load_workbook(filename=excel_path)
+                work_sheet = work_book['Sheet1']
     #         work_sheet[sheet_locs[0]] = str(np.mean(j_err)*100)
     #         work_sheet[sheet_locs[1]] = str(np.mean(v_err)*100)
     #         work_sheet[sheet_locs[2]] = str(np.mean(np.max(j_err, axis=1), axis=0)*100)
@@ -219,7 +219,6 @@ def main(args):
     #     model = nn.DataParallel(model)
     model.to(device)
 
-    # bot = TimerBot()
     losses = LossManager()
     cross_entropy_criterion = nn.CrossEntropyLoss()
     criterions = dict(ce=cross_entropy_criterion)
@@ -285,6 +284,7 @@ def main(args):
         )
         print("Start testing")
         save_path = os.path.join(output_dir, "error")
+        
         # gen = evaluate(args, model, losses, criterions, data_loader_test, device, save_path)
         # if args.save_snapshot:
         #     snapshot_path = os.path.join(args.output_dir, "snapshot", args.test_scene)
@@ -299,12 +299,11 @@ def parse_args():
 
     parser.add_argument("--seed", default=35, type=int, help="random seed")
     parser.add_argument("--model", default="DeepFusionSeg", type=str, help="model")
-    # input
+    # input 
     parser.add_argument("--data_path", default="/remote-home/linxinzhuo/code/labeled_data", type=str, help="dataset")
     parser.add_argument("--seq_idxes", type=str, default="")
-    parser.add_argument("--num_points", default=1024, type=int, help="number of points per frame")
+    parser.add_argument("--num_points", default=4096, type=int, help="number of points per frame")
     parser.add_argument("--normal_scale", default=1, type=int, help="normal scale of labels")
-    parser.add_argument("--skip_head", default=0, type=int, help="number of skip frames")
     parser.add_argument("--output_dim", default=6, type=int, help="output dim")
     parser.add_argument("--feature_type", default="none", type=str, help="type of features")
     parser.add_argument("--features", default=3, type=int, help="dim of features")
@@ -362,6 +361,9 @@ def parse_args():
     parser.add_argument("--use_pkl", dest="use_pkl", action="store_true", help="use pkl data")
     parser.add_argument("--save_snapshot", dest="save_snapshot", action="store_true", help="save snapshot")
     parser.add_argument("--read_orig_img", action="store_true")
+
+    # test
+    parser.add_argument("--test_checkpoint", default='', type=str, help="checkpoint to test")
 
     args = parser.parse_args()
 

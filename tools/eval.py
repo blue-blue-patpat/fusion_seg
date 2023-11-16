@@ -75,7 +75,7 @@ def seg_eval(gt_labels, seg_preds, label2cat, logger=None):
             fast_hist(seg_preds[i].numpy().astype(int),
                       gt_labels[i].numpy().astype(int), len(label2cat)))
     iou = per_class_iou(sum(hist_list))
-    miou = np.nanmean(iou)
+    miou = float(np.nanmean(iou))
     # acc = get_acc(sum(hist_list))
     # acc_cls = get_acc_cls(sum(hist_list))
 
